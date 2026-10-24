@@ -40,7 +40,7 @@ export default async function Overview() {
         <p className="muted">
           {mspName} · {clients.length} clients · AI agents and MCP servers found in Microsoft 365 and on laptops
         </p>
-        {!demo && <Link className="btn" href="/clients/new">Add a client</Link>}
+        {!demo && <Link className="btn" href="/app/clients/new">Add a client</Link>}
       </div>
 
       {!demo && clients.length === 0 && (
@@ -90,7 +90,7 @@ export default async function Overview() {
               {rows.map(({ c, r, score }) => (
                 <tr key={c.id} className="link-row">
                   <td>
-                    <Link className="row-link" href={`/clients/${c.id}`}>{c.name}</Link>
+                    <Link className="row-link" href={`/app/clients/${c.id}`}>{c.name}</Link>
                     <div className="muted small">{c.industry} · {c.staff.toLocaleString("en-US")} staff</div>
                   </td>
                   <td>

@@ -21,7 +21,7 @@ export default async function ClientPage({ params }: { params: Promise<{ id: str
   if (!detail) notFound();
   return (
     <>
-      <p className="small"><Link href="/">← All clients</Link></p>
+      <p className="small"><Link href="/app">← All clients</Link></p>
       <ClientView client={detail.client} />
       {!detail.demo && <ConnectLaptops clientId={detail.client.id} tokens={detail.tokens} consoleUrl={await consoleUrl()} />}
     </>

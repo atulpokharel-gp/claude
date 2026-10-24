@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
-import { createTokenAction, revokeTokenAction, type TokenState } from "@/app/clients/actions.ts";
+import { createTokenAction, revokeTokenAction, type TokenState } from "@/app/(console)/app/clients/actions.ts";
 import type { UploadTokenInfo } from "@/lib/store.ts";
 
 function fmt(iso: string | null): string {

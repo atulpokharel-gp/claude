@@ -1,5 +1,6 @@
 // Reading and writing an MSP's clients, upload tokens and scans.
 
+import { checkClientLimit, PLAN_LIMITS, type Plan } from "./accounts.ts";
 import { lookup, withTenant } from "./db.ts";
 import { importScan, ScanImportError } from "./scan-import.ts";
 import { newToken, tokenHash } from "./secrets.ts";
@@ -116,6 +117,7 @@ export async function createClient(mspId: string, input: NewClient): Promise<str
   const name = input.name.trim();
   if (!name || name.length > 200) throw new Error("Client name must be 1 to 200 characters.");
   return withTenant(mspId, async (db) => {
+    await checkClientLimit(db);
     const res = await db.query<{ id: string }>(
       "insert into clients (msp_id, name, industry, staff, devices_expected) values ($1, $2, $3, $4, $5) returning id",
       [mspId, name, (input.industry ?? "").trim().slice(0, 200), clampInt(input.staff), clampInt(input.devicesExpected)],
@@ -175,6 +177,17 @@ export async function ingestScan(token: string | undefined, report: unknown, now
   if (Number.isNaN(scannedAt.getTime()) || scannedAt > now) scannedAt = now;
 
   return withTenant(owner.msp_id, async (db) => {
+    const plan = (await db.query<{ plan: Plan }>("select plan from msps")).rows[0]?.plan ?? "free";
+    const limit = PLAN_LIMITS[plan].devices;
+    if (Number.isFinite(limit)) {
+      const known = await db.query("select 1 from devices where client_id = $1 and hostname = $2", [owner.client_id, hostname]);
+      if (known.rowCount === 0) {
+        const n = (await db.query<{ n: number }>("select count(*)::int as n from devices")).rows[0].n;
+        if (n >= limit) {
+          throw new UploadError(`The free plan covers ${limit} laptops and this account has reached it.`, 403);
+        }
+      }
+    }
     const device = await db.query<{ id: string }>(
       `insert into devices (msp_id, client_id, hostname, os, last_scan_at)
        values ($1, $2, $3, $4, $5)

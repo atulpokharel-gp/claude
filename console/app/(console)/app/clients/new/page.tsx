@@ -7,11 +7,11 @@ import { NewClientForm } from "./NewClientForm.tsx";
 export const dynamic = "force-dynamic";
 
 export default async function NewClientPage() {
-  if (!hasDatabase()) redirect("/");
+  if (!hasDatabase()) redirect("/app");
   await requireSession();
   return (
     <>
-      <p className="small"><Link href="/">← All clients</Link></p>
+      <p className="small"><Link href="/app">← All clients</Link></p>
       <section className="panel narrow">
         <h1>Add a client</h1>
         <p className="muted">After adding it you&apos;ll get an upload token for its laptops.</p>

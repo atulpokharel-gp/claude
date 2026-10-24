@@ -11,10 +11,25 @@ import pg from "pg";
 import { migrate } from "../scripts/migrate.ts";
 import { createMsp } from "../scripts/create-msp.ts";
 import { closePool, getPool, withTenant } from "./db.ts";
-import { checkSession, signIn, signOut } from "./auth.ts";
+import { checkSession, finishMfa, signIn, signOut } from "./auth.ts";
+import {
+  acceptInvite,
+  changePassword,
+  checkInvite,
+  createInvite,
+  enableTotp,
+  getTeam,
+  removeMember,
+  signUp,
+  startTotp,
+} from "./accounts.ts";
+import { codeAt, currentStep } from "./totp.ts";
+import { cleanup } from "../scripts/cleanup.ts";
+import { setPlan } from "../scripts/set-plan.ts";
 import { createClient, createUploadToken, getClient, ingestScan, listClients, revokeUploadToken, UploadError } from "./store.ts";
 
 const adminUrl = process.env.TEST_DATABASE_ADMIN_URL;
+process.env.APP_SECRET ??= randomBytes(32).toString("base64");
 const sample = JSON.parse(readFileSync(fileURLToPath(new URL("../public/sample-scan.json", import.meta.url)), "utf8"));
 
 function withDb(url: string, db: string): string {
@@ -65,10 +80,11 @@ describe("database", { skip: !adminUrl && "set TEST_DATABASE_ADMIN_URL to run" }
   });
 
   test("sign-in checks the password and sessions can be ended", async () => {
-    assert.equal(await signIn("admin@a.example", "wrong"), null);
-    assert.equal(await signIn("nobody@a.example", "correct horse battery"), null);
-    const token = await signIn("ADMIN@a.example", "correct horse battery");
-    assert.ok(token);
+    assert.equal((await signIn("admin@a.example", "wrong")).kind, "wrong");
+    assert.equal((await signIn("nobody@a.example", "correct horse battery")).kind, "wrong");
+    const r = await signIn("ADMIN@a.example", "correct horse battery");
+    assert.equal(r.kind, "session");
+    const token = r.kind === "session" ? r.token : undefined;
     const s = await checkSession(token!);
     assert.equal(s?.mspId, a.mspId);
     assert.equal(s?.mspName, "MSP A");
@@ -147,5 +163,104 @@ describe("database", { skip: !adminUrl && "set TEST_DATABASE_ADMIN_URL to run" }
     const got = await getClient(a.mspId, id);
     await revokeUploadToken(a.mspId, got!.tokens[0].id);
     await assert.rejects(ingestScan(token, sample), (e: UploadError) => e.status === 401);
+  });
+  test("self-serve sign-up starts on the free plan with its limits", async () => {
+    const token = await signUp({ name: "Sam Rivera", mspName: "Rivera IT", email: "Sam@Rivera.example", password: "long enough password", clientEstimate: 12 });
+    const s = await checkSession(token);
+    assert.equal(s?.mspName, "Rivera IT");
+    const team = await getTeam(s!.mspId);
+    assert.equal(team.plan, "free");
+    assert.equal(team.members[0].role, "owner");
+    assert.equal(team.members[0].email, "sam@rivera.example");
+
+    await assert.rejects(
+      signUp({ name: "x", mspName: "y", email: "sam@rivera.example", password: "long enough password" }),
+      /already an account/,
+    );
+    await assert.rejects(signUp({ name: "x", mspName: "y", email: "new@rivera.example", password: "short" }), /12 characters/);
+    await assert.rejects(signUp({ name: "x", mspName: "y", email: "not-an-email", password: "long enough password" }), /valid email/);
+
+    const id = await createClient(s!.mspId, { name: "First client" });
+    await assert.rejects(createClient(s!.mspId, { name: "Second client" }), /free plan covers 1 client/);
+
+    const upload = await createUploadToken(s!.mspId, id, "");
+    for (let i = 0; i < 25; i++) await ingestScan(upload, { ...sample, hostname: `PC-${i}` });
+    await ingestScan(upload, { ...sample, hostname: "PC-0" }); // a known laptop can keep reporting
+    await assert.rejects(ingestScan(upload, { ...sample, hostname: "PC-25" }), (e: UploadError) => e.status === 403);
+
+    assert.equal(await setPlan(ownerUrl, "sam@rivera.example", "partner"), "Rivera IT");
+    await ingestScan(upload, { ...sample, hostname: "PC-25" });
+    await createClient(s!.mspId, { name: "Second client" });
+  });
+
+  test("two-factor sign-in needs a fresh code after the password", async () => {
+    const token = await signUp({ name: "Two Factor", mspName: "TF IT", email: "tf@tf.example", password: "long enough password" });
+    const s = (await checkSession(token))!;
+    const secret = await startTotp(s.mspId, s.userId);
+    await assert.rejects(enableTotp(s.mspId, s.userId, "000000"), /doesn't match/);
+    const step = currentStep();
+    await enableTotp(s.mspId, s.userId, codeAt(secret, step));
+
+    const first = await signIn("tf@tf.example", "long enough password");
+    assert.equal(first.kind, "mfa");
+    const pending = first.kind === "mfa" ? first.pending : "";
+    // The code used to turn it on can't be used again.
+    assert.equal((await finishMfa(pending, codeAt(secret, step))).kind, "wrong");
+    assert.equal((await finishMfa("forged.value", codeAt(secret, step + 1))).kind, "wrong");
+    const done = await finishMfa(pending, codeAt(secret, step + 1));
+    assert.equal(done.kind, "session");
+    assert.equal((await getTeam(s.mspId)).members[0].mfa, true);
+  });
+
+  test("repeated wrong passwords are rate limited", async () => {
+    for (let i = 0; i < 10; i++) assert.equal((await signIn("limit@a.example", "nope")).kind, "wrong");
+    assert.equal((await signIn("limit@a.example", "nope")).kind, "limited");
+  });
+
+  test("teammates join with a one-time invite link", async () => {
+    const owner = await signUp({ name: "Owner", mspName: "Team IT", email: "owner@team.example", password: "long enough password" });
+    const s = (await checkSession(owner))!;
+    const invite = await createInvite(s.mspId, s.userId, "Tech@Team.example");
+    assert.equal((await checkInvite(invite))?.email, "tech@team.example");
+    await assert.rejects(createInvite(s.mspId, s.userId, "admin@a.example"), /already has a Zinloop account/);
+    await assert.rejects(acceptInvite(invite, "Tech", "short"), /12 characters/);
+
+    const techToken = await acceptInvite(invite, "Tech Person", "another long password");
+    const tech = (await checkSession(techToken))!;
+    assert.equal(tech.mspId, s.mspId);
+    await assert.rejects(acceptInvite(invite, "Again", "another long password"), /expired or was already used/);
+    assert.equal(await checkInvite(invite), null);
+
+    // Another MSP can't use or see this team.
+    assert.ok(!(await getTeam(a.mspId)).members.some((m) => m.email === "tech@team.example"));
+
+    await assert.rejects(removeMember(s.mspId, tech.userId, s.userId), /owner can't be removed/);
+    await removeMember(s.mspId, s.userId, tech.userId);
+    assert.equal(await checkSession(techToken), null, "removed member is signed out");
+  });
+
+  test("changing the password signs out other sessions", async () => {
+    const t1 = await signUp({ name: "P", mspName: "PW IT", email: "pw@pw.example", password: "long enough password" });
+    const s = (await checkSession(t1))!;
+    const r = await signIn("pw@pw.example", "long enough password");
+    const t2 = r.kind === "session" ? r.token : "";
+    await assert.rejects(changePassword(s.mspId, s.userId, "wrong", "brand new password"), /current password is wrong/);
+    const t3 = await changePassword(s.mspId, s.userId, "long enough password", "brand new password");
+    assert.equal(await checkSession(t1), null);
+    assert.equal(await checkSession(t2), null);
+    assert.ok(await checkSession(t3));
+    assert.equal((await signIn("pw@pw.example", "brand new password")).kind, "session");
+  });
+
+  test("cleanup keeps each laptop's newest scan", async () => {
+    const id = await createClient(a.mspId, { name: "Old Scans Co" });
+    const token = await createUploadToken(a.mspId, id, "");
+    await ingestScan(token, { ...sample, hostname: "OLD-1", scannedAt: "2026-01-01T00:00:00Z" });
+    await ingestScan(token, { ...sample, hostname: "OLD-1", scannedAt: "2026-02-01T00:00:00Z" });
+    await withTenant(a.mspId, (db) => db.query("update scans set received_at = now() - interval '200 days' where client_id = $1", [id]));
+    const n = await cleanup(ownerUrl, 90);
+    assert.equal(n.scans, 1);
+    const left = await withTenant(a.mspId, (db) => db.query<{ scanned_at: Date }>("select scanned_at from scans where client_id = $1", [id]));
+    assert.deepEqual(left.rows.map((r) => r.scanned_at.toISOString()), ["2026-02-01T00:00:00.000Z"]);
   });
 });

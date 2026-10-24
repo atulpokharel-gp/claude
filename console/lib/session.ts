@@ -5,6 +5,8 @@ import { redirect } from "next/navigation";
 import { checkSession, SESSION_HOURS, type Session } from "./auth.ts";
 
 export const SESSION_COOKIE = "zl_session";
+/** Holds the signed "password checked, waiting for the code" value during two-factor sign-in. */
+export const MFA_COOKIE = "zl_mfa";
 
 export async function currentSession(): Promise<Session | null> {
   const token = (await cookies()).get(SESSION_COOKIE)?.value;
