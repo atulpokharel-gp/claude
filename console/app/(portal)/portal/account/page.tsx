@@ -4,13 +4,17 @@ import { listSessions } from "@/lib/auth.ts";
 import { requireViewer } from "@/lib/session.ts";
 import { ChangePassword, EmailPrefsForm, TwoFactor } from "@/app/(console)/app/settings/SettingsForms.tsx";
 import { SessionsPanel } from "@/components/SessionsPanel.tsx";
+import { MicrosoftLinkPanel } from "@/components/MicrosoftLinkPanel.tsx";
+import { getMicrosoftLink } from "@/lib/identities.ts";
+import { hasSso } from "@/lib/microsoft-sso.ts";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Your account" };
 
-export default async function PortalAccount() {
+export default async function PortalAccount({ searchParams }: { searchParams: Promise<{ sso?: string }> }) {
   const s = await requireViewer({ mfaSetup: true });
-  const [sessions, prefs] = await Promise.all([listSessions(s), getEmailPrefs(s.mspId, s.userId)]);
+  const [sessions, prefs, msLink] = await Promise.all([listSessions(s), getEmailPrefs(s.mspId, s.userId), getMicrosoftLink(s)]);
+  const { sso } = await searchParams;
   return (
     <>
       <div className="page-head">
@@ -28,6 +32,7 @@ export default async function PortalAccount() {
         <div className="panel-body"><TwoFactor enabled={s.mfa} /></div>
       </section>
       <SessionsPanel sessions={sessions} />
+      <MicrosoftLinkPanel link={msLink} available={hasSso()} notice={sso} />
       <section className="panel">
         <div className="panel-head"><h2>Email</h2></div>
         <div className="panel-body"><EmailPrefsForm alerts={false} weekly={prefs.weekly} viewer /></div>

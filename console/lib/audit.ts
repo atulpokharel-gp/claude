@@ -26,6 +26,8 @@ export const AUDIT_ACTIONS = {
   client_login_created: "Invited a client viewer",
   client_login_removed: "Removed a client viewer",
   client_viewer_joined: "Client viewer joined",
+  microsoft_linked: "Linked a Microsoft account",
+  microsoft_unlinked: "Unlinked a Microsoft account",
 } as const;
 
 export type AuditAction = keyof typeof AUDIT_ACTIONS;

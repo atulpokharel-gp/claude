@@ -8,17 +8,20 @@ import { requireSession } from "@/lib/session.ts";
 import { revokeInviteAction } from "./actions.ts";
 import { ChangePassword, EmailPrefsForm, InviteForm, RemoveMember, RequireMfa, TwoFactor } from "./SettingsForms.tsx";
 import { SessionsPanel } from "@/components/SessionsPanel.tsx";
+import { MicrosoftLinkPanel } from "@/components/MicrosoftLinkPanel.tsx";
+import { getMicrosoftLink } from "@/lib/identities.ts";
+import { hasSso } from "@/lib/microsoft-sso.ts";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Settings" };
 
 const PLAN_NAMES = { free: "Free", partner: "Design partner", msp: "MSP" } as const;
 
-export default async function Settings({ searchParams }: { searchParams: Promise<{ mfa?: string; owner?: string }> }) {
+export default async function Settings({ searchParams }: { searchParams: Promise<{ mfa?: string; owner?: string; sso?: string }> }) {
   if (!hasDatabase()) redirect("/app");
   const s = await requireSession({ mfaSetup: true });
   const sp = await searchParams;
-  const [team, sessions, prefs] = await Promise.all([getTeam(s.mspId), listSessions(s), getEmailPrefs(s.mspId, s.userId)]);
+  const [team, sessions, prefs, msLink] = await Promise.all([getTeam(s.mspId), listSessions(s), getEmailPrefs(s.mspId, s.userId), getMicrosoftLink(s)]);
   const isOwner = s.role === "owner";
   const me = team.members.find((m) => m.id === s.userId);
   const limits = PLAN_LIMITS[team.plan];
@@ -65,6 +68,7 @@ export default async function Settings({ searchParams }: { searchParams: Promise
       )}
 
       <SessionsPanel sessions={sessions} />
+      <MicrosoftLinkPanel link={msLink} available={hasSso()} notice={sp.sso} />
 
       <section className="panel">
         <div className="panel-head"><h2>Email</h2></div>
