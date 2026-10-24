@@ -7,7 +7,7 @@ console; everything Vercel can't run lives elsewhere:
 | --- | --- | --- |
 | Console (website + app) | `console` container | Vercel project, root directory `console` |
 | Postgres | `db` container | **Neon** (managed Postgres; Supabase works too) |
-| Migrations | `migrate` container | GitHub Actions, before each deploy ([vercel.yml](../.github/workflows/vercel.yml)) |
+| Migrations | `migrate` container | Vercel's production build runs them first ([vercel-migrate.ts](../console/scripts/vercel-migrate.ts)); a failed migration stops the deploy |
 | Email every 5 min, daily jobs | `maintenance` container | **Vercel Cron** calling `/api/cron/mail` and `/api/cron/daily` ([vercel.json](../console/vercel.json)) |
 | Nightly backups | `backup` container | Neon's point-in-time restore, plus a nightly encrypted copy from GitHub Actions ([vercel-backup.yml](../.github/workflows/vercel-backup.yml)) |
 | HTTPS | Caddy | Vercel |
@@ -37,12 +37,15 @@ in `vercel.json`).
 
 1. In Vercel, **Add New → Project**, import this GitHub repository, and set
    **Root Directory** to `console`. Framework: Next.js. Pick the Pro team.
-2. Under **Settings → Environment Variables** (Production), add:
+2. Under **Settings → Environment Variables**, add these for **Production**
+   only (preview deployments then run on demo data and never touch the
+   database):
 
 | Name | Value |
 | --- | --- |
 | `DATABASE_URL` | Pooled app-role string from step 1 |
-| `DATABASE_ADMIN_URL` | Direct owner string (the cron jobs need it) |
+| `DATABASE_ADMIN_URL` | Direct owner string (migrations and cron jobs) |
+| `DB_APP_PASSWORD` | The app role password from step 1 |
 | `APP_SECRET` | `openssl rand -base64 32`. Keep it: changing it turns off everyone's two-factor setup |
 | `CRON_SECRET` | `openssl rand -hex 32`. Vercel sends it to the cron routes; without it they answer 404 |
 | `CONSOLE_URL` | `https://app.zinloop.com` (your real domain) |
@@ -50,32 +53,26 @@ in `vercel.json`).
 | `SMTP_URL`, `MAIL_FROM` | Your mail service, as in deploy.md |
 | `M365_*`, `SSO_*`, `SCAN_KEEP_DAYS`, `DOWNLOAD_BASE_URL` | Same as deploy.md |
 
-3. Under **Settings → Domains**, add `app.zinloop.com` (and `zinloop.com` if
-   the marketing site should live there too) and create the DNS records Vercel
-   shows at your domain registrar.
-4. Create a token under **Account Settings → Tokens**, and copy the Team ID
-   (**Team Settings**) and Project ID (**Project Settings**).
+3. Under **Settings → Domains**, add `app.zinloop.com` and create the DNS
+   record Vercel shows (a CNAME to Vercel) wherever the domain's DNS lives.
 
-Vercel's own Git deploys are turned off in `vercel.json`, so a push never
-deploys before its migrations ran. Deploys come from GitHub Actions instead.
+Every push to `main` now deploys to production. The `vercel-build` script
+migrates the database first and sets the `zinloop_app` password, so a deploy
+never goes live on an old schema. Create the first MSP account by signing up
+on the site, or run `npm run db:create-msp` locally with `DATABASE_ADMIN_URL`
+set.
 
-## 3. GitHub
+## 3. Off-site backups (optional, recommended)
 
 In the repository's **Settings → Environments**, create `vercel` and add:
 
-- **Secrets:** `VERCEL_TOKEN`, `DATABASE_ADMIN_URL`, `DB_APP_PASSWORD`, and for
-  backups `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`.
-- **Variables:** `VERCEL_ORG_ID` (Team ID), `VERCEL_PROJECT_ID`, `CONSOLE_URL`,
-  and for backups `BACKUP_S3_URI`, `BACKUP_S3_ENDPOINT` (for R2/B2),
+- **Secrets:** `DATABASE_ADMIN_URL`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`.
+- **Variables:** `BACKUP_S3_URI`, `BACKUP_S3_ENDPOINT` (for R2/B2),
   `BACKUP_AGE_RECIPIENT`, and `PG_MAJOR` if your Neon database isn't
   Postgres 17.
-- Optionally add yourself under **Required reviewers** so every production
-  deploy waits for a click.
 
-Then run **Actions → vercel → Run workflow** once. After that, every commit on
-`main` that passes CI is migrated and deployed. Create the first MSP account by
-signing up on the site, or run `npm run db:create-msp` locally with
-`DATABASE_ADMIN_URL` set.
+The [vercel-backup](../.github/workflows/vercel-backup.yml) workflow then
+makes a nightly encrypted copy. Until `BACKUP_S3_URI` is set it skips.
 
 The Docker deploy workflow keeps skipping while `SSH_HOST` isn't set, so the
 two setups don't get in each other's way. Use one of them for production.
@@ -89,7 +86,7 @@ two setups don't get in each other's way. Use one of them for production.
 
 ## Rolling back
 
-Vercel → **Deployments** → pick the previous one → **Promote**. Migrations
+Vercel → **Deployments** → pick the previous one → **Instant Rollback**. Migrations
 are written so the previous version keeps working after them (see
 migration 009). To restore data, use Neon's point-in-time restore, or
 `deploy/backup/restore.sh` with an off-site copy.

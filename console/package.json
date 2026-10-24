@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "vercel-build": "node --experimental-strip-types scripts/vercel-migrate.ts && next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "test": "node --test --experimental-strip-types lib/*.test.ts",
