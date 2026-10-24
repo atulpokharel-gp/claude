@@ -1,0 +1,13 @@
+// VS Code settings use comments and trailing commas
+{
+  "editor.fontSize": 14,
+  /* MCP block */
+  "mcp": {
+    "servers": {
+      "playwright": {
+        "command": "npx",
+        "args": ["@playwright/mcp@latest"], // floats to newest
+      },
+    },
+  },
+}

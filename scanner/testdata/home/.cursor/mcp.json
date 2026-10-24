@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "internal-wiki": { "url": "http://wiki.example.com/mcp" },
+    "postgres": {
+      "command": "docker",
+      "args": ["run", "-i", "--rm", "--network", "host", "-v", "/var/run/docker.sock:/var/run/docker.sock", "mcp/postgres:1.0.0"],
+      "env": { "DATABASE_URL": "${env:DATABASE_URL}" }
+    },
+    "linear": {
+      "url": "https://mcp.linear.app/sse",
+      "headers": { "Authorization": "${input:linear-key}" }
+    }
+  }
+}

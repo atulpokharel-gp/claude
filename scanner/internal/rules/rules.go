@@ -1,0 +1,373 @@
+// Package rules checks MCP servers for risky settings.
+package rules
+
+import (
+	"net"
+	"net/url"
+	"regexp"
+	"sort"
+	"strconv"
+	"strings"
+
+	"github.com/atulpokharel-gp/claude/scanner/internal/discover"
+)
+
+// Severity ranks how urgent a finding is.
+type Severity string
+
+const (
+	High   Severity = "high"
+	Medium Severity = "medium"
+	Low    Severity = "low"
+	None   Severity = "none"
+)
+
+// Rank orders severities so the worst can be picked.
+func (s Severity) Rank() int {
+	switch s {
+	case High:
+		return 3
+	case Medium:
+		return 2
+	case Low:
+		return 1
+	}
+	return 0
+}
+
+// Finding is one problem with one server.
+type Finding struct {
+	RuleID   string   `json:"ruleId"`
+	Severity Severity `json:"severity"`
+	Title    string   `json:"title"`
+	Detail   string   `json:"detail"`
+	Fix      string   `json:"fix"`
+}
+
+// Context carries facts about the computer that some rules need.
+type Context struct {
+	Home string
+}
+
+var (
+	secretKeyName = regexp.MustCompile(`(?i)(token|secret|passw|api[_-]?key|access[_-]?key|private[_-]?key|credential|\bpat\b|_pat$)`)
+	// Value shapes of common credentials. Kept narrow to avoid false alarms.
+	secretValue = regexp.MustCompile(`(ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|gho_[A-Za-z0-9]{20,}|sk-[A-Za-z0-9_\-]{20,}|sk-ant-[A-Za-z0-9_\-]{20,}|xox[abprs]-[A-Za-z0-9\-]{10,}|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_\-]{30,}|glpat-[A-Za-z0-9_\-]{20,}|(?i:bearer)\s+[A-Za-z0-9._\-]{16,})`)
+	// References to variables or secret stores rather than literal values.
+	reference   = regexp.MustCompile(`^\$\{[^}]+\}$|^\$[A-Za-z_][A-Za-z0-9_]*$|^\$\{(env|input):[^}]+\}$|^op://|^keychain:`)
+	pkgVersion  = regexp.MustCompile(`^(@[^/]+/)?[^@]+@(.+)$`)
+	shellServer = regexp.MustCompile(`(?i)(desktop-commander|mcp-shell|shell-server|server-shell|mcp-server-commands|terminal-mcp|mcp-terminal|run-command|code-runner)`)
+	fsServer    = regexp.MustCompile(`(?i)filesystem`)
+)
+
+// Check runs every rule against one server.
+func Check(s discover.Server, ctx Context) []Finding {
+	var out []Finding
+	out = append(out, secretsInConfig(s)...)
+	out = append(out, insecureTransport(s)...)
+	out = append(out, unpinnedPackage(s)...)
+	out = append(out, broadFilesystem(s, ctx)...)
+	out = append(out, shellAccess(s)...)
+	out = append(out, riskyContainer(s)...)
+	out = append(out, remoteServer(s)...)
+	return out
+}
+
+// Worst returns the highest severity in a list, or None.
+func Worst(fs []Finding) Severity {
+	worst := None
+	for _, f := range fs {
+		if f.Severity.Rank() > worst.Rank() {
+			worst = f.Severity
+		}
+	}
+	return worst
+}
+
+// LooksSecret reports whether a single string looks like a credential.
+// The report uses it to redact command-line arguments.
+func LooksSecret(v string) bool {
+	return secretValue.MatchString(v)
+}
+
+func isLiteral(v string) bool {
+	v = strings.TrimSpace(v)
+	return v != "" && !reference.MatchString(v)
+}
+
+func secretsInConfig(s discover.Server) []Finding {
+	var names []string
+	for k, v := range s.Env {
+		if !isLiteral(v) {
+			continue
+		}
+		if secretKeyName.MatchString(k) || secretValue.MatchString(v) {
+			names = append(names, "env "+k)
+		}
+	}
+	for k, v := range s.Headers {
+		if !isLiteral(v) {
+			continue
+		}
+		if strings.EqualFold(k, "authorization") || secretKeyName.MatchString(k) || secretValue.MatchString(v) {
+			names = append(names, "header "+k)
+		}
+	}
+	for i, a := range s.Args {
+		if secretValue.MatchString(a) {
+			names = append(names, "argument "+strconv.Itoa(i+1))
+		}
+	}
+	if s.URL != "" {
+		if u, err := url.Parse(s.URL); err == nil {
+			if u.User != nil {
+				if _, hasPw := u.User.Password(); hasPw {
+					names = append(names, "password in URL")
+				}
+			}
+			for k, vals := range u.Query() {
+				for _, v := range vals {
+					if secretKeyName.MatchString(k) && isLiteral(v) {
+						names = append(names, "URL parameter "+k)
+					}
+				}
+			}
+		}
+	}
+	if len(names) == 0 {
+		return nil
+	}
+	sort.Strings(names)
+	return []Finding{{
+		RuleID:   "SECRET_IN_CONFIG",
+		Severity: High,
+		Title:    "Credential stored in plain text",
+		Detail:   "A long-lived key or token is written directly in the config file (" + strings.Join(names, ", ") + "). Anyone or anything that can read this file, including other AI tools and malware, can reuse it.",
+		Fix:      "Move the value to the operating system's keychain or an environment variable, rotate the key, and give the replacement the smallest permissions it needs.",
+	}}
+}
+
+func insecureTransport(s discover.Server) []Finding {
+	if s.URL == "" {
+		return nil
+	}
+	u, err := url.Parse(s.URL)
+	if err != nil || u.Scheme != "http" || isLocalHost(u.Hostname()) {
+		return nil
+	}
+	return []Finding{{
+		RuleID:   "INSECURE_TRANSPORT",
+		Severity: High,
+		Title:    "Unencrypted connection to a remote server",
+		Detail:   "This server is reached over plain http at " + u.Host + ". Requests, responses and any tokens can be read or changed on the network.",
+		Fix:      "Switch the URL to https, or remove the server if the provider does not support it.",
+	}}
+}
+
+func unpinnedPackage(s discover.Server) []Finding {
+	runner := baseName(strings.ToLower(s.Command))
+	runner = strings.TrimSuffix(runner, ".cmd")
+	runner = strings.TrimSuffix(runner, ".exe")
+	args := s.Args
+	switch runner {
+	case "npx", "bunx", "uvx":
+	case "pnpm", "yarn", "bun":
+		if len(args) == 0 || (args[0] != "dlx" && args[0] != "x") {
+			return nil
+		}
+		args = args[1:]
+	default:
+		return nil
+	}
+	pkg := firstPackageArg(args)
+	if pkg == "" {
+		return nil
+	}
+	if m := pkgVersion.FindStringSubmatch(pkg); m != nil {
+		v := m[2]
+		if v != "latest" && v != "next" && !strings.ContainsAny(v, "^~*x") {
+			return nil // pinned to an exact version
+		}
+	} else if runner == "uvx" && strings.Contains(pkg, "==") {
+		return nil
+	}
+	return []Finding{{
+		RuleID:   "UNPINNED_PACKAGE",
+		Severity: Medium,
+		Title:    "Downloads the newest code on every start",
+		Detail:   "This server runs " + pkg + " through " + runner + " without a fixed version. If the package is taken over or a bad update is published, it runs on this computer automatically.",
+		Fix:      "Pin an exact, reviewed version (for example " + stripVersion(pkg) + "@1.2.3) and update it on purpose.",
+	}}
+}
+
+func broadFilesystem(s discover.Server, ctx Context) []Finding {
+	if !fsServer.MatchString(s.Command + " " + strings.Join(s.Args, " ")) {
+		return nil
+	}
+	for _, a := range s.Args {
+		if isBroadPath(a, ctx.Home) {
+			return []Finding{{
+				RuleID:   "BROAD_FILESYSTEM",
+				Severity: High,
+				Title:    "Can read and write far more files than it needs",
+				Detail:   "The filesystem server is allowed into " + a + ". That covers documents, SSH keys, browser data and other apps' secrets.",
+				Fix:      "Limit it to the one project folder the agent needs, and use a read-only server where writing isn't required.",
+			}}
+		}
+	}
+	return nil
+}
+
+func shellAccess(s discover.Server) []Finding {
+	all := s.Command + " " + strings.Join(s.Args, " ")
+	base := strings.ToLower(baseName(s.Command))
+	isShell := base == "bash" || base == "sh" || base == "zsh" || base == "cmd" || base == "cmd.exe" || base == "powershell" || base == "powershell.exe" || base == "pwsh"
+	if !shellServer.MatchString(all) && !isShell {
+		return nil
+	}
+	if isShell && !shellServer.MatchString(all) {
+		// A shell used only to launch another server is common; flag it lower.
+		return []Finding{{
+			RuleID:   "SHELL_LAUNCHER",
+			Severity: Low,
+			Title:    "Started through a shell command",
+			Detail:   "This server is launched with " + base + ", which makes it harder to see what actually runs.",
+			Fix:      "Call the server's program directly instead of wrapping it in a shell.",
+		}}
+	}
+	return []Finding{{
+		RuleID:   "SHELL_ACCESS",
+		Severity: High,
+		Title:    "Agent can run any command on this computer",
+		Detail:   "This server gives the AI a terminal. A single malicious instruction hidden in an email, web page or file the agent reads could run commands with the user's full rights.",
+		Fix:      "Remove it, or replace it with a server that only allows a short list of approved commands and asks before each run.",
+	}}
+}
+
+func riskyContainer(s discover.Server) []Finding {
+	base := strings.ToLower(baseName(s.Command))
+	if base != "docker" && base != "docker.exe" && base != "podman" {
+		return nil
+	}
+	var reasons []string
+	for i, a := range s.Args {
+		next := ""
+		if i+1 < len(s.Args) {
+			next = s.Args[i+1]
+		}
+		switch {
+		case a == "--privileged":
+			reasons = append(reasons, "runs privileged")
+		case (a == "--network" || a == "--net") && next == "host", a == "--network=host", a == "--net=host":
+			reasons = append(reasons, "shares the host network")
+		case (a == "-v" || a == "--volume" || a == "--mount") && mountsSensitive(next):
+			reasons = append(reasons, "mounts "+strings.SplitN(next, ":", 2)[0])
+		case strings.HasPrefix(a, "--volume=") && mountsSensitive(strings.TrimPrefix(a, "--volume=")):
+			reasons = append(reasons, "mounts "+strings.SplitN(strings.TrimPrefix(a, "--volume="), ":", 2)[0])
+		}
+	}
+	if len(reasons) == 0 {
+		return nil
+	}
+	return []Finding{{
+		RuleID:   "RISKY_CONTAINER",
+		Severity: High,
+		Title:    "Container can escape to the host",
+		Detail:   "This server's container " + strings.Join(reasons, ", ") + ", so the container gives little protection.",
+		Fix:      "Drop --privileged and host networking, and mount only the folder the server needs, read-only if possible.",
+	}}
+}
+
+func remoteServer(s discover.Server) []Finding {
+	if s.URL == "" {
+		return nil
+	}
+	u, err := url.Parse(s.URL)
+	if err != nil || isLocalHost(u.Hostname()) {
+		return nil
+	}
+	return []Finding{{
+		RuleID:   "REMOTE_SERVER",
+		Severity: Low,
+		Title:    "Sends data to an outside service",
+		Detail:   "Whatever the agent passes to this server goes to " + u.Hostname() + ".",
+		Fix:      "Confirm the company approves this provider and that a data agreement is in place.",
+	}}
+}
+
+func mountsSensitive(spec string) bool {
+	src := strings.SplitN(spec, ":", 2)[0]
+	if strings.HasPrefix(spec, "type=bind") || strings.Contains(spec, "source=") {
+		for _, part := range strings.Split(spec, ",") {
+			if strings.HasPrefix(part, "source=") || strings.HasPrefix(part, "src=") {
+				src = strings.SplitN(part, "=", 2)[1]
+			}
+		}
+	}
+	return src == "/" || strings.Contains(src, "docker.sock") || src == "~" || src == "$HOME" || src == "${HOME}" || src == "/etc" || src == "/root"
+}
+
+func isBroadPath(p, home string) bool {
+	p = strings.TrimSpace(p)
+	if p == "" || strings.HasPrefix(p, "-") || strings.HasPrefix(p, "@") {
+		return false
+	}
+	switch p {
+	case "/", "~", "~/", "$HOME", "${HOME}", "/Users", "/home", "C:\\", "C:/", "C:\\Users", "%USERPROFILE%":
+		return true
+	}
+	if home != "" {
+		clean := strings.TrimRight(p, "/\\")
+		if clean == strings.TrimRight(home, "/\\") {
+			return true
+		}
+	}
+	// Drive roots like D:\ or E:/
+	if len(p) <= 3 && len(p) >= 2 && p[1] == ':' {
+		return true
+	}
+	return false
+}
+
+func isLocalHost(h string) bool {
+	if h == "localhost" || strings.HasSuffix(h, ".localhost") {
+		return true
+	}
+	if ip := net.ParseIP(h); ip != nil {
+		return ip.IsLoopback()
+	}
+	return false
+}
+
+func firstPackageArg(args []string) string {
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if (a == "-p" || a == "--package" || a == "--from") && i+1 < len(args) {
+			return args[i+1]
+		}
+		if strings.HasPrefix(a, "--package=") || strings.HasPrefix(a, "--from=") {
+			return strings.SplitN(a, "=", 2)[1]
+		}
+		if strings.HasPrefix(a, "-") {
+			continue
+		}
+		return a
+	}
+	return ""
+}
+
+func stripVersion(pkg string) string {
+	if m := pkgVersion.FindStringSubmatch(pkg); m != nil {
+		return strings.TrimSuffix(pkg, "@"+m[2])
+	}
+	return pkg
+}
+
+// baseName returns the program name from a path written with either / or \,
+// so Windows paths are handled the same on every OS the scanner is built for.
+func baseName(p string) string {
+	if i := strings.LastIndexAny(p, `/\`); i >= 0 {
+		return p[i+1:]
+	}
+	return p
+}

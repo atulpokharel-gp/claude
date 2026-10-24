@@ -1,0 +1,17 @@
+{
+  "numStartups": 12,
+  "mcpServers": {
+    "sentry": { "type": "http", "url": "https://mcp.sentry.dev/mcp" }
+  },
+  "projects": {
+    "/home/demo/app": {
+      "mcpServers": {
+        "stripe": {
+          "command": "npx",
+          "args": ["-y", "@stripe/mcp@0.2.4", "--tools=all"],
+          "env": { "STRIPE_SECRET_KEY": "fake-stripe-value-not-real" }
+        }
+      }
+    }
+  }
+}
