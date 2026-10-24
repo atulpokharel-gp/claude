@@ -18,6 +18,9 @@ import (
 // file) keeps the token out of the process list, unlike a command-line flag.
 const TokenEnv = "ZINLOOP_TOKEN"
 
+// legacyTokenEnv is the variable versions before the rename read. Still honored.
+const legacyTokenEnv = "AGENTGUARD_TOKEN"
+
 // uploadClient never follows redirects: a redirect could send the token and
 // report to another host or over plain http.
 var uploadClient = &http.Client{
@@ -36,8 +39,10 @@ func uploadToken(tokenFile string) (string, error) {
 		}
 		return strings.TrimSpace(string(b)), nil
 	}
-	if t := strings.TrimSpace(os.Getenv(TokenEnv)); t != "" {
-		return t, nil
+	for _, name := range []string{TokenEnv, legacyTokenEnv} {
+		if t := strings.TrimSpace(os.Getenv(name)); t != "" {
+			return t, nil
+		}
 	}
 	return "", fmt.Errorf("no upload token: set %s or pass --token-file", TokenEnv)
 }
@@ -71,7 +76,8 @@ func upload(rawURL, token string, rep any) error {
 	if err != nil {
 		return err
 	}
-	if !strings.HasPrefix(token, "zlu_") {
+	// agu_ tokens were issued before the rename and are still valid.
+	if !strings.HasPrefix(token, "zlu_") && !strings.HasPrefix(token, "agu_") {
 		return errors.New("that doesn't look like an upload token (it should start with zlu_)")
 	}
 	body, err := json.Marshal(rep)

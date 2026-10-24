@@ -104,3 +104,24 @@ func TestUploadRefusesRedirects(t *testing.T) {
 		t.Errorf("want a redirect error, got %v", err)
 	}
 }
+
+func TestScanUploadsWithPreRenameToken(t *testing.T) {
+	const token = "agu_old-token-value"
+	var gotAuth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer srv.Close()
+	t.Setenv(TokenEnv, "")
+	t.Setenv("AGENTGUARD_TOKEN", token)
+
+	home, _ := filepath.Abs("../../testdata/home")
+	var out, errOut bytes.Buffer
+	if code := run([]string{"--home", home, "--upload", srv.URL + "/api/scans"}, &out, &errOut); code != 0 {
+		t.Fatalf("exit %d: %s", code, errOut.String())
+	}
+	if gotAuth != "Bearer "+token {
+		t.Errorf("Authorization = %q", gotAuth)
+	}
+}
