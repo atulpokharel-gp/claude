@@ -363,6 +363,20 @@ describe("database", { skip: !adminUrl && "set TEST_DATABASE_ADMIN_URL to run" }
     assert.equal(v.clientId, mine);
     assert.equal(v.clientName, "Mine Co");
     assert.ok(!(await getTeam(s.mspId)).members.some((m) => m.email === "boss@mine.example"), "viewers aren't teammates");
+
+    // The previous console version's session lookup never lets a viewer in.
+    const oldLookup = (token: string) =>
+      withTenant(s.mspId, async (db) => (await db.query("select * from auth_check_session($1)", [tokenHash(token)])).rows);
+    assert.equal((await oldLookup(memberToken)).length, 1);
+    assert.equal((await oldLookup(viewerToken)).length, 0);
+    // Nor can its invite page turn a pending client-viewer invite into a team member.
+    await createClientViewerInvite(s.mspId, s.userId, mine, "next@mine.example");
+    await assert.rejects(
+      withTenant(s.mspId, (db) =>
+        db.query("insert into users (msp_id, email, password_hash, name, role) values ($1, 'next@mine.example', 'x', 'Next', 'member')", [s.mspId]),
+      ),
+      /client login, not the team/,
+    );
     assert.deepEqual((await listClientViewers(s.mspId, mine)).viewers.map((x) => x.email), ["boss@mine.example"]);
     assert.equal((await listClientViewers(s.mspId, other)).viewers.length, 0);
 
