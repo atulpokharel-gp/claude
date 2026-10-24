@@ -64,3 +64,12 @@ test("downloads only hand out known scanner files", () => {
   assert.equal(downloadUrl("../etc/passwd"), null);
   assert.equal(downloadUrl("zinloop-plan9-amd64"), null);
 });
+
+test("audit CSV can't smuggle spreadsheet formulas", async () => {
+  const { auditCsv } = await import("./audit.ts");
+  const csv = auditCsv([
+    { id: "1", at: "2026-10-24T09:00:00.000Z", actorEmail: "a@b.example", action: "client_created", label: "Added a client", target: '=HYPERLINK("http://x","y")', detail: {}, ip: "" },
+  ]);
+  const line = csv.split("\r\n")[1];
+  assert.ok(line.includes(`"'=HYPERLINK(""http://x"",""y"")"`), line);
+});

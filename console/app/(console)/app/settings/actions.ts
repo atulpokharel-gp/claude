@@ -10,8 +10,11 @@ import {
   enableTotp,
   removeMember,
   revokeInvite,
+  setRequireMfa,
   startTotp,
 } from "@/lib/accounts.ts";
+import { endOtherSessions } from "@/lib/auth.ts";
+import { requestInfo } from "@/lib/request-audit.ts";
 import { hasAppSecret } from "@/lib/crypto.ts";
 import { requireSession, setSessionCookie } from "@/lib/session.ts";
 import QRCode from "qrcode";
@@ -27,7 +30,7 @@ function fail(err: unknown): FormState {
 export type TotpSetup = FormState & { secret?: string; qr?: string };
 
 export async function startTotpAction(): Promise<TotpSetup> {
-  const s = await requireSession();
+  const s = await requireSession({ mfaSetup: true });
   if (!hasAppSecret()) return { error: "Two-factor sign-in needs APP_SECRET set on the server. Ask whoever runs your console." };
   const secret = await startTotp(s.mspId, s.userId);
   const qr = await QRCode.toString(otpauthUri(secret, s.email), { type: "svg", margin: 1, errorCorrectionLevel: "M" });
@@ -35,7 +38,7 @@ export async function startTotpAction(): Promise<TotpSetup> {
 }
 
 export async function enableTotpAction(_prev: FormState, form: FormData): Promise<FormState> {
-  const s = await requireSession();
+  const s = await requireSession({ mfaSetup: true });
   try {
     await enableTotp(s.mspId, s.userId, String(form.get("code") ?? ""));
   } catch (err) {
@@ -59,7 +62,7 @@ export async function disableTotpAction(_prev: FormState, form: FormData): Promi
 export async function changePasswordAction(_prev: FormState, form: FormData): Promise<FormState> {
   const s = await requireSession();
   try {
-    const token = await changePassword(s.mspId, s.userId, String(form.get("current") ?? ""), String(form.get("next") ?? ""));
+    const token = await changePassword(s.mspId, s.userId, String(form.get("current") ?? ""), String(form.get("next") ?? ""), await requestInfo());
     await setSessionCookie(token);
   } catch (err) {
     return fail(err);
@@ -73,7 +76,7 @@ export async function inviteAction(_prev: InviteState, form: FormData): Promise<
   const s = await requireSession();
   const email = String(form.get("email") ?? "");
   try {
-    const token = await createInvite(s.mspId, s.userId, email);
+    const token = await createInvite(s.mspId, s.userId, email, (await requestInfo()).ip);
     const h = await headers();
     const base = process.env.CONSOLE_URL ?? `${h.get("x-forwarded-proto") ?? "https"}://${h.get("host")}`;
     revalidatePath("/app/settings");
@@ -85,7 +88,11 @@ export async function inviteAction(_prev: InviteState, form: FormData): Promise<
 
 export async function revokeInviteAction(form: FormData): Promise<void> {
   const s = await requireSession();
-  await revokeInvite(s.mspId, String(form.get("id") ?? ""));
+  try {
+    await revokeInvite(s.mspId, s.userId, String(form.get("id") ?? ""));
+  } catch (err) {
+    if (!(err instanceof AccountError)) throw err;
+  }
   revalidatePath("/app/settings");
 }
 
@@ -98,4 +105,23 @@ export async function removeMemberAction(_prev: FormState, form: FormData): Prom
   }
   revalidatePath("/app/settings");
   return {};
+}
+
+export async function requireMfaAction(_prev: FormState, form: FormData): Promise<FormState> {
+  const s = await requireSession();
+  const on = form.get("on") === "1";
+  try {
+    await setRequireMfa(s.mspId, s.userId, on, (await requestInfo()).ip);
+  } catch (err) {
+    return fail(err);
+  }
+  revalidatePath("/app/settings");
+  return { ok: on ? "Everyone on your team now needs two-factor sign-in." : "Two-factor sign-in is now optional for your team." };
+}
+
+export async function endOtherSessionsAction(_prev: FormState): Promise<FormState> {
+  const s = await requireSession({ mfaSetup: true });
+  const n = await endOtherSessions(s, (await requestInfo()).ip);
+  revalidatePath("/app/settings");
+  return { ok: n === 0 ? "You weren't signed in anywhere else." : `Signed out ${n} other ${n === 1 ? "device" : "devices"}.` };
 }

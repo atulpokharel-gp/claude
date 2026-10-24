@@ -7,6 +7,7 @@
 import { NextResponse } from "next/server";
 import { sign, verifySigned } from "@/lib/crypto.ts";
 import { GraphError, TENANT_ID, verifyAdmin, verifyUrl } from "@/lib/m365.ts";
+import { auditAs } from "@/lib/request-audit.ts";
 import { currentSession } from "@/lib/session.ts";
 import { connectM365, syncM365 } from "@/lib/store.ts";
 
@@ -33,6 +34,7 @@ export async function GET(req: Request) {
       return NextResponse.redirect(`${back}?m365=${reason}`, 303);
     }
     await connectM365(session.mspId, verify.c, verify.t);
+    await auditAs(session, "m365_connected", verify.t, { clientId: verify.c });
     const r = await syncM365(session.mspId, verify.c);
     return NextResponse.redirect(`${back}?m365=${"error" in r ? "error" : "connected"}`, 303);
   }

@@ -13,10 +13,22 @@ export async function currentSession(): Promise<Session | null> {
   return checkSession(token);
 }
 
-/** The signed-in session, or a redirect to the sign-in page. */
-export async function requireSession(): Promise<Session> {
+/**
+ * The signed-in session, or a redirect to the sign-in page. When the MSP
+ * requires two-factor sign-in and this user hasn't set it up, every page but
+ * the setup sends them to settings first.
+ */
+export async function requireSession(opts: { mfaSetup?: boolean } = {}): Promise<Session> {
   const s = await currentSession();
   if (!s) redirect("/login");
+  if (s.requireMfa && !s.mfa && !opts.mfaSetup) redirect("/app/settings?mfa=required");
+  return s;
+}
+
+/** Like requireSession, for actions only the account owner may take. */
+export async function requireOwner(): Promise<Session> {
+  const s = await requireSession();
+  if (s.role !== "owner") redirect("/app/settings?owner=required");
   return s;
 }
 

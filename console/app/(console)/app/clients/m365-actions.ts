@@ -5,6 +5,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { hasAppSecret, sign } from "@/lib/crypto.ts";
 import { consentUrl, GraphError, hasM365 } from "@/lib/m365.ts";
+import { auditAs } from "@/lib/request-audit.ts";
 import { requireSession } from "@/lib/session.ts";
 import { disconnectM365, revokeM365App, syncM365 } from "@/lib/store.ts";
 
@@ -33,13 +34,15 @@ export async function disconnectM365Action(form: FormData): Promise<void> {
   const s = await requireSession();
   const clientId = String(form.get("clientId") ?? "");
   await disconnectM365(s.mspId, clientId);
+  await auditAs(s, "m365_disconnected", "", { clientId });
   revalidatePath(`/app/clients/${clientId}`);
 }
 
 export async function revokeM365Action(clientId: string, agentId: string): Promise<{ error?: string }> {
   const s = await requireSession();
   try {
-    await revokeM365App(s.mspId, clientId, agentId);
+    const name = await revokeM365App(s.mspId, clientId, agentId);
+    await auditAs(s, "m365_app_revoked", name, { clientId });
   } catch (err) {
     return { error: err instanceof GraphError || err instanceof Error ? err.message : "Couldn't revoke access." };
   }
