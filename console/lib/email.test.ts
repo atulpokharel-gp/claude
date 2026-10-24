@@ -69,4 +69,7 @@ test("high-risk findings are keyed by tool, rule and place", () => {
   });
   const client = { agents: [agent("Commander", "L1", "high"), agent("commander", "L1", "high"), agent("Commander", "L2", "high"), agent("Files", "L1", "medium")] } as Client;
   assert.deepEqual([...highRiskFindings(client).keys()], ["commander|SHELL_ACCESS|L1", "commander|SHELL_ACCESS|L2"]);
+  // Microsoft 365 apps are keyed by their ID: a changing user count in the location isn't a new problem.
+  const m365 = (users: number): Agent => ({ ...agent("Notes Bot", `Acme Microsoft 365 · ${users} users`, "high"), id: "m365-sp-notes", source: "Microsoft 365" });
+  assert.deepEqual([...highRiskFindings({ agents: [m365(0)] } as Client).keys()], [...highRiskFindings({ agents: [m365(3)] } as Client).keys()]);
 });
