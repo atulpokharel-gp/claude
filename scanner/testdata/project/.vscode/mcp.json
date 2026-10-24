@@ -1,0 +1,6 @@
+{
+  "servers": {
+    "broken": "not an object",
+    "local-notes": { "command": "/usr/local/bin/notes-mcp", "args": ["--read-only"] }
+  }
+}

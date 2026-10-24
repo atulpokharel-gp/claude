@@ -1,0 +1,94 @@
+import Link from "next/link";
+import { clients, MSP_NAME } from "@/lib/sample-data.ts";
+import { clientScore, countRisk } from "@/lib/risk.ts";
+import { RiskPill } from "@/components/RiskPill.tsx";
+
+function scoreColor(s: number): string {
+  if (s >= 50) return "var(--high)";
+  if (s >= 20) return "var(--medium)";
+  return "var(--clean)";
+}
+
+function timeAgo(iso: string, now = new Date("2026-10-24T09:00:00Z")): string {
+  const h = Math.round((now.getTime() - new Date(iso).getTime()) / 3_600_000);
+  return h <= 0 ? "just now" : `${h}h ago`;
+}
+
+export default function Overview() {
+  const rows = clients
+    .map((c) => ({ c, r: countRisk(c.agents), score: clientScore(c) }))
+    .sort((a, b) => b.score - a.score);
+
+  const all = clients.flatMap((c) => c.agents);
+  const totals = countRisk(all);
+  const devices = clients.reduce((n, c) => n + c.devices, 0);
+  const scanned = clients.reduce((n, c) => n + c.devicesScanned, 0);
+  const revocable = all.filter((a) => a.revocable && a.findings.some((f) => f.severity === "high")).length;
+
+  return (
+    <>
+      <div className="page-head">
+        <h1>All clients</h1>
+        <p className="muted">
+          {MSP_NAME} · {clients.length} clients · AI agents and MCP servers found in Microsoft 365 and on laptops
+        </p>
+      </div>
+
+      <section className="tiles" aria-label="Summary">
+        <div className="tile"><b>{totals.total}</b><span>AI agents and MCP servers found</span></div>
+        <div className="tile high"><b>{totals.high}</b><span>high-risk, need action</span></div>
+        <div className="tile"><b>{revocable}</b><span>high-risk ones you can revoke in one click</span></div>
+        <div className="tile"><b>{Math.round((scanned / devices) * 100)}%</b><span>of {devices.toLocaleString("en-US")} devices scanned</span></div>
+      </section>
+
+      <section className="panel">
+        <div className="panel-head">
+          <h2>Clients by risk</h2>
+          <span className="muted small">Riskiest first. Score weighs high findings most and goes up when devices are missing from scans.</span>
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Client</th>
+                <th>Risk score</th>
+                <th>Findings</th>
+                <th>Agents</th>
+                <th>Devices scanned</th>
+                <th>Last scan</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(({ c, r, score }) => (
+                <tr key={c.id} className="link-row">
+                  <td>
+                    <Link className="row-link" href={`/clients/${c.id}`}>{c.name}</Link>
+                    <div className="muted small">{c.industry} · {c.staff.toLocaleString("en-US")} staff</div>
+                  </td>
+                  <td>
+                    <div className="score" title={`Risk score ${score} of 100`}>
+                      <div className="score-track"><div className="score-fill" style={{ width: `${score}%`, background: scoreColor(score) }} /></div>
+                      <span className="score-num">{score}</span>
+                    </div>
+                  </td>
+                  <td>
+                    <div className="counts">
+                      {r.high > 0 && <RiskPill risk="high" count={r.high} />}
+                      {r.medium > 0 && <RiskPill risk="medium" count={r.medium} />}
+                      {r.high + r.medium === 0 && <RiskPill risk="none" />}
+                    </div>
+                  </td>
+                  <td className="num">{r.total}</td>
+                  <td className="num">
+                    {c.devicesScanned.toLocaleString("en-US")} / {c.devices.toLocaleString("en-US")}
+                  </td>
+                  <td className="muted small">{timeAgo(c.lastScan)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </>
+  );
+}

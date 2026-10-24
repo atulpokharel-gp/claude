@@ -1,0 +1,21 @@
+{
+  "mcpServers": {
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": { "GITHUB_PERSONAL_ACCESS_TOKEN": "fake-demo-token-not-real-0001" }
+    },
+    "files": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem@2025.8.21", "/"]
+    },
+    "commander": {
+      "command": "npx",
+      "args": ["-y", "@wonderwhy-er/desktop-commander@0.2.3"]
+    },
+    "pinned-time": {
+      "command": "uvx",
+      "args": ["mcp-server-time==0.6.2"]
+    }
+  }
+}

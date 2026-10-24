@@ -1,0 +1,331 @@
+{
+  "schemaVersion": 1,
+  "scannerVersion": "dev",
+  "hostname": "demo-laptop",
+  "os": "linux",
+  "scannedAt": "2026-10-24T13:54:53Z",
+  "summary": {
+    "servers": 11,
+    "high": 6,
+    "medium": 1,
+    "low": 2,
+    "clean": 2
+  },
+  "servers": [
+    {
+      "name": "commander",
+      "app": "Claude Desktop",
+      "configPath": "testdata/home/.config/Claude/claude_desktop_config.json",
+      "transport": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@wonderwhy-er/desktop-commander@0.2.3"
+      ],
+      "risk": "high",
+      "findings": [
+        {
+          "ruleId": "SHELL_ACCESS",
+          "severity": "high",
+          "title": "Agent can run any command on this computer",
+          "detail": "This server gives the AI a terminal. A single malicious instruction hidden in an email, web page or file the agent reads could run commands with the user's full rights.",
+          "fix": "Remove it, or replace it with a server that only allows a short list of approved commands and asks before each run."
+        }
+      ]
+    },
+    {
+      "name": "files",
+      "app": "Claude Desktop",
+      "configPath": "testdata/home/.config/Claude/claude_desktop_config.json",
+      "transport": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem@2025.8.21",
+        "/"
+      ],
+      "risk": "high",
+      "findings": [
+        {
+          "ruleId": "BROAD_FILESYSTEM",
+          "severity": "high",
+          "title": "Can read and write far more files than it needs",
+          "detail": "The filesystem server is allowed into /. That covers documents, SSH keys, browser data and other apps' secrets.",
+          "fix": "Limit it to the one project folder the agent needs, and use a read-only server where writing isn't required."
+        }
+      ]
+    },
+    {
+      "name": "github",
+      "app": "Claude Desktop",
+      "configPath": "testdata/home/.config/Claude/claude_desktop_config.json",
+      "transport": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-github"
+      ],
+      "envKeys": [
+        "GITHUB_PERSONAL_ACCESS_TOKEN"
+      ],
+      "risk": "high",
+      "findings": [
+        {
+          "ruleId": "SECRET_IN_CONFIG",
+          "severity": "high",
+          "title": "Credential stored in plain text",
+          "detail": "A long-lived key or token is written directly in the config file (env GITHUB_PERSONAL_ACCESS_TOKEN). Anyone or anything that can read this file, including other AI tools and malware, can reuse it.",
+          "fix": "Move the value to the operating system's keychain or an environment variable, rotate the key, and give the replacement the smallest permissions it needs."
+        },
+        {
+          "ruleId": "UNPINNED_PACKAGE",
+          "severity": "medium",
+          "title": "Downloads the newest code on every start",
+          "detail": "This server runs @modelcontextprotocol/server-github through npx without a fixed version. If the package is taken over or a bad update is published, it runs on this computer automatically.",
+          "fix": "Pin an exact, reviewed version (for example @modelcontextprotocol/server-github@1.2.3) and update it on purpose."
+        }
+      ]
+    },
+    {
+      "name": "stripe",
+      "app": "Claude Code",
+      "configPath": "testdata/home/.claude.json",
+      "scope": "/home/demo/app",
+      "transport": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@stripe/mcp@0.2.4",
+        "--tools=all"
+      ],
+      "envKeys": [
+        "STRIPE_SECRET_KEY"
+      ],
+      "risk": "high",
+      "findings": [
+        {
+          "ruleId": "SECRET_IN_CONFIG",
+          "severity": "high",
+          "title": "Credential stored in plain text",
+          "detail": "A long-lived key or token is written directly in the config file (env STRIPE_SECRET_KEY). Anyone or anything that can read this file, including other AI tools and malware, can reuse it.",
+          "fix": "Move the value to the operating system's keychain or an environment variable, rotate the key, and give the replacement the smallest permissions it needs."
+        }
+      ]
+    },
+    {
+      "name": "internal-wiki",
+      "app": "Cursor",
+      "configPath": "testdata/home/.cursor/mcp.json",
+      "transport": "remote",
+      "url": "http://wiki.example.com/mcp",
+      "risk": "high",
+      "findings": [
+        {
+          "ruleId": "INSECURE_TRANSPORT",
+          "severity": "high",
+          "title": "Unencrypted connection to a remote server",
+          "detail": "This server is reached over plain http at wiki.example.com. Requests, responses and any tokens can be read or changed on the network.",
+          "fix": "Switch the URL to https, or remove the server if the provider does not support it."
+        },
+        {
+          "ruleId": "REMOTE_SERVER",
+          "severity": "low",
+          "title": "Sends data to an outside service",
+          "detail": "Whatever the agent passes to this server goes to wiki.example.com.",
+          "fix": "Confirm the company approves this provider and that a data agreement is in place."
+        }
+      ]
+    },
+    {
+      "name": "postgres",
+      "app": "Cursor",
+      "configPath": "testdata/home/.cursor/mcp.json",
+      "transport": "stdio",
+      "command": "docker",
+      "args": [
+        "run",
+        "-i",
+        "--rm",
+        "--network",
+        "host",
+        "-v",
+        "/var/run/docker.sock:/var/run/docker.sock",
+        "mcp/postgres:1.0.0"
+      ],
+      "envKeys": [
+        "DATABASE_URL"
+      ],
+      "risk": "high",
+      "findings": [
+        {
+          "ruleId": "RISKY_CONTAINER",
+          "severity": "high",
+          "title": "Container can escape to the host",
+          "detail": "This server's container shares the host network, mounts /var/run/docker.sock, so the container gives little protection.",
+          "fix": "Drop --privileged and host networking, and mount only the folder the server needs, read-only if possible."
+        }
+      ]
+    },
+    {
+      "name": "playwright",
+      "app": "VS Code",
+      "configPath": "testdata/home/.config/Code/User/settings.json",
+      "transport": "stdio",
+      "command": "npx",
+      "args": [
+        "@playwright/mcp@latest"
+      ],
+      "risk": "medium",
+      "findings": [
+        {
+          "ruleId": "UNPINNED_PACKAGE",
+          "severity": "medium",
+          "title": "Downloads the newest code on every start",
+          "detail": "This server runs @playwright/mcp@latest through npx without a fixed version. If the package is taken over or a bad update is published, it runs on this computer automatically.",
+          "fix": "Pin an exact, reviewed version (for example @playwright/mcp@1.2.3) and update it on purpose."
+        }
+      ]
+    },
+    {
+      "name": "sentry",
+      "app": "Claude Code",
+      "configPath": "testdata/home/.claude.json",
+      "transport": "remote",
+      "url": "https://mcp.sentry.dev/mcp",
+      "risk": "low",
+      "findings": [
+        {
+          "ruleId": "REMOTE_SERVER",
+          "severity": "low",
+          "title": "Sends data to an outside service",
+          "detail": "Whatever the agent passes to this server goes to mcp.sentry.dev.",
+          "fix": "Confirm the company approves this provider and that a data agreement is in place."
+        }
+      ]
+    },
+    {
+      "name": "linear",
+      "app": "Cursor",
+      "configPath": "testdata/home/.cursor/mcp.json",
+      "transport": "remote",
+      "url": "https://mcp.linear.app/sse",
+      "headerKeys": [
+        "Authorization"
+      ],
+      "risk": "low",
+      "findings": [
+        {
+          "ruleId": "REMOTE_SERVER",
+          "severity": "low",
+          "title": "Sends data to an outside service",
+          "detail": "Whatever the agent passes to this server goes to mcp.linear.app.",
+          "fix": "Confirm the company approves this provider and that a data agreement is in place."
+        }
+      ]
+    },
+    {
+      "name": "pinned-time",
+      "app": "Claude Desktop",
+      "configPath": "testdata/home/.config/Claude/claude_desktop_config.json",
+      "transport": "stdio",
+      "command": "uvx",
+      "args": [
+        "mcp-server-time==0.6.2"
+      ],
+      "risk": "none",
+      "findings": []
+    },
+    {
+      "name": "local-notes",
+      "app": "VS Code project",
+      "configPath": "testdata/project/.vscode/mcp.json",
+      "transport": "stdio",
+      "command": "/usr/local/bin/notes-mcp",
+      "args": [
+        "--read-only"
+      ],
+      "risk": "none",
+      "findings": []
+    }
+  ],
+  "configs": [
+    {
+      "app": "Claude Desktop",
+      "path": "testdata/home/.config/Claude/claude_desktop_config.json",
+      "format": "mcpServers",
+      "found": true,
+      "servers": 4
+    },
+    {
+      "app": "Claude Code",
+      "path": "testdata/home/.claude.json",
+      "format": "claudeCode",
+      "found": true,
+      "servers": 2
+    },
+    {
+      "app": "Cursor",
+      "path": "testdata/home/.cursor/mcp.json",
+      "format": "mcpServers",
+      "found": true,
+      "servers": 3
+    },
+    {
+      "app": "Windsurf",
+      "path": "testdata/home/.codeium/windsurf/mcp_config.json",
+      "format": "mcpServers",
+      "found": false,
+      "servers": 0
+    },
+    {
+      "app": "VS Code",
+      "path": "testdata/home/.config/Code/User/mcp.json",
+      "format": "vscodeServers",
+      "found": false,
+      "servers": 0
+    },
+    {
+      "app": "VS Code",
+      "path": "testdata/home/.config/Code/User/settings.json",
+      "format": "vscodeSettings",
+      "found": true,
+      "servers": 1
+    },
+    {
+      "app": "VS Code",
+      "path": "testdata/home/.config/Code - Insiders/User/mcp.json",
+      "format": "vscodeServers",
+      "found": false,
+      "servers": 0
+    },
+    {
+      "app": "VS Code",
+      "path": "testdata/home/.config/Code - Insiders/User/settings.json",
+      "format": "vscodeSettings",
+      "found": false,
+      "servers": 0
+    },
+    {
+      "app": "Project (.mcp.json)",
+      "path": "testdata/project/.mcp.json",
+      "format": "mcpServers",
+      "found": false,
+      "servers": 0
+    },
+    {
+      "app": "Cursor project",
+      "path": "testdata/project/.cursor/mcp.json",
+      "format": "mcpServers",
+      "found": false,
+      "servers": 0
+    },
+    {
+      "app": "VS Code project",
+      "path": "testdata/project/.vscode/mcp.json",
+      "format": "vscodeServers",
+      "found": true,
+      "servers": 1,
+      "error": "couldn't read 1 server entry (broken); they were not checked"
+    }
+  ]
+}
