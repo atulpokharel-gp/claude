@@ -14,7 +14,7 @@ export type AgentKind = "mcp-server" | "copilot-agent" | "oauth-app";
 
 /** A person linked to an agent: a laptop profile or a Microsoft 365 user. */
 export interface PersonRef {
-  /** Matching key within one client: the laptop profile name or the part of the sign-in email before @, lowercased. */
+  /** Identity within one client, lowercased: the laptop profile name, or the Microsoft 365 sign-in email (or "m365:" + its ID). */
   key: string;
   /** What to show: a Microsoft 365 display name, or the laptop profile name. */
   name: string;
