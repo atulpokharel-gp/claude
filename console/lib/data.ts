@@ -21,6 +21,7 @@ export async function loadOverview(): Promise<Overview> {
 
 export interface ClientDetail {
   demo: boolean;
+  mspName: string;
   client: Client;
   tokens: UploadTokenInfo[];
 }
@@ -28,9 +29,9 @@ export interface ClientDetail {
 export async function loadClient(id: string): Promise<ClientDetail | undefined> {
   if (!hasDatabase()) {
     const client = sampleClient(id);
-    return client && { demo: true, client, tokens: [] };
+    return client && { demo: true, mspName: MSP_NAME, client, tokens: [] };
   }
   const s = await requireSession();
   const got = await getClient(s.mspId, id);
-  return got && { demo: false, ...got };
+  return got && { demo: false, mspName: s.mspName, ...got };
 }

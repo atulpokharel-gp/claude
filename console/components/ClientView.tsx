@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import type { Agent, Client, Severity } from "@/lib/types.ts";
 import { agentRisk, countRisk, sortAgents } from "@/lib/risk.ts";
@@ -28,7 +29,7 @@ function matches(a: Agent, f: Filter): boolean {
   return true;
 }
 
-export function ClientView({ client }: { client: Client }) {
+export function ClientView({ client, reportHref }: { client: Client; reportHref?: string }) {
   const [filter, setFilter] = useState<Filter>("all");
   const [open, setOpen] = useState<Set<string>>(() => {
     const first = sortAgents(client.agents)[0];
@@ -84,6 +85,7 @@ export function ClientView({ client }: { client: Client }) {
             ? `last scan ${new Date(client.lastScan).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" })} UTC`
             : "no scans yet"}
         </p>
+        {reportHref && <Link className="btn" href={reportHref}>Client report</Link>}
       </div>
 
       {client.warnings && client.warnings.length > 0 && (
