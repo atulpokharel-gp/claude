@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -77,6 +78,8 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 	showVersion := fs.Bool("version", false, "print the version and exit")
 	uploadURL := fs.String("upload", "", "send the report to the console at this URL (token from "+TokenEnv+" or --token-file)")
 	tokenFile := fs.String("token-file", "", "file holding the console upload token")
+	allUsers := fs.Bool("all-users", false, "scan every user profile on this computer (run as administrator or root, for example from an RMM tool)")
+	usersDir := fs.String("users-dir", "", "with --all-users, the folder holding user profiles (default: C:\\Users, /Users or /home)")
 	var projects multiFlag
 	fs.Var(&projects, "project", "project folder to check for project-level configs (repeatable)")
 	if err := fs.Parse(args); err != nil {
@@ -87,12 +90,37 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 		return 0
 	}
 
-	env, err := buildEnv(*home, projects)
-	if err != nil {
-		fmt.Fprintln(stderr, err)
+	if *allUsers && *home != "" {
+		fmt.Fprintln(stderr, "use either --all-users or --home, not both")
 		return 1
 	}
+	var envs []discover.Env
+	if *allUsers {
+		dirs := defaultUsersDirs(goos)
+		if *usersDir != "" {
+			dirs = []string{*usersDir}
+		}
+		for _, h := range listProfiles(dirs) {
+			e := discover.Env{GOOS: goos, Home: h, ProjectDirs: projects}
+			if goos == "windows" {
+				e.AppData = filepath.Join(h, "AppData", "Roaming")
+			}
+			envs = append(envs, e)
+		}
+		if len(envs) == 0 {
+			fmt.Fprintln(stderr, "no user profiles found in", strings.Join(dirs, ", "))
+			return 1
+		}
+	} else {
+		env, err := buildEnv(*home, projects)
+		if err != nil {
+			fmt.Fprintln(stderr, err)
+			return 1
+		}
+		envs = []discover.Env{env}
+	}
 	var token string
+	var err error
 	if *uploadURL != "" {
 		// Check these before scanning so a bad setup fails fast.
 		if _, err := checkUploadURL(*uploadURL); err != nil {
@@ -104,23 +132,27 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 			return 1
 		}
 	}
-	ctx := rules.Context{Home: env.Home, NeedsRotation: map[string]bool{}}
-	if st, err := vault.LoadState(env.Home); err != nil {
-		fmt.Fprintln(stderr, "warning: couldn't read the record of protected keys:", err)
-	} else {
-		for _, ref := range st.NeedsRotation() {
-			ctx.NeedsRotation[ref] = true
-		}
-	}
-
 	host, _ := os.Hostname()
-	servers, configs := discover.Scan(env)
-	rep := report.Build(servers, configs, ctx, report.Report{
+	meta := report.Report{
 		ScannerVersion: version,
 		Hostname:       host,
 		OS:             runtime.GOOS,
 		ScannedAt:      time.Now().UTC().Truncate(time.Second),
-	})
+	}
+	parts := make([]report.Report, 0, len(envs))
+	for _, env := range envs {
+		ctx := rules.Context{Home: env.Home, NeedsRotation: map[string]bool{}}
+		if st, err := vault.LoadState(env.Home); err != nil {
+			fmt.Fprintf(stderr, "warning: couldn't read the record of protected keys in %s: %v\n", env.Home, err)
+		} else {
+			for _, ref := range st.NeedsRotation() {
+				ctx.NeedsRotation[ref] = true
+			}
+		}
+		servers, configs := discover.Scan(env)
+		parts = append(parts, report.Build(servers, configs, ctx, meta))
+	}
+	rep := report.Merge(meta, parts)
 
 	if *out != "" {
 		if err := writeJSONFile(*out, rep); err != nil {
