@@ -2,7 +2,7 @@
 // themselves, and what needs attention this week. Pure functions over Client[].
 
 import { agentRisk, worst } from "./risk.ts";
-import type { Agent, Client, Severity } from "./types.ts";
+import type { Agent, Client, PersonRef, Severity } from "./types.ts";
 
 const RANK: Record<Severity, number> = { high: 3, medium: 2, low: 1, none: 0 };
 const worse = (a: Severity, b: Severity): Severity => (RANK[a] >= RANK[b] ? a : b);
@@ -31,13 +31,37 @@ export interface Person {
   lastSeen: string;
 }
 
+/**
+ * Who each person reference is within one client. A laptop profile is linked
+ * to a Microsoft 365 user when it matches the part of exactly one user's email
+ * before @ ("dana" and dana@acme.example). When two users share that part, the
+ * profile stays on its own rather than guessing.
+ */
+export function personIds(c: Client): (p: PersonRef) => string {
+  const byPrefix = new Map<string, Set<string>>();
+  for (const a of c.agents) {
+    for (const p of a.people ?? []) {
+      if (!p.email) continue;
+      const prefix = p.email.split("@")[0].toLowerCase();
+      if (!byPrefix.has(prefix)) byPrefix.set(prefix, new Set());
+      byPrefix.get(prefix)!.add(p.key);
+    }
+  }
+  return (p) => {
+    if (p.email) return p.key;
+    const match = byPrefix.get(p.key);
+    return match?.size === 1 ? [...match][0] : p.key;
+  };
+}
+
 /** Everyone linked to an AI tool, one row per person per client. */
 export function peopleFrom(clients: Client[]): Person[] {
   const out = new Map<string, Person>();
   for (const c of clients) {
+    const idOf = personIds(c);
     for (const a of c.agents) {
       for (const p of a.people ?? []) {
-        const id = `${c.id}:${p.key}`;
+        const id = `${c.id}:${idOf(p)}`;
         let person = out.get(id);
         if (!person) {
           person = { id, name: p.name, clientId: c.id, clientName: c.name, devices: [], tools: [], risk: "none", findings: 0, lastSeen: "" };
@@ -86,6 +110,7 @@ export interface ToolSummary {
 export function toolsFrom(clients: Client[]): ToolSummary[] {
   const out = new Map<string, Omit<ToolSummary, "affectedClients"> & { findingCounts: Map<string, number>; peopleIds: Set<string>; affected: Set<string> }>();
   for (const c of clients) {
+    const idOf = personIds(c);
     for (const a of c.agents) {
       const key = toolKey(a.name);
       let t = out.get(key);
@@ -96,7 +121,7 @@ export function toolsFrom(clients: Client[]): ToolSummary[] {
       t.count++;
       if (!t.apps.includes(a.app)) t.apps.push(a.app);
       if (!t.clients.some((x) => x.id === c.id)) t.clients.push({ id: c.id, name: c.name });
-      for (const p of a.people ?? []) t.peopleIds.add(`${c.id}:${p.key}`);
+      for (const p of a.people ?? []) t.peopleIds.add(`${c.id}:${idOf(p)}`);
       const risk = worst(a.findings);
       t.risk = worse(t.risk, risk);
       if (risk === "high" || risk === "medium") t.affected.add(c.id);
@@ -159,12 +184,13 @@ export function snapshotOf(c: Client): { high: number; medium: number; low: numb
   let medium = 0;
   let low = 0;
   const people = new Set<string>();
+  const idOf = personIds(c);
   for (const a of c.agents) {
     const r = agentRisk(a);
     if (r === "high") high++;
     else if (r === "medium") medium++;
     else if (r === "low") low++;
-    for (const p of a.people ?? []) people.add(p.key);
+    for (const p of a.people ?? []) people.add(idOf(p));
   }
   return { high, medium, low, tools: c.agents.length, people: people.size };
 }

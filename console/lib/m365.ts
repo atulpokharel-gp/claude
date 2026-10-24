@@ -196,9 +196,15 @@ async function userNames(token: string, ids: string[], f: Fetch): Promise<Map<st
   for (let i = 0; i < ids.length && i < 1500; i += 15) {
     const list = ids.slice(i, i + 15).filter((id) => /^[0-9a-zA-Z-]{1,64}$/.test(id)).map((id) => `'${id}'`).join(",");
     if (!list) continue;
-    const res = await f(`${GRAPH}/users?$filter=${encodeURIComponent(`id in (${list})`)}&$select=id,displayName,userPrincipalName`, {
-      headers: { authorization: `Bearer ${token}` },
-    });
+    let res: Response;
+    try {
+      res = await f(`${GRAPH}/users?$filter=${encodeURIComponent(`id in (${list})`)}&$select=id,displayName,userPrincipalName`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+    } catch {
+      // Names are optional; a network error here mustn't stop the apps being saved.
+      return out;
+    }
     if (!res.ok) return out;
     const body = (await res.json().catch(() => ({}))) as { value?: { id: string; displayName?: string | null; userPrincipalName?: string | null }[] };
     for (const u of body.value ?? []) {
@@ -372,7 +378,9 @@ export function appToAgent(app: M365App, clientName: string, seenAt: string): Ag
         app.grants.flatMap((g): [string, PersonRef][] => {
           if (g.allUsers || !g.principalName) return [];
           const email = g.principalEmail ?? "";
-          return [[g.principalId ?? g.id, { key: (email.split("@")[0] || g.principalName).toLowerCase(), name: g.principalName, ...(email ? { email } : {}) }]];
+          // The full email (or the Microsoft ID) keeps alice@one and alice@two apart;
+          // peopleFrom links laptop profiles to these by the part before @.
+          return [[g.principalId ?? g.id, { key: email ? email.toLowerCase() : `m365:${g.principalId ?? g.id}`, name: g.principalName, ...(email ? { email } : {}) }]];
         }),
       ).values(),
     ],
