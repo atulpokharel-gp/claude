@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { importScan, ScanImportError } from "./scan-import.ts";
-import { clientScore, countRisk, sortAgents, worst } from "./risk.ts";
+import { clientScore, countRisk, keyCounts, sortAgents, worst } from "./risk.ts";
 import { clients } from "./sample-data.ts";
 
 const sample = JSON.parse(
@@ -89,4 +89,15 @@ test("reads keys protected by the fix command", () => {
     servers: [{ name: "gh", protectedSecrets: [{ env: "GITHUB_TOKEN", ref: "claude-desktop/gh/GITHUB_TOKEN" }], findings: [] }],
   });
   assert.deepEqual(c.agents[0].protectedKeys, ["GITHUB_TOKEN"]);
+});
+
+test("a protected server still awaiting rotation is not counted as done", () => {
+  const base = { id: "x", kind: "mcp-server" as const, source: "Laptop scan" as const, location: "pc", app: "Cursor", reach: [] as string[], revocable: false, lastSeen: "2026-10-23" };
+  const f = (ruleId: string) => ({ ruleId, severity: "medium" as const, title: "", detail: "", fix: "" });
+  const counts = keyCounts([
+    { ...base, name: "done", findings: [], protectedKeys: ["A"] },
+    { ...base, name: "rotate", findings: [f("KEY_NOT_ROTATED")], protectedKeys: ["B"] },
+    { ...base, name: "mixed", findings: [f("SECRET_IN_CONFIG")], protectedKeys: ["C"] },
+  ]);
+  assert.deepEqual(counts, { plain: 1, toReplace: 1, done: 1 });
 });

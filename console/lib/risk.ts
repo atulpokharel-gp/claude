@@ -38,3 +38,21 @@ export function sortAgents(agents: Agent[]): Agent[] {
 export function severityLabel(s: Severity): string {
   return s === "none" ? "Clean" : s[0].toUpperCase() + s.slice(1);
 }
+
+const hasRule = (a: Agent, rule: string) => a.findings.some((f) => f.ruleId === rule);
+
+// Key status for the overview. A server counts as done only when all its keys
+// are in the password store and none is still plain text or awaiting rotation.
+export function keyCounts(agents: Agent[]): { plain: number; toReplace: number; done: number } {
+  let plain = 0;
+  let toReplace = 0;
+  let done = 0;
+  for (const a of agents) {
+    const isPlain = hasRule(a, "SECRET_IN_CONFIG");
+    const needsRotation = hasRule(a, "KEY_NOT_ROTATED");
+    if (isPlain) plain++;
+    if (needsRotation) toReplace++;
+    if ((a.protectedKeys?.length ?? 0) > 0 && !isPlain && !needsRotation) done++;
+  }
+  return { plain, toReplace, done };
+}

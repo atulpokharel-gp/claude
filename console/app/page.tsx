@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { clients, MSP_NAME } from "@/lib/sample-data.ts";
-import { clientScore, countRisk } from "@/lib/risk.ts";
+import { clientScore, countRisk, keyCounts } from "@/lib/risk.ts";
 import { RiskPill } from "@/components/RiskPill.tsx";
 
 function scoreColor(s: number): string {
@@ -24,9 +24,7 @@ export default function Overview() {
   const devices = clients.reduce((n, c) => n + c.devices, 0);
   const scanned = clients.reduce((n, c) => n + c.devicesScanned, 0);
   const revocable = all.filter((a) => a.revocable && a.findings.some((f) => f.severity === "high")).length;
-  const plainKeys = all.filter((a) => a.findings.some((f) => f.ruleId === "SECRET_IN_CONFIG")).length;
-  const toReplace = all.filter((a) => a.findings.some((f) => f.ruleId === "KEY_NOT_ROTATED")).length;
-  const protectedCount = all.filter((a) => (a.protectedKeys?.length ?? 0) > 0).length;
+  const keys = keyCounts(all);
 
   return (
     <>
@@ -50,9 +48,9 @@ export default function Overview() {
           <span className="muted small">Keys saved in plain text in AI agent configs on laptops</span>
         </div>
         <div className="keys-flow">
-          <div><b className="bad">{plainKeys}</b><span>servers with keys in plain text</span><small>Run <code>agentscan fix-secrets --apply</code> on the laptop</small></div>
-          <div><b className="warn">{toReplace}</b><span>protected, old key still needs replacing</span><small>Create a new key, then <code>agentscan rotate</code></small></div>
-          <div><b className="good">{protectedCount}</b><span>servers with keys in the password store</span><small>Nothing to do</small></div>
+          <div><b className="bad">{keys.plain}</b><span>servers with keys in plain text</span><small>Run <code>agentscan fix-secrets --apply</code> on the laptop</small></div>
+          <div><b className="warn">{keys.toReplace}</b><span>protected, old key still needs replacing</span><small>Create a new key, then <code>agentscan rotate</code></small></div>
+          <div><b className="good">{keys.done}</b><span>servers with all keys protected and replaced</span><small>Nothing to do</small></div>
         </div>
       </section>
 
