@@ -298,3 +298,29 @@ func TestRecordFailureLeavesConfigAlone(t *testing.T) {
 		t.Errorf("left a backup holding the old keys: %v", matches)
 	}
 }
+
+func TestApplyKeepsSymlinkAndRewritesTarget(t *testing.T) {
+	home := t.TempDir()
+	dotfiles := filepath.Join(home, "dotfiles", "cursor-mcp.json")
+	_ = os.MkdirAll(filepath.Dir(dotfiles), 0o755)
+	_ = os.WriteFile(dotfiles, []byte(`{"mcpServers":{"db":{"command":"db-mcp","env":{"DB_PASSWORD":"plain-text-pw"}}}}`), 0o600)
+	link := filepath.Join(home, ".cursor", "mcp.json")
+	_ = os.MkdirAll(filepath.Dir(link), 0o755)
+	if err := os.Symlink(dotfiles, link); err != nil {
+		t.Skip("symlinks not available:", err)
+	}
+	plan, err := Apply(MakePlan(scan(home)), Options{Home: home, Launcher: "/opt/agentscan", Store: vault.Memory{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fi, err := os.Lstat(link); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+		t.Fatal("the symlink was replaced by a regular file")
+	}
+	data, _ := os.ReadFile(dotfiles)
+	if strings.Contains(string(data), "plain-text-pw") {
+		t.Error("the link target still holds the plain-text key")
+	}
+	if len(plan.Files) != 1 || !strings.HasPrefix(plan.Files[0].Backup, dotfiles+".agentguard-backup-") {
+		t.Errorf("backup should sit next to the real file: %+v", plan.Files)
+	}
+}

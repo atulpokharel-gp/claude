@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"time"
@@ -157,11 +158,17 @@ func Apply(plan Plan, opts Options) (Plan, error) {
 // that rotate and scans don't know about. If the rewrite then fails, the
 // new record entries are removed again.
 func applyFile(f FileFix, opts Options, state *vault.State) (string, error) {
-	info, err := os.Stat(f.Path)
+	// Write to the real file when the config is a symlink (dotfiles setups),
+	// so the link stays and the plain-text copy doesn't survive at the target.
+	target, err := filepath.EvalSymlinks(f.Path)
 	if err != nil {
 		return "", err
 	}
-	orig, err := os.ReadFile(f.Path)
+	info, err := os.Stat(target)
+	if err != nil {
+		return "", err
+	}
+	orig, err := os.ReadFile(target)
 	if err != nil {
 		return "", err
 	}
@@ -244,10 +251,10 @@ func applyFile(f FileFix, opts Options, state *vault.State) (string, error) {
 		undoRecord()
 		return "", fmt.Errorf("couldn't save the record of moved keys, nothing changed: %w", err)
 	}
-	backup := f.Path + ".agentguard-backup-" + now.Format("20060102-150405")
+	backup := target + ".agentguard-backup-" + now.Format("20060102-150405")
 	writeErr := os.WriteFile(backup, orig, 0o600)
 	if writeErr == nil {
-		writeErr = vault.WriteFileAtomic(f.Path, buf.Bytes(), info.Mode().Perm())
+		writeErr = vault.WriteFileAtomic(target, buf.Bytes(), info.Mode().Perm())
 	}
 	if err := writeErr; err != nil {
 		undoRecord()
