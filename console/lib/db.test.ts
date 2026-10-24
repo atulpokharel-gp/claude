@@ -371,7 +371,7 @@ describe("database", { skip: !adminUrl && "set TEST_DATABASE_ADMIN_URL to run" }
     assert.deepEqual((await rows("select email from users")).map((r) => r.email), ["boss@mine.example"]);
     const scopedTrend = await getTrend(scope, 1, new Date(), mine);
     assert.deepEqual(scopedTrend, await getTrend(s.mspId, 1, new Date(), mine));
-    assert.equal((await getTrend(scope, 1, new Date(), other))[0].tools, 0, "asking for another client's trend gets nothing");
+    assert.deepEqual(await getTrend(scope, 1, new Date(), other), [], "asking for another client's trend gets nothing");
 
     // And it refuses changes to client data.
     await assert.rejects(withTenant(scope, (db) => db.query("insert into clients (msp_id, name) values ($1, 'New')", [s.mspId])), /row-level security/);
