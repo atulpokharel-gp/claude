@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import type { Agent, Client, Severity } from "@/lib/types.ts";
 import { agentRisk, countRisk, sortAgents } from "@/lib/risk.ts";
@@ -28,7 +29,16 @@ function matches(a: Agent, f: Filter): boolean {
   return true;
 }
 
-export function ClientView({ client }: { client: Client }) {
+export function ClientView({
+  client,
+  reportHref,
+  onRevoke,
+}: {
+  client: Client;
+  reportHref?: string;
+  /** Revokes a Microsoft 365 app for real. Without it (demo), revoking only changes the screen. */
+  onRevoke?: (agentId: string) => Promise<{ error?: string }>;
+}) {
   const [filter, setFilter] = useState<Filter>("all");
   const [open, setOpen] = useState<Set<string>>(() => {
     const first = sortAgents(client.agents)[0];
@@ -56,9 +66,19 @@ export function ClientView({ client }: { client: Client }) {
     });
   }
 
-  function revoke(a: Agent) {
-    setRevoked((prev) => new Set(prev).add(a.id));
+  async function revoke(a: Agent) {
     setConfirming(null);
+    if (onRevoke) {
+      const r = await onRevoke(a.id);
+      if (r.error) {
+        flash(r.error);
+        return;
+      }
+      setRevoked((prev) => new Set(prev).add(a.id));
+      flash(`Revoked ${a.name}'s access in Microsoft 365.`);
+      return;
+    }
+    setRevoked((prev) => new Set(prev).add(a.id));
     flash(`Revoked access for ${a.name} (demo, nothing was changed)`);
   }
 
@@ -79,15 +99,18 @@ export function ClientView({ client }: { client: Client }) {
       <div className="page-head">
         <h1>{client.name}</h1>
         <p className="muted">
-          {client.industry} · {client.staff.toLocaleString("en-US")} staff · last scan{" "}
-          {new Date(client.lastScan).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" })} UTC
+          {[client.industry, `${client.staff.toLocaleString("en-US")} staff`].filter(Boolean).join(" · ")} ·{" "}
+          {new Date(client.lastScan).getTime() > 0
+            ? `last scan ${new Date(client.lastScan).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" })} UTC`
+            : "no scans yet"}
         </p>
+        {reportHref && <Link className="btn" href={reportHref}>Client report</Link>}
       </div>
 
       {client.warnings && client.warnings.length > 0 && (
         <section className="warning" role="alert">
           <h2>This scan is incomplete</h2>
-          <p>Some config files couldn&apos;t be read, so agents in them are missing below. Fix the files or check permissions, then scan again.</p>
+          <p>Some scans couldn&apos;t be read completely, so agents may be missing below. Fix the files or check permissions, then scan again.</p>
           <ul>{client.warnings.map((w) => <li key={w}>{w}</li>)}</ul>
         </section>
       )}
@@ -168,7 +191,7 @@ export function ClientView({ client }: { client: Client }) {
                         )}
                         {isRevoked && <span className="small muted">Access revoked. You can add it back from Microsoft Entra if someone still needs it.</span>}
                         {!a.revocable && a.findings.some((f) => f.ruleId === "SECRET_IN_CONFIG") && (
-                          <span className="small muted">Fix on the laptop: <code>agentscan fix-secrets --apply</code></span>
+                          <span className="small muted">Fix on the laptop: <code>zinloop fix-secrets --apply</code></span>
                         )}
                         {!a.revocable && a.findings.length > 0 && (
                           <button type="button" className="btn" onClick={() => copyFix(a)}>Copy fix steps</button>

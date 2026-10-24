@@ -88,7 +88,7 @@ func TestApplyMovesKeysAndKeepsServerWorking(t *testing.T) {
 	before, _ := os.ReadFile(desktopCfg)
 
 	plan, err := Apply(MakePlan(scan(home)), Options{
-		Home: home, Launcher: "/opt/agentguard/agentscan", Store: store,
+		Home: home, Launcher: "/opt/zinloop/zinloop", Store: store,
 		Now: func() time.Time { return time.Date(2026, 10, 24, 15, 0, 0, 0, time.UTC) },
 	})
 	if err != nil {
@@ -117,7 +117,7 @@ func TestApplyMovesKeysAndKeepsServerWorking(t *testing.T) {
 	}
 
 	// The backup is the exact original and private.
-	backup := desktopCfg + ".agentguard-backup-20261024-150000"
+	backup := desktopCfg + ".zinloop-backup-20261024-150000"
 	got, err := os.ReadFile(backup)
 	if err != nil || string(got) != string(before) {
 		t.Fatalf("backup missing or different: %v", err)
@@ -186,7 +186,7 @@ func TestApplyLeavesFileAloneWhenStoreFails(t *testing.T) {
 	cfg := filepath.Join(home, ".config", "Claude", "claude_desktop_config.json")
 	before, _ := os.ReadFile(cfg)
 
-	plan, err := Apply(MakePlan(scan(home)), Options{Home: home, Launcher: "/x/agentscan", Store: failingStore{vault.Memory{}}})
+	plan, err := Apply(MakePlan(scan(home)), Options{Home: home, Launcher: "/x/zinloop", Store: failingStore{vault.Memory{}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -233,9 +233,9 @@ func TestApplyMergesWithAlreadyProtectedServer(t *testing.T) {
 	home := t.TempDir()
 	cfg := filepath.Join(home, ".cursor", "mcp.json")
 	_ = os.MkdirAll(filepath.Dir(cfg), 0o755)
-	_ = os.WriteFile(cfg, []byte(`{"mcpServers":{"db":{"command":"/opt/agentscan","args":["exec","--secret","A_TOKEN=cursor/db/A_TOKEN","--","db-mcp","--ro"],"env":{"B_PASSWORD":"pw"}}}}`), 0o600)
+	_ = os.WriteFile(cfg, []byte(`{"mcpServers":{"db":{"command":"/opt/zinloop","args":["exec","--secret","A_TOKEN=cursor/db/A_TOKEN","--","db-mcp","--ro"],"env":{"B_PASSWORD":"pw"}}}}`), 0o600)
 	store := vault.Memory{}
-	if _, err := Apply(MakePlan(scan(home)), Options{Home: home, Launcher: "/opt/agentscan", Store: store}); err != nil {
+	if _, err := Apply(MakePlan(scan(home)), Options{Home: home, Launcher: "/opt/zinloop", Store: store}); err != nil {
 		t.Fatal(err)
 	}
 	s := scan(home)[0]
@@ -260,7 +260,7 @@ func TestSameServerInTwoProjectsGetsSeparateKeys(t *testing.T) {
 	}
 	servers, _ := discover.Scan(discover.Env{GOOS: "linux", Home: home, ProjectDirs: dirs})
 	store := vault.Memory{}
-	if _, err := Apply(MakePlan(servers), Options{Home: home, Launcher: "/opt/agentscan", Store: store}); err != nil {
+	if _, err := Apply(MakePlan(servers), Options{Home: home, Launcher: "/opt/zinloop", Store: store}); err != nil {
 		t.Fatal(err)
 	}
 	if len(store) != 2 {
@@ -282,7 +282,7 @@ func TestRecordFailureLeavesConfigAlone(t *testing.T) {
 	t.Cleanup(func() { saveState = old })
 	cfg := filepath.Join(home, ".config", "Claude", "claude_desktop_config.json")
 	before, _ := os.ReadFile(cfg)
-	plan, err := Apply(MakePlan(scan(home)), Options{Home: home, Launcher: "/opt/agentscan", Store: vault.Memory{}})
+	plan, err := Apply(MakePlan(scan(home)), Options{Home: home, Launcher: "/opt/zinloop", Store: vault.Memory{}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -294,7 +294,7 @@ func TestRecordFailureLeavesConfigAlone(t *testing.T) {
 	if after, _ := os.ReadFile(cfg); string(after) != string(before) {
 		t.Error("config was rewritten although the record couldn't be saved")
 	}
-	matches, _ := filepath.Glob(cfg + ".agentguard-backup-*")
+	matches, _ := filepath.Glob(cfg + ".zinloop-backup-*")
 	if len(matches) != 0 {
 		t.Errorf("left a backup holding the old keys: %v", matches)
 	}
@@ -310,7 +310,7 @@ func TestApplyKeepsSymlinkAndRewritesTarget(t *testing.T) {
 	if err := os.Symlink(dotfiles, link); err != nil {
 		t.Skip("symlinks not available:", err)
 	}
-	plan, err := Apply(MakePlan(scan(home)), Options{Home: home, Launcher: "/opt/agentscan", Store: vault.Memory{}})
+	plan, err := Apply(MakePlan(scan(home)), Options{Home: home, Launcher: "/opt/zinloop", Store: vault.Memory{}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -322,7 +322,7 @@ func TestApplyKeepsSymlinkAndRewritesTarget(t *testing.T) {
 		t.Error("the link target still holds the plain-text key")
 	}
 	realDotfiles, _ := filepath.EvalSymlinks(dotfiles) // macOS temp dirs sit behind /var -> /private/var
-	if len(plan.Files) != 1 || !strings.HasPrefix(plan.Files[0].Backup, realDotfiles+".agentguard-backup-") {
+	if len(plan.Files) != 1 || !strings.HasPrefix(plan.Files[0].Backup, realDotfiles+".zinloop-backup-") {
 		t.Errorf("backup should sit next to the real file: %+v", plan.Files)
 	}
 }

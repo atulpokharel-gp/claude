@@ -19,8 +19,12 @@ import (
 	"github.com/zalando/go-keyring"
 )
 
-// Service is the name every Agent Guard entry is filed under in the password store.
-const Service = "agent-guard"
+// Service is the name every Zinloop entry is filed under in the password store.
+const Service = "zinloop"
+
+// legacyService is where versions before the rename (agentscan) filed keys.
+// They are still read, so keys protected before upgrading keep working.
+const legacyService = "agent-guard"
 
 // ErrNotFound means the password store has no entry for a ref.
 var ErrNotFound = errors.New("not found in the password store")
@@ -40,6 +44,9 @@ func (Keyring) Set(ref, secret string) error { return keyring.Set(Service, ref, 
 func (Keyring) Get(ref string) (string, error) {
 	v, err := keyring.Get(Service, ref)
 	if errors.Is(err, keyring.ErrNotFound) {
+		v, err = keyring.Get(legacyService, ref)
+	}
+	if errors.Is(err, keyring.ErrNotFound) {
 		return "", ErrNotFound
 	}
 	return v, err
@@ -48,7 +55,10 @@ func (Keyring) Get(ref string) (string, error) {
 func (Keyring) Delete(ref string) error {
 	err := keyring.Delete(Service, ref)
 	if errors.Is(err, keyring.ErrNotFound) {
-		return nil
+		err = nil
+	}
+	if lerr := keyring.Delete(legacyService, ref); lerr != nil && !errors.Is(lerr, keyring.ErrNotFound) && err == nil {
+		err = lerr
 	}
 	return err
 }
@@ -108,20 +118,29 @@ type Entry struct {
 	RotatedAt  *time.Time `json:"rotatedAt,omitempty"`
 }
 
-// State is the record of moved secrets, kept at ~/.agentguard/secrets.json.
+// State is the record of moved secrets, kept at ~/.zinloop/secrets.json.
 type State struct {
 	Entries map[string]Entry `json:"entries"`
 }
 
 // StatePath returns where the record lives for a home directory.
 func StatePath(home string) string {
+	return filepath.Join(home, ".zinloop", "secrets.json")
+}
+
+// legacyStatePath is where versions before the rename kept the record.
+func legacyStatePath(home string) string {
 	return filepath.Join(home, ".agentguard", "secrets.json")
 }
 
-// LoadState reads the record. A missing file is an empty record.
+// LoadState reads the record. A missing file is an empty record. If only the
+// pre-rename record exists, it is read instead; the next Save writes the new path.
 func LoadState(home string) (State, error) {
 	st := State{Entries: map[string]Entry{}}
 	data, err := os.ReadFile(StatePath(home))
+	if errors.Is(err, os.ErrNotExist) {
+		data, err = os.ReadFile(legacyStatePath(home))
+	}
 	if errors.Is(err, os.ErrNotExist) {
 		return st, nil
 	}

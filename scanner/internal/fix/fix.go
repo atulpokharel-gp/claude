@@ -1,6 +1,6 @@
 // Package fix moves plain-text keys out of AI agent configs and into the
 // computer's password store, and rewrites each config so the server starts
-// through agentscan's launcher, which hands the key back at run time.
+// through zinloop's launcher, which hands the key back at run time.
 package fix
 
 import (
@@ -119,7 +119,7 @@ var saveState = func(st vault.State, home string) error { return st.Save(home) }
 // Options controls Apply.
 type Options struct {
 	Home     string // where the moved-secrets record lives
-	Launcher string // absolute path to the agentscan binary written into configs
+	Launcher string // absolute path to the zinloop binary written into configs
 	Store    vault.Store
 	Now      func() time.Time
 }
@@ -251,7 +251,7 @@ func applyFile(f FileFix, opts Options, state *vault.State) (string, error) {
 		undoRecord()
 		return "", fmt.Errorf("couldn't save the record of moved keys, nothing changed: %w", err)
 	}
-	backup := target + ".agentguard-backup-" + now.Format("20060102-150405")
+	backup := target + ".zinloop-backup-" + now.Format("20060102-150405")
 	writeErr := os.WriteFile(backup, orig, 0o600)
 	if writeErr == nil {
 		writeErr = vault.WriteFileAtomic(target, buf.Bytes(), info.Mode().Perm())

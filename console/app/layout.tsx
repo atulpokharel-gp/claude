@@ -1,33 +1,23 @@
 import type { Metadata } from "next";
-import Link from "next/link";
-import { MSP_NAME } from "@/lib/sample-data.ts";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Agent Guard console",
-  description: "See every AI agent and MCP server across your clients, and shut down the risky ones.",
+  title: { default: "Zinloop Security", template: "%s · Zinloop Security" },
+  description: "Find the AI tools your clients' staff connected to company systems, and lock down the risky ones.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body>
-        <div className="demo-banner">Demo with made-up sample data. Nothing here connects to a real company.</div>
-        <header className="topbar">
-          <div className="topbar-inner">
-            <Link href="/" className="brand">
-              <span className="brand-mark" aria-hidden="true">AG</span>
-              Agent Guard
-            </Link>
-            <nav className="nav" aria-label="Main">
-              <Link href="/">Clients</Link>
-              <Link href="/import">Upload a laptop scan</Link>
-            </nav>
-            <span className="msp">Signed in as {MSP_NAME}</span>
-          </div>
-        </header>
-        <main>{children}</main>
-      </body>
+      <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
+        <link
+          rel="stylesheet"
+          href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@100..125,600..900&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap"
+        />
+      </head>
+      <body>{children}</body>
     </html>
   );
 }

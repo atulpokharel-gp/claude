@@ -82,6 +82,31 @@ func Build(servers []discover.Server, configs []discover.ConfigResult, ctx rules
 	return r
 }
 
+// Merge joins reports built for several user profiles on one computer into
+// one report, keeping meta's hostname, OS and times.
+func Merge(meta Report, parts []Report) Report {
+	if len(parts) == 1 {
+		return parts[0]
+	}
+	r := meta
+	r.SchemaVersion = SchemaVersion
+	r.Servers = []ServerResult{}
+	r.Configs = []discover.ConfigResult{}
+	for _, p := range parts {
+		r.Servers = append(r.Servers, p.Servers...)
+		r.Configs = append(r.Configs, p.Configs...)
+		r.Summary.Servers += p.Summary.Servers
+		r.Summary.High += p.Summary.High
+		r.Summary.Medium += p.Summary.Medium
+		r.Summary.Low += p.Summary.Low
+		r.Summary.Clean += p.Summary.Clean
+	}
+	sort.SliceStable(r.Servers, func(i, j int) bool {
+		return r.Servers[i].Risk.Rank() > r.Servers[j].Risk.Rank()
+	})
+	return r
+}
+
 func redactArgs(args []string) []string {
 	if args == nil {
 		return nil

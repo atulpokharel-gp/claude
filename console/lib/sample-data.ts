@@ -53,8 +53,8 @@ const F = {
     ruleId: "KEY_NOT_ROTATED",
     severity: "medium",
     title: "Protected now, but the old key was exposed",
-    detail: `Agent Guard moved ${keys} into the password store, but the same key sat in plain text before. Anyone who copied the file still has it.`,
-    fix: `Create a new key with the provider, revoke the old one, then run: agentscan rotate ${ref}`,
+    detail: `Zinloop moved ${keys} into the password store, but the same key sat in plain text before. Anyone who copied the file still has it.`,
+    fix: `Create a new key with the provider, revoke the old one, then run: zinloop rotate ${ref}`,
   }),
   mailAll: (): Finding => ({
     ruleId: "M365_MAIL_ALL",

@@ -23,7 +23,7 @@ type Server struct {
 	EnvKeys    []string `json:"envKeys,omitempty"`
 	HeaderKeys []string `json:"headerKeys,omitempty"`
 	Disabled   bool     `json:"disabled,omitempty"`
-	// Protected lists env vars that Agent Guard's launcher fills from the
+	// Protected lists env vars that Zinloop's launcher fills from the
 	// secure password store. Command and Args then describe the real server.
 	Protected []ProtectedSecret `json:"protectedSecrets,omitempty"`
 	Format    Format            `json:"-"` // layout of the file it came from

@@ -28,7 +28,7 @@ jobs:
       - name: Cross-build for Windows, Mac and Linux
         run: |
           for target in windows/amd64 darwin/arm64 darwin/amd64 linux/amd64; do
-            GOOS=${target%/*} GOARCH=${target#*/} go build -o /dev/null ./cmd/agentscan
+            GOOS=${target%/*} GOARCH=${target#*/} go build -o /dev/null ./cmd/zinloop
           done
 
   # Runs the tests on real Windows and macOS, including moving keys into
@@ -51,16 +51,27 @@ jobs:
       - run: go vet ./...
       - name: Tests, including the real password store
         env:
-          AGENTGUARD_REAL_STORE: "1"
-        run: go test -v -run "TestRealPasswordStore" ./cmd/agentscan && go test ./...
+          ZINLOOP_REAL_STORE: "1"
+        run: go test -v -run "TestRealPasswordStore" ./cmd/zinloop && go test ./...
       - name: Build and run a read-only scan of the test configs
         shell: bash
         run: |
-          go build -o agentscan-test${{ runner.os == 'Windows' && '.exe' || '' }} ./cmd/agentscan
-          ./agentscan-test --home testdata/home --project testdata/project
+          go build -o zinloop-test${{ runner.os == 'Windows' && '.exe' || '' }} ./cmd/zinloop
+          ./zinloop-test --home testdata/home --project testdata/project
 
   console:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      # Database tests create and drop their own database on this server.
+      TEST_DATABASE_ADMIN_URL: postgres://postgres:postgres@localhost:5432/postgres
     defaults:
       run:
         working-directory: console
@@ -76,3 +87,16 @@ jobs:
       - run: npm test
       - run: npm run build # also generates next-env.d.ts, which typecheck needs
       - run: npm run typecheck
+
+  deploy-files:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the console image
+        run: docker build -t zinloop-console console
+      - name: Check docker-compose.yml
+        run: cp .env.example .env && docker compose config -q
+      - name: Check the RMM scripts
+        run: |
+          sh -n scanner/rmm/install-unix.sh
+          pwsh -NoProfile -Command '$e=$null; [System.Management.Automation.Language.Parser]::ParseFile("scanner/rmm/install-windows.ps1",[ref]$null,[ref]$e) | Out-Null; if ($e) { $e; exit 1 }'
