@@ -113,4 +113,59 @@ func TestAllUsersScansProjectOnce(t *testing.T) {
 	if n != 1 {
 		t.Fatalf("project config reported %d times, want 1", n)
 	}
+	// The project is outside every profile, so nobody owns its servers.
+	for _, srv := range rep.Servers {
+		if strings.HasPrefix(srv.ConfigPath, project) && srv.User != "" {
+			t.Fatalf("shared project server %q attributed to %q", srv.Name, srv.User)
+		}
+	}
+}
+
+func TestProjectInsideAProfileBelongsToThatProfile(t *testing.T) {
+	users := t.TempDir()
+	copyTree(t, filepath.Join("..", "..", "testdata", "home"), filepath.Join(users, "alice"))
+	copyTree(t, filepath.Join("..", "..", "testdata", "home"), filepath.Join(users, "bob"))
+	project := filepath.Join(users, "bob", "code", "app")
+	if err := os.MkdirAll(filepath.Join(project, ".vscode"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(project, ".vscode", "mcp.json"), []byte(`{"servers":{"crm":{"command":"npx","args":["-y","crm-mcp"]}}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var out, errOut bytes.Buffer
+	// alice is listed first and scans the --project folder, but it's bob's.
+	if code := run([]string{"--json", "--all-users", "--users-dir", users, "--project", project}, &out, &errOut); code != 0 {
+		t.Fatalf("exit %d: %s", code, errOut.String())
+	}
+	var rep report.Report
+	if err := json.Unmarshal(out.Bytes(), &rep); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, srv := range rep.Servers {
+		if srv.Name == "crm" {
+			found = true
+			if srv.User != "bob" {
+				t.Fatalf("crm attributed to %q, want bob", srv.User)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("crm server not found")
+	}
+}
+
+func TestWithin(t *testing.T) {
+	home := filepath.Join(string(filepath.Separator)+"home", "alice")
+	cases := map[string]bool{
+		filepath.Join(home, ".cursor", "mcp.json"): true,
+		home: true,
+		filepath.Join(string(filepath.Separator)+"home", "alice2", "x"): false,
+		filepath.Join(string(filepath.Separator)+"srv", "app"):          false,
+	}
+	for p, want := range cases {
+		if got := within(p, home); got != want {
+			t.Errorf("within(%q, %q) = %v, want %v", p, home, got, want)
+		}
+	}
 }
