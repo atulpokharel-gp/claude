@@ -334,6 +334,8 @@ export interface TrendPoint {
 /**
  * Risk counts per day for the last `days` days, summed across clients (or one
  * client). A day with no new snapshot carries each client's last known counts.
+ * Days before the first snapshot are left out rather than shown as zero, so a
+ * new account's chart doesn't look like things got worse.
  */
 export async function getTrend(tenant: Tenant, days = 90, now = new Date(), clientId?: string): Promise<TrendPoint[]> {
   const first = new Date(now.getTime() - (days - 1) * 86_400_000).toISOString().slice(0, 10);
@@ -354,6 +356,7 @@ export async function getTrend(tenant: Tenant, days = 90, now = new Date(), clie
   for (let d = 0; d < days; d++) {
     const day = new Date(Date.parse(`${first}T00:00:00Z`) + d * 86_400_000).toISOString().slice(0, 10);
     while (i < rows.length && rows[i].day <= day) latest.set(rows[i].client_id, rows[i++]);
+    if (latest.size === 0) continue;
     const p: TrendPoint = { day, high: 0, medium: 0, low: 0, tools: 0 };
     for (const r of latest.values()) {
       p.high += r.high;
