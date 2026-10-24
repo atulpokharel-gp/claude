@@ -376,3 +376,27 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function isUuid(v: string): boolean {
   return UUID.test(v);
 }
+
+export interface EmailPrefs {
+  alerts: boolean;
+  weekly: boolean;
+}
+
+export async function getEmailPrefs(mspId: string, userId: string): Promise<EmailPrefs> {
+  return withTenant(mspId, async (db) => {
+    const r = (await db.query<{ alert_emails: boolean; weekly_email: boolean }>("select alert_emails, weekly_email from users where id = $1", [userId])).rows[0];
+    return { alerts: Boolean(r?.alert_emails), weekly: Boolean(r?.weekly_email) };
+  });
+}
+
+/** Turns the user's own alert and weekly emails on or off. */
+export async function setEmailPrefs(mspId: string, userId: string, prefs: EmailPrefs): Promise<void> {
+  await withTenant(mspId, (db) => db.query("update users set alert_emails = $2, weekly_email = $3 where id = $1", [userId, prefs.alerts, prefs.weekly]));
+}
+
+/** For unsubscribe links: turns one kind of email off. Returns the address, or null if the user is gone. */
+export async function unsubscribe(userId: string, kind: "alert" | "weekly"): Promise<string | null> {
+  if (!isUuid(userId)) return null;
+  const row = await lookup<{ email: string | null }>("select email_unsubscribe($1, $2) as email", [userId, kind]);
+  return row?.email ?? null;
+}

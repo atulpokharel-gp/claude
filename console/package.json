@@ -13,10 +13,13 @@
     "db:set-plan": "node --experimental-strip-types scripts/set-plan.ts",
     "db:cleanup": "node --experimental-strip-types scripts/cleanup.ts",
     "m365:sync": "node --experimental-strip-types scripts/m365-sync.ts",
-    "db:snapshot": "node --experimental-strip-types scripts/snapshot.ts"
+    "db:snapshot": "node --experimental-strip-types scripts/snapshot.ts",
+    "mail:weekly": "node --experimental-strip-types scripts/weekly.ts",
+    "mail:send": "node --experimental-strip-types scripts/send-mail.ts"
   },
   "dependencies": {
     "next": "15.5.28",
+    "nodemailer": "10.1.7",
     "pg": "8.23.1",
     "qrcode": "1.5.4",
     "react": "19.1.9",
@@ -24,6 +27,7 @@
   },
   "devDependencies": {
     "@types/node": "22.18.0",
+    "@types/nodemailer": "8.0.2",
     "@types/pg": "8.23.1",
     "@types/qrcode": "1.5.6",
     "@types/react": "19.1.12",

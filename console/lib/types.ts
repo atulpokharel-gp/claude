@@ -40,6 +40,8 @@ export interface Agent {
   lastSeen: string; // ISO date
   /** People who use it or gave it access. Empty for tools approved for everyone. */
   people?: PersonRef[];
+  /** The config file a laptop finding came from, so two configs on one laptop stay apart. */
+  configPath?: string;
   /** Env vars Zinloop moved into the computer's password store. */
   protectedKeys?: string[];
 }

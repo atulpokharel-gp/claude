@@ -28,6 +28,7 @@ Fill in `.env`:
 | `TRUST_PROXY` | `1` (Caddy sets the client address) |
 | `M365_CLIENT_ID`, `M365_CLIENT_SECRET` | Optional, see [m365.md](m365.md) |
 | `DOWNLOAD_BASE_URL` | Only if scanner builds aren't in this repo's public GitHub releases |
+| `SMTP_URL`, `MAIL_FROM` | Optional, for alert and weekly emails. An SMTP address from any mail service, e.g. `smtps://user:password@smtp.postmarkapp.com:465`. Add the service's SPF and DKIM records for the `MAIL_FROM` domain |
 
 ## 3. Start
 
@@ -62,7 +63,12 @@ download from it: host the release files somewhere public and set
 - **Backups:** `docker compose exec db pg_dump -U zinloop_owner zinloop | gzip > backup-$(date +%F).sql.gz`, daily, copied off the server.
 - **Updates:** `git pull && docker compose up -d --build`. Migrations run first.
 - **Maintenance** runs daily by itself: expired sessions and invites, scans
-  older than `SCAN_KEEP_DAYS`, and a fresh Microsoft 365 check.
+  older than `SCAN_KEEP_DAYS`, a fresh Microsoft 365 check, risk counts for the
+  trend chart and the weekly summary emails.
+- **Email:** new high-risk findings are emailed to the MSP team within about
+  5 minutes; the weekly summary goes out on the first daily run of each week.
+  Everyone can turn either off in their settings or with the link in the email.
+  Without `SMTP_URL`, emails wait in the database and are sent once it's set.
 - **Plans:** payments aren't built yet. Move an MSP between `free`, `partner`
   and `msp` with `npm run db:set-plan` as above.
 

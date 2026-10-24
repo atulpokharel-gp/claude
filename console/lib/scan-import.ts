@@ -87,6 +87,7 @@ export function importScan(json: unknown): Client {
       revocable: false,
       lastSeen: scannedAt.slice(0, 10),
       people: [personFor(raw)].filter((p): p is PersonRef => p !== undefined),
+      ...(str(raw.configPath) ? { configPath: str(raw.configPath).slice(0, 500) } : {}),
       protectedKeys: (Array.isArray(raw.protectedSecrets) ? raw.protectedSecrets : [])
         .map((p) => (isObj(p) ? str(p.env) : ""))
         .filter(Boolean),
