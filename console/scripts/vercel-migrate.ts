@@ -9,9 +9,15 @@ import { migrate } from "./migrate.ts";
 
 const adminUrl = process.env.DATABASE_ADMIN_URL;
 const appPassword = process.env.DB_APP_PASSWORD;
+const branch = process.env.VERCEL_GIT_COMMIT_REF;
+const productionBranch = process.env.PRODUCTION_BRANCH || "main";
 
 if (process.env.VERCEL_ENV !== "production") {
   console.log(`Skipping migrations on a ${process.env.VERCEL_ENV ?? "local"} build.`);
+} else if (branch && branch !== productionBranch) {
+  // Never let an unmerged branch migrate the production database.
+  console.error(`Refusing a production build from branch "${branch}". In Vercel, set Settings → Git → Production Branch to "${productionBranch}".`);
+  process.exit(1);
 } else if (!adminUrl || !appPassword) {
   console.error("Production build needs DATABASE_ADMIN_URL and DB_APP_PASSWORD. See docs/vercel.md.");
   process.exit(1);
