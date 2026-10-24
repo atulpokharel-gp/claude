@@ -49,8 +49,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 }
 
 // buildEnv works out which folders to scan.
+// goos picks which OS's config folders to look in. Tests pin it to linux so
+// the fixture layout under testdata/home works on every OS.
+var goos = runtime.GOOS
+
 func buildEnv(home string, projects []string) (discover.Env, error) {
-	env := discover.Env{GOOS: runtime.GOOS, Home: home, AppData: os.Getenv("APPDATA"), ProjectDirs: projects}
+	env := discover.Env{GOOS: goos, Home: home, AppData: os.Getenv("APPDATA"), ProjectDirs: projects}
 	if home != "" {
 		env.AppData = "" // keep a custom home self-contained
 		return env, nil

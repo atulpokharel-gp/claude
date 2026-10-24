@@ -73,3 +73,10 @@ func TestEmptyHome(t *testing.T) {
 		t.Errorf("unexpected output: %s", stdout.String())
 	}
 }
+
+func TestMain(m *testing.M) {
+	// testdata/home uses the Linux folder layout; the per-OS locations are
+	// covered by the discover package's own tests.
+	goos = "linux"
+	os.Exit(m.Run())
+}

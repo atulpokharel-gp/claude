@@ -21,7 +21,7 @@ func TestRealPasswordStore(t *testing.T) {
 		t.Skip("set AGENTGUARD_REAL_STORE=1 to test the real password store")
 	}
 	home := fixtureHome(t)
-	env := discover.Env{GOOS: runtime.GOOS, Home: home}
+	env := discover.Env{GOOS: goos, Home: home}
 
 	// Plain-text values before the fix, by server and env name.
 	before := map[string]string{}

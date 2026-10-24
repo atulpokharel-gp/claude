@@ -320,7 +320,8 @@ func TestApplyKeepsSymlinkAndRewritesTarget(t *testing.T) {
 	if strings.Contains(string(data), "plain-text-pw") {
 		t.Error("the link target still holds the plain-text key")
 	}
-	if len(plan.Files) != 1 || !strings.HasPrefix(plan.Files[0].Backup, dotfiles+".agentguard-backup-") {
+	realDotfiles, _ := filepath.EvalSymlinks(dotfiles) // macOS temp dirs sit behind /var -> /private/var
+	if len(plan.Files) != 1 || !strings.HasPrefix(plan.Files[0].Backup, realDotfiles+".agentguard-backup-") {
 		t.Errorf("backup should sit next to the real file: %+v", plan.Files)
 	}
 }
