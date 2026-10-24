@@ -18,7 +18,14 @@ import (
 // file) keeps the token out of the process list, unlike a command-line flag.
 const TokenEnv = "AGENTGUARD_TOKEN"
 
-var uploadClient = &http.Client{Timeout: 30 * time.Second}
+// uploadClient never follows redirects: a redirect could send the token and
+// report to another host or over plain http.
+var uploadClient = &http.Client{
+	Timeout: 30 * time.Second,
+	CheckRedirect: func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	},
+}
 
 // uploadToken reads the token from --token-file or AGENTGUARD_TOKEN.
 func uploadToken(tokenFile string) (string, error) {
@@ -85,6 +92,9 @@ func upload(rawURL, token string, rep any) error {
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusCreated || resp.StatusCode == http.StatusOK {
 		return nil
+	}
+	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+		return fmt.Errorf("the console answered with a redirect (%d); use the final upload URL, starting with https", resp.StatusCode)
 	}
 	var msg struct {
 		Error string `json:"error"`

@@ -86,3 +86,21 @@ func TestScanUploadErrors(t *testing.T) {
 		t.Errorf("plain http: exit %d, %s", code, errOut.String())
 	}
 }
+
+func TestUploadRefusesRedirects(t *testing.T) {
+	plain := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "" {
+			t.Error("the token followed the redirect")
+		}
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer plain.Close()
+	redirector := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, plain.URL, http.StatusTemporaryRedirect)
+	}))
+	defer redirector.Close()
+	err := upload(redirector.URL, "agu_x", map[string]int{"schemaVersion": 1})
+	if err == nil || !strings.Contains(err.Error(), "redirect") {
+		t.Errorf("want a redirect error, got %v", err)
+	}
+}

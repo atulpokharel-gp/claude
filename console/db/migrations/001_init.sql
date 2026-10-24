@@ -127,6 +127,20 @@ create function upload_check_token(p_token_hash bytea)
     returning client_id, msp_id
   $$;
 
+-- The lookup functions run as the role that ran this migration (the tables'
+-- owner). Row-level security is forced, so unless that role is a superuser or
+-- has BYPASSRLS, it needs its own policies to see rows before a tenant is
+-- known. The owner can already turn RLS off on its own tables, so this gives
+-- it nothing new; the app role still only sees its tenant's rows.
+do $$
+begin
+  execute format('create policy owner_lookup on msps for select to %I using (true)', current_user);
+  execute format('create policy owner_lookup on users for select to %I using (true)', current_user);
+  execute format('create policy owner_lookup on sessions for select to %I using (true)', current_user);
+  execute format('create policy owner_lookup on upload_tokens for select to %I using (true)', current_user);
+  execute format('create policy owner_lookup_use on upload_tokens for update to %I using (true) with check (true)', current_user);
+end $$;
+
 -- The app role. Created without login here; the deploy sets its password.
 do $$
 begin

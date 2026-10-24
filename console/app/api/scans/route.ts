@@ -10,6 +10,25 @@ function reply(status: number, body: object) {
   return Response.json(body, { status, headers: { "Cache-Control": "no-store" } });
 }
 
+/** Reads the body, giving up as soon as it passes limit bytes (chunked uploads have no Content-Length). */
+async function readLimited(req: Request, limit: number): Promise<string | null> {
+  if (!req.body) return "";
+  const reader = req.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > limit) {
+      await reader.cancel().catch(() => {});
+      return null;
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks).toString("utf8");
+}
+
 export async function POST(req: Request) {
   if (!hasDatabase()) return reply(503, { error: "This console runs in demo mode and doesn't accept uploads." });
   const auth = req.headers.get("authorization") ?? "";
@@ -17,8 +36,8 @@ export async function POST(req: Request) {
   if (Number(req.headers.get("content-length") ?? 0) > MAX_REPORT_BYTES) {
     return reply(413, { error: "Report is too large." });
   }
-  const text = await req.text();
-  if (Buffer.byteLength(text) > MAX_REPORT_BYTES) return reply(413, { error: "Report is too large." });
+  const text = await readLimited(req, MAX_REPORT_BYTES);
+  if (text === null) return reply(413, { error: "Report is too large." });
   let body: unknown;
   try {
     body = JSON.parse(text);

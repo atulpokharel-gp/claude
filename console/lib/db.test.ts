@@ -31,16 +31,23 @@ describe("database", { skip: !adminUrl && "set TEST_DATABASE_ADMIN_URL to run" }
   let b: { mspId: string; password: string };
 
   before(async () => {
+    // Migrate as an ordinary owner (no superuser, no BYPASSRLS), like a
+    // managed database, so the lookups are tested under forced RLS.
     const admin = new pg.Client({ connectionString: adminUrl });
     await admin.connect();
-    await admin.query(`create database ${dbName}`);
-    await admin.end();
-    ownerUrl = withDb(adminUrl!, dbName);
+    await admin.query(`do $$ begin
+      if not exists (select from pg_roles where rolname = 'agentguard_test_owner') then
+        create role agentguard_test_owner login createrole;
+      end if; end $$`);
+    await admin.query(`alter role agentguard_test_owner password '${appPassword}'`);
+    await admin.query(`create database ${dbName} owner agentguard_test_owner`);
+    const owner = new URL(withDb(adminUrl!, dbName));
+    owner.username = "agentguard_test_owner";
+    owner.password = appPassword;
+    ownerUrl = owner.toString();
     await migrate(ownerUrl, () => {});
-    const owner = new pg.Client({ connectionString: ownerUrl });
-    await owner.connect();
-    await owner.query(`alter role agentguard_app login password '${appPassword}'`);
-    await owner.end();
+    await admin.query(`alter role agentguard_app login password '${appPassword}'`);
+    await admin.end();
     const app = new URL(ownerUrl);
     app.username = "agentguard_app";
     app.password = appPassword;
