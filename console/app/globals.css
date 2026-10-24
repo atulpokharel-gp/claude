@@ -160,3 +160,20 @@ code { font-family: var(--mono); font-size: 0.88em; background: var(--bg); borde
   .keys-flow > div { border-right: 0; border-bottom: 1px solid var(--line); }
   .keys-flow > div:last-child { border-bottom: 0; }
 }
+
+/* Forms and account pages */
+.page-head .btn { margin-top: 10px; }
+.panel.narrow { max-width: 460px; margin: 24px auto; display: grid; gap: 12px; }
+.form { display: grid; gap: 12px; }
+.form.inline { grid-template-columns: minmax(0, 1fr) auto; align-items: end; }
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.form label { display: grid; gap: 4px; font-size: 0.9rem; font-weight: 600; }
+.form input { font: inherit; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); min-width: 0; }
+.form-error { color: var(--high); font-size: 0.9rem; grid-column: 1 / -1; }
+.btn.small { padding: 4px 10px; font-size: 0.82rem; }
+.link-btn { background: none; border: 0; padding: 0; font: inherit; color: var(--accent); cursor: pointer; text-decoration: underline; }
+.token-once { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--medium); background: var(--medium-soft); border-radius: 8px; }
+code.block { display: block; padding: 8px 10px; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; font-family: var(--mono); font-size: 0.85rem; overflow-wrap: anywhere; }
+@media (max-width: 600px) { .form.inline, .form-row { grid-template-columns: 1fr; } }
+.panel > .form, .panel > .token-once { margin: 14px 16px; }
+.form label .muted { font-weight: 400; }

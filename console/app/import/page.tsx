@@ -50,7 +50,7 @@ export default function ImportPage() {
   return (
     <>
       <div className="page-head">
-        <h1>Upload a laptop scan</h1>
+        <h1>Open a scan file</h1>
         <p className="muted">See what the scanner found on one computer. The file stays in your browser and is not uploaded anywhere.</p>
       </div>
 
