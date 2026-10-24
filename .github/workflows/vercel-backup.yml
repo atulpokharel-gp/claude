@@ -1,0 +1,41 @@
+name: vercel-backup
+
+# Nightly encrypted off-site backup of the Vercel setup's database (Neon keeps
+# its own short point-in-time history; this is the copy you control). Uses the
+# same backup script as the Docker setup. Skips until BACKUP_S3_URI is set.
+on:
+  schedule:
+    - cron: "40 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    environment: vercel
+    env:
+      DATABASE_ADMIN_URL: ${{ secrets.DATABASE_ADMIN_URL }}
+      BACKUP_S3_URI: ${{ vars.BACKUP_S3_URI }}
+      BACKUP_S3_ENDPOINT: ${{ vars.BACKUP_S3_ENDPOINT }}
+      BACKUP_AGE_RECIPIENT: ${{ vars.BACKUP_AGE_RECIPIENT }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: ${{ vars.AWS_DEFAULT_REGION || 'auto' }}
+      PG_MAJOR: ${{ vars.PG_MAJOR || '17' }}
+    steps:
+      - id: setup
+        run: |
+          if [ -z "$BACKUP_S3_URI" ] || [ -z "$DATABASE_ADMIN_URL" ]; then
+            echo "BACKUP_S3_URI or DATABASE_ADMIN_URL isn't set, so no backup was made. See docs/vercel.md."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.setup.outputs.skip != 'true'
+        uses: actions/checkout@v4
+      - if: steps.setup.outputs.skip != 'true'
+        run: |
+          docker build -q --build-arg PG_MAJOR="$PG_MAJOR" -t zinloop-backup deploy/backup
+          docker run --rm -e DATABASE_ADMIN_URL -e BACKUP_S3_URI -e BACKUP_S3_ENDPOINT -e BACKUP_AGE_RECIPIENT \
+            -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY -e AWS_DEFAULT_REGION -e BACKUP_DIR=/tmp/backups \
+            zinloop-backup backup.sh once
