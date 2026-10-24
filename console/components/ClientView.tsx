@@ -33,11 +33,14 @@ export function ClientView({
   client,
   reportHref,
   onRevoke,
+  readOnly = false,
 }: {
   client: Client;
   reportHref?: string;
   /** Revokes a Microsoft 365 app for real. Without it (demo), revoking only changes the screen. */
   onRevoke?: (agentId: string) => Promise<{ error?: string }>;
+  /** For client viewers: findings only, no revoke or fix controls (the MSP makes changes). */
+  readOnly?: boolean;
 }) {
   const [filter, setFilter] = useState<Filter>("all");
   const [open, setOpen] = useState<Set<string>>(() => {
@@ -178,7 +181,7 @@ export function ClientView({
                         </div>
                       ))}
 
-                      <div className="actions">
+                      {!readOnly && <div className="actions">
                         {a.revocable && !isRevoked && confirming !== a.id && risk !== "none" && (
                           <button type="button" className="btn danger" onClick={() => setConfirming(a.id)}>Revoke access</button>
                         )}
@@ -196,7 +199,7 @@ export function ClientView({
                         {!a.revocable && a.findings.length > 0 && (
                           <button type="button" className="btn" onClick={() => copyFix(a)}>Copy fix steps</button>
                         )}
-                      </div>
+                      </div>}
                     </div>
                   )}
                 </div>

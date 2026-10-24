@@ -120,20 +120,33 @@ export async function getTeam(mspId: string): Promise<Team> {
     const plan = msp?.plan ?? "free";
     const members = (
       await db.query<{ id: string; name: string; email: string; role: "owner" | "member"; mfa: boolean; created_at: Date }>(
-        "select id, name, email, role, totp_enabled_at is not null as mfa, created_at from users order by created_at",
+        "select id, name, email, role, totp_enabled_at is not null as mfa, created_at from users where role <> 'viewer' order by created_at",
       )
     ).rows.map((u) => ({ id: u.id, name: u.name, email: u.email, role: u.role, mfa: u.mfa, createdAt: u.created_at.toISOString() }));
     const invites = (
       await db.query<{ id: string; email: string; expires_at: Date }>(
-        "select id, email, expires_at from invites where accepted_at is null and expires_at > now() order by created_at",
+        "select id, email, expires_at from invites where role = 'member' and accepted_at is null and expires_at > now() order by created_at",
       )
     ).rows.map((i) => ({ id: i.id, email: i.email, expiresAt: i.expires_at.toISOString() }));
     return { plan, requireMfa: Boolean(msp?.require_mfa), members, invites };
   });
 }
 
-/** Creates an invite and returns the token for the link. Only the hash is kept. */
+/** Creates a team invite and returns the token for the link. Only the hash is kept. Owner only. */
 export async function createInvite(mspId: string, invitedBy: string, email: string, ip: string | null = null): Promise<string> {
+  return makeInvite(mspId, invitedBy, email, ip, null);
+}
+
+/**
+ * Invites someone at a client to a read-only login that sees only that
+ * client's results. Returns the token for the link. Owner only.
+ */
+export async function createClientViewerInvite(mspId: string, invitedBy: string, clientId: string, email: string, ip: string | null = null): Promise<string> {
+  if (!isUuid(clientId)) throw new AccountError("That client wasn't found.");
+  return makeInvite(mspId, invitedBy, email, ip, clientId);
+}
+
+async function makeInvite(mspId: string, invitedBy: string, email: string, ip: string | null, clientId: string | null): Promise<string> {
   const addr = checkEmail(email);
   await withTenant(mspId, (db) => actor(db, invitedBy, true));
   if (!(await allow("invite", mspId))) throw new AccountError("Too many invites in the last hour. Try again later.");
@@ -142,12 +155,19 @@ export async function createInvite(mspId: string, invitedBy: string, email: stri
   const token = newToken("zli");
   await withTenant(mspId, async (db) => {
     const who = await actor(db, invitedBy, true);
+    let clientName = "";
+    if (clientId) {
+      const c = (await db.query<{ name: string }>("select name from clients where id = $1", [clientId])).rows[0];
+      if (!c) throw new AccountError("That client wasn't found.");
+      clientName = c.name;
+    }
     await db.query(
-      `insert into invites (msp_id, email, token_hash, invited_by, expires_at)
-       values ($1, $2, $3, $4, now() + make_interval(days => $5))`,
-      [mspId, addr, tokenHash(token), invitedBy, INVITE_DAYS],
+      `insert into invites (msp_id, email, token_hash, invited_by, expires_at, role, client_id)
+       values ($1, $2, $3, $4, now() + make_interval(days => $5), $6, $7)`,
+      [mspId, addr, tokenHash(token), invitedBy, INVITE_DAYS, clientId ? "viewer" : "member", clientId],
     );
-    await audit(mspId, { ...who, ip }, "invite_created", addr, {}, db);
+    if (clientId) await audit(mspId, { ...who, ip }, "client_login_created", addr, { clientId, client: clientName }, db);
+    else await audit(mspId, { ...who, ip }, "invite_created", addr, {}, db);
   });
   return token;
 }
@@ -166,18 +186,24 @@ export interface InviteInfo {
   mspId: string;
   email: string;
   mspName: string;
+  role: "member" | "viewer";
+  /** For a client viewer invite: the client they'll see. */
+  clientId: string | null;
+  clientName: string | null;
 }
 
 export async function checkInvite(token: string | undefined): Promise<InviteInfo | null> {
   if (!token || !token.startsWith("zli_")) return null;
-  const row = await lookup<{ invite_id: string; msp_id: string; email: string; msp_name: string }>(
+  const row = await lookup<{ invite_id: string; msp_id: string; email: string; msp_name: string; role: "member" | "viewer"; client_id: string | null; client_name: string | null }>(
     "select * from invite_check($1)",
     [tokenHash(token)],
   );
-  return row ? { inviteId: row.invite_id, mspId: row.msp_id, email: row.email, mspName: row.msp_name } : null;
+  return row
+    ? { inviteId: row.invite_id, mspId: row.msp_id, email: row.email, mspName: row.msp_name, role: row.role, clientId: row.client_id, clientName: row.client_name }
+    : null;
 }
 
-/** Joins the team from an invite link. Returns a session token. */
+/** Joins the team, or a client's read-only view, from an invite link. Returns a session token. */
 export async function acceptInvite(token: string, name: string, password: string): Promise<string> {
   const inv = await checkInvite(token);
   if (!inv) throw new AccountError("This invite link has expired or was already used. Ask for a new one.");
@@ -190,14 +216,17 @@ export async function acceptInvite(token: string, name: string, password: string
     await withTenant(inv.mspId, async (db) => {
       const used = await db.query("update invites set accepted_at = now() where id = $1 and accepted_at is null", [inv.inviteId]);
       if (used.rowCount !== 1) throw new AccountError("This invite link was already used.");
-      await db.query("insert into users (id, msp_id, email, password_hash, name, role) values ($1, $2, $3, $4, $5, 'member')", [
+      await db.query("insert into users (id, msp_id, email, password_hash, name, role, client_id) values ($1, $2, $3, $4, $5, $6, $7)", [
         userId,
         inv.mspId,
         inv.email,
         hash,
         n,
+        inv.role,
+        inv.clientId,
       ]);
-      await audit(inv.mspId, { userId, email: inv.email }, "member_joined", inv.email, {}, db);
+      if (inv.role === "viewer") await audit(inv.mspId, { userId, email: inv.email }, "client_viewer_joined", inv.email, { clientId: inv.clientId, client: inv.clientName }, db);
+      else await audit(inv.mspId, { userId, email: inv.email }, "member_joined", inv.email, {}, db);
     });
   } catch (err) {
     if (isUniqueViolation(err)) throw new AccountError("There's already an account for that email. Sign in instead.");
@@ -212,9 +241,57 @@ export async function removeMember(mspId: string, byUserId: string, userId: stri
   if (userId === byUserId) throw new AccountError("You can't remove yourself.");
   await withTenant(mspId, async (db) => {
     const who = await actor(db, byUserId, true);
-    const res = await db.query<{ email: string }>("delete from users where id = $1 and role <> 'owner' returning email", [userId]);
+    const res = await db.query<{ email: string }>("delete from users where id = $1 and role = 'member' returning email", [userId]);
     if (res.rowCount !== 1) throw new AccountError("The account owner can't be removed.");
     await audit(mspId, who, "member_removed", res.rows[0].email, {}, db);
+  });
+}
+
+export interface ClientViewer {
+  id: string;
+  name: string;
+  email: string;
+  mfa: boolean;
+  createdAt: string;
+}
+
+export interface ClientViewers {
+  viewers: ClientViewer[];
+  invites: PendingInvite[];
+}
+
+/** People at a client who have, or were invited to, a read-only login for it. */
+export async function listClientViewers(mspId: string, clientId: string): Promise<ClientViewers> {
+  if (!isUuid(clientId)) return { viewers: [], invites: [] };
+  return withTenant(mspId, async (db) => {
+    const viewers = (
+      await db.query<{ id: string; name: string; email: string; mfa: boolean; created_at: Date }>(
+        "select id, name, email, totp_enabled_at is not null as mfa, created_at from users where role = 'viewer' and client_id = $1 order by created_at",
+        [clientId],
+      )
+    ).rows.map((u) => ({ id: u.id, name: u.name, email: u.email, mfa: u.mfa, createdAt: u.created_at.toISOString() }));
+    const invites = (
+      await db.query<{ id: string; email: string; expires_at: Date }>(
+        "select id, email, expires_at from invites where role = 'viewer' and client_id = $1 and accepted_at is null and expires_at > now() order by created_at",
+        [clientId],
+      )
+    ).rows.map((i) => ({ id: i.id, email: i.email, expiresAt: i.expires_at.toISOString() }));
+    return { viewers, invites };
+  });
+}
+
+/** Removes a client viewer's login; their sessions end with it. Owner only. */
+export async function removeClientViewer(mspId: string, byUserId: string, clientId: string, userId: string, ip: string | null = null): Promise<void> {
+  if (!isUuid(userId) || !isUuid(clientId)) return;
+  await withTenant(mspId, async (db) => {
+    const who = await actor(db, byUserId, true);
+    const res = await db.query<{ email: string; client: string }>(
+      `delete from users u using clients c where u.id = $1 and u.role = 'viewer' and u.client_id = $2 and c.id = u.client_id
+       returning u.email, c.name as client`,
+      [userId, clientId],
+    );
+    if (res.rowCount !== 1) throw new AccountError("That login wasn't found.");
+    await audit(mspId, { ...who, ip }, "client_login_removed", res.rows[0].email, { clientId, client: res.rows[0].client }, db);
   });
 }
 

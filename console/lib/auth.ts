@@ -17,7 +17,10 @@ export interface Session {
   mspId: string;
   email: string;
   mspName: string;
-  role: "owner" | "member";
+  role: "owner" | "member" | "viewer";
+  /** For a client viewer: the one client they can see. */
+  clientId: string | null;
+  clientName: string | null;
   /** This user has two-factor sign-in on. */
   mfa: boolean;
   /** The MSP requires two-factor sign-in for everyone. */
@@ -114,12 +117,34 @@ export async function createSession(userId: string, mspId: string, info: ClientI
 
 export async function checkSession(token: string | undefined): Promise<Session | null> {
   if (!token || !token.startsWith("zls_")) return null;
-  const row = await lookup<{ user_id: string; msp_id: string; email: string; msp_name: string; role: "owner" | "member"; mfa: boolean; require_mfa: boolean; session_id: string }>(
+  const row = await lookup<{
+    user_id: string;
+    msp_id: string;
+    email: string;
+    msp_name: string;
+    role: Session["role"];
+    mfa: boolean;
+    require_mfa: boolean;
+    session_id: string;
+    client_id: string | null;
+    client_name: string | null;
+  }>(
     "select * from auth_check_session($1, $2)",
     [tokenHash(token), SESSION_IDLE_MINUTES],
   );
   return row
-    ? { userId: row.user_id, mspId: row.msp_id, email: row.email, mspName: row.msp_name, role: row.role, mfa: row.mfa, requireMfa: row.require_mfa, sessionId: row.session_id }
+    ? {
+        userId: row.user_id,
+        mspId: row.msp_id,
+        email: row.email,
+        mspName: row.msp_name,
+        role: row.role,
+        clientId: row.client_id,
+        clientName: row.client_name,
+        mfa: row.mfa,
+        requireMfa: row.require_mfa,
+        sessionId: row.session_id,
+      }
     : null;
 }
 

@@ -49,7 +49,7 @@ export async function cancelMfaAction(): Promise<void> {
 }
 
 export async function signOutAction(): Promise<void> {
-  const s = await currentSession();
+  const s = await currentSession({ viewer: true });
   const token = await sessionToken();
   if (s && token) await signOut(s, token);
   await clearSessionCookie();
