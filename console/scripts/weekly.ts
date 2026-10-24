@@ -4,6 +4,7 @@
 
 import { fileURLToPath } from "node:url";
 import pg from "pg";
+import { recordRun } from "./job-runs.ts";
 import { queueWeekly } from "../lib/alerts.ts";
 import { closePool } from "../lib/db.ts";
 
@@ -35,9 +36,13 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     process.exit(1);
   }
   queueAllWeekly(adminUrl)
-    .then((n) => console.log(`Queued ${n} weekly summary emails.`))
-    .catch((err) => {
+    .then(async (n) => {
+      console.log(`Queued ${n} weekly summary emails.`);
+      await recordRun(adminUrl, "mail_weekly");
+    })
+    .catch(async (err) => {
       console.error(err.message);
+      await recordRun(adminUrl, "mail_weekly", err);
       process.exitCode = 1;
     })
     .finally(() => closePool());

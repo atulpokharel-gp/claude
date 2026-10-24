@@ -38,6 +38,8 @@ import { cleanup } from "../scripts/cleanup.ts";
 import { setPlan } from "../scripts/set-plan.ts";
 import { snapshotAll } from "../scripts/snapshot.ts";
 import { queueAllWeekly } from "../scripts/weekly.ts";
+import { recordRun } from "../scripts/job-runs.ts";
+import { checkHealth } from "./health.ts";
 import { sendPending, type Mail } from "../scripts/send-mail.ts";
 import { checkAlerts, unsubscribeUrl } from "./alerts.ts";
 import {
@@ -486,6 +488,21 @@ describe("database", { skip: !adminUrl && "set TEST_DATABASE_ADMIN_URL to run" }
     assert.deepEqual(sent.map((m) => m.subject), ["still wanted"]);
     assert.ok(!(await outbox()).some((m) => m.subject === "late weekly"), "dropped, not just skipped");
     delete process.env.CONSOLE_URL;
+  });
+
+  test("the health check sees the database and background job results", async () => {
+    assert.deepEqual(await checkHealth(false), { ok: true, database: "ok" });
+    await recordRun(ownerUrl, "backup");
+    await recordRun(ownerUrl, "snapshot");
+    assert.deepEqual((await checkHealth(true)).jobs, { backup: "ok", snapshot: "ok" });
+    await recordRun(ownerUrl, "backup", new Error("disk full"));
+    const h = await checkHealth(true);
+    assert.equal(h.ok, false);
+    assert.equal(h.jobs!.backup, "failing");
+    // The app role can only read the summary, not the table or error text.
+    await assert.rejects(getPool().query("select * from job_runs"), /permission denied/);
+    await recordRun(ownerUrl, "backup");
+    assert.equal((await checkHealth(true)).ok, true);
   });
 
   test("owners can require two-factor sign-in for the whole team", async () => {

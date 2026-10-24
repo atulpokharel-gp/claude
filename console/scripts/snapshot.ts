@@ -5,6 +5,7 @@
 
 import { fileURLToPath } from "node:url";
 import pg from "pg";
+import { recordRun } from "./job-runs.ts";
 import { closePool } from "../lib/db.ts";
 import { snapshotClient } from "../lib/store.ts";
 
@@ -29,9 +30,13 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     process.exit(1);
   }
   snapshotAll(adminUrl)
-    .then((n) => console.log(`Saved risk counts for ${n} clients.`))
-    .catch((err) => {
+    .then(async (n) => {
+      console.log(`Saved risk counts for ${n} clients.`);
+      await recordRun(adminUrl, "snapshot");
+    })
+    .catch(async (err) => {
       console.error(err.message);
+      await recordRun(adminUrl, "snapshot", err);
       process.exitCode = 1;
     })
     .finally(() => closePool());
