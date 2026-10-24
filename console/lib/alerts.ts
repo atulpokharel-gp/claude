@@ -133,7 +133,8 @@ export async function queueWeekly(mspId: string, now = new Date()): Promise<numb
   const trends = new Map<string, number>();
   for (const c of clients) {
     const t = await getTrend(mspId, 8, now, c.id);
-    trends.set(c.id, t[t.length - 1].high - t[0].high);
+    // A client with no snapshots yet has no trend.
+    trends.set(c.id, t.length > 0 ? t[t.length - 1].high - t[0].high : 0);
   }
   const base = consoleBase();
   return withTenant(mspId, async (db) => {
