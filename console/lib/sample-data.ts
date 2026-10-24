@@ -207,7 +207,7 @@ export const clients: Client[] = [
     lastScan: "2026-10-24T05:10:00Z",
     agents: [
       m365("Dispatch Copilot", "copilot-agent", "Owner: t.hughes", ["Dispatch schedules", "Driver contacts"], []),
-      mcp("stripe", "CF-FIN-03", "Claude Code", ["Payments (full)"], [F.notRotated("STRIPE_SECRET_KEY", "claude-code/billing/stripe/STRIPE_SECRET_KEY")], "2026-10-23", ["STRIPE_SECRET_KEY"]),
+      mcp("stripe", "CF-FIN-03", "Claude Code", ["Payments (full)"], [F.notRotated("STRIPE_SECRET_KEY", "claude-code/billing/stripe/STRIPE_SECRET_KEY@5be1d07a")], "2026-10-23", ["STRIPE_SECRET_KEY"]),
       mcp("linear", "CF-DEV-01", "Cursor", ["Issue tracker"], [F.remote("mcp.linear.app")]),
       mcp("browser-use", "CF-OPS-09", "Claude Desktop", ["Web browser"], [F.unpinned("browser-use-mcp")]),
     ],

@@ -63,7 +63,7 @@ What `--apply` does, per config file:
 2. Copies the original file to `<file>.agentguard-backup-<time>` (owner-only).
 3. Rewrites the server entry, for example
    `"command": "npx", "env": {"GITHUB_TOKEN": "ghp_..."}` becomes
-   `"command": "/path/to/agentscan", "args": ["exec", "--secret", "GITHUB_TOKEN=claude-desktop/github/GITHUB_TOKEN", "--", "npx", ...]`.
+   `"command": "/path/to/agentscan", "args": ["exec", "--secret", "GITHUB_TOKEN=claude-desktop/github/GITHUB_TOKEN@3aa8de04", "--", "npx", ...]`.
 4. Records the move in `~/.agentguard/secrets.json` (names and dates only).
 
 If any step fails, that file is left exactly as it was. Keys in headers,

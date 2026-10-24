@@ -105,12 +105,15 @@ func MakePlan(servers []discover.Server) Plan {
 		}
 		sf := ServerFix{Server: s.Name, Scope: s.Scope, EnvKeys: keys}
 		for _, k := range keys {
-			sf.Refs = append(sf.Refs, vault.Ref(s.App, s.Scope, s.Name, k))
+			sf.Refs = append(sf.Refs, vault.Ref(s.App, s.ConfigPath, s.Scope, s.Name, k))
 		}
 		plan.Files[i].Servers = append(plan.Files[i].Servers, sf)
 	}
 	return plan
 }
+
+// saveState writes the record of moved keys. Tests replace it to simulate failures.
+var saveState = func(st vault.State, home string) error { return st.Save(home) }
 
 // Options controls Apply.
 type Options struct {
@@ -139,39 +142,37 @@ func Apply(plan Plan, opts Options) (Plan, error) {
 		if f.Blocked != "" {
 			continue
 		}
-		backup, entries, err := applyFile(*f, opts)
+		backup, err := applyFile(*f, opts, &state)
 		if err != nil {
 			f.Error = err.Error()
 			continue
 		}
 		f.Backup = backup
-		for _, e := range entries {
-			state.Entries[e.Ref] = e
-		}
-	}
-	if err := state.Save(opts.Home); err != nil {
-		return plan, fmt.Errorf("configs were updated, but the record of moved keys could not be saved: %w", err)
 	}
 	return plan, nil
 }
 
-func applyFile(f FileFix, opts Options) (string, []vault.Entry, error) {
+// applyFile edits one config. The record of moved keys is saved before the
+// config is rewritten, so a crash or failure can never leave a protected key
+// that rotate and scans don't know about. If the rewrite then fails, the
+// new record entries are removed again.
+func applyFile(f FileFix, opts Options, state *vault.State) (string, error) {
 	info, err := os.Stat(f.Path)
 	if err != nil {
-		return "", nil, err
+		return "", err
 	}
 	orig, err := os.ReadFile(f.Path)
 	if err != nil {
-		return "", nil, err
+		return "", err
 	}
 	if !json.Valid(orig) {
-		return "", nil, errors.New("file has comments or isn't plain JSON; fix it by hand so nothing is lost")
+		return "", errors.New("file has comments or isn't plain JSON; fix it by hand so nothing is lost")
 	}
 	var doc map[string]any
 	dec := json.NewDecoder(bytes.NewReader(orig))
 	dec.UseNumber() // keep numbers exactly as written
 	if err := dec.Decode(&doc); err != nil {
-		return "", nil, err
+		return "", err
 	}
 
 	now := opts.Now().UTC()
@@ -179,7 +180,7 @@ func applyFile(f FileFix, opts Options) (string, []vault.Entry, error) {
 	for _, sf := range f.Servers {
 		entry, err := findServer(doc, f.Format, sf.Scope, sf.Server)
 		if err != nil {
-			return "", nil, err
+			return "", err
 		}
 		env, _ := entry["env"].(map[string]any)
 		cmd, _ := entry["command"].(string)
@@ -191,15 +192,15 @@ func applyFile(f FileFix, opts Options) (string, []vault.Entry, error) {
 		for k, key := range sf.EnvKeys {
 			val, ok := env[key].(string)
 			if !ok {
-				return "", nil, fmt.Errorf("%s: env %s changed since the scan; run the fix again", sf.Server, key)
+				return "", fmt.Errorf("%s: env %s changed since the scan; run the fix again", sf.Server, key)
 			}
 			ref := sf.Refs[k]
 			if err := opts.Store.Set(ref, val); err != nil {
-				return "", nil, fmt.Errorf("save %s to the password store: %w", ref, err)
+				return "", fmt.Errorf("save %s to the password store: %w", ref, err)
 			}
 			got, err := opts.Store.Get(ref)
 			if err != nil || got != val {
-				return "", nil, fmt.Errorf("password store didn't return %s correctly; nothing was changed in %s", ref, f.Path)
+				return "", fmt.Errorf("password store didn't return %s correctly; nothing was changed in %s", ref, f.Path)
 			}
 			delete(env, key)
 			protected = append(protected, discover.ProtectedSecret{Env: key, Ref: ref})
@@ -218,17 +219,44 @@ func applyFile(f FileFix, opts Options) (string, []vault.Entry, error) {
 	enc.SetEscapeHTML(false)
 	enc.SetIndent("", "  ")
 	if err := enc.Encode(doc); err != nil {
-		return "", nil, err
+		return "", err
 	}
 
+	previous := map[string]*vault.Entry{}
+	for _, e := range entries {
+		if old, ok := state.Entries[e.Ref]; ok {
+			previous[e.Ref] = &old
+		} else {
+			previous[e.Ref] = nil
+		}
+		state.Entries[e.Ref] = e
+	}
+	undoRecord := func() {
+		for ref, old := range previous {
+			if old == nil {
+				delete(state.Entries, ref)
+			} else {
+				state.Entries[ref] = *old
+			}
+		}
+	}
+	if err := saveState(*state, opts.Home); err != nil {
+		undoRecord()
+		return "", fmt.Errorf("couldn't save the record of moved keys, nothing changed: %w", err)
+	}
 	backup := f.Path + ".agentguard-backup-" + now.Format("20060102-150405")
-	if err := os.WriteFile(backup, orig, 0o600); err != nil {
-		return "", nil, fmt.Errorf("couldn't write backup, nothing changed: %w", err)
+	writeErr := os.WriteFile(backup, orig, 0o600)
+	if writeErr == nil {
+		writeErr = vault.WriteFileAtomic(f.Path, buf.Bytes(), info.Mode().Perm())
 	}
-	if err := vault.WriteFileAtomic(f.Path, buf.Bytes(), info.Mode().Perm()); err != nil {
-		return "", nil, fmt.Errorf("couldn't write %s, original kept: %w", f.Path, err)
+	if err := writeErr; err != nil {
+		undoRecord()
+		if saveErr := saveState(*state, opts.Home); saveErr != nil {
+			return "", fmt.Errorf("couldn't write %s (original kept), and couldn't clean up the record: %v; %w", f.Path, saveErr, err)
+		}
+		return "", fmt.Errorf("couldn't write %s, original kept: %w", f.Path, err)
 	}
-	return backup, entries, nil
+	return backup, nil
 }
 
 func findServer(doc map[string]any, format discover.Format, scope, name string) (map[string]any, error) {

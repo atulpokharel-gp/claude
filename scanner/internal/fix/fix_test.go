@@ -40,6 +40,16 @@ func copyFixtures(t *testing.T) string {
 	return dst
 }
 
+// lookup finds the store value whose ref starts with prefix@.
+func lookup(store vault.Memory, prefix string) string {
+	for ref, v := range store {
+		if strings.HasPrefix(ref, prefix+"@") {
+			return v
+		}
+	}
+	return ""
+}
+
 func scan(home string) []discover.Server {
 	s, _ := discover.Scan(discover.Env{GOOS: "linux", Home: home})
 	return s
@@ -59,9 +69,13 @@ func TestPlan(t *testing.T) {
 			}
 		}
 	}
-	for _, want := range []string{"claude-desktop/github/GITHUB_PERSONAL_ACCESS_TOKEN", "claude-code/app/stripe/STRIPE_SECRET_KEY"} {
-		if !refs[want] {
-			t.Errorf("missing ref %s in %v", want, refs)
+	for _, want := range []string{"claude-desktop/github/GITHUB_PERSONAL_ACCESS_TOKEN@", "claude-code/app/stripe/STRIPE_SECRET_KEY@"} {
+		found := false
+		for r := range refs {
+			found = found || strings.HasPrefix(r, want)
+		}
+		if !found {
+			t.Errorf("missing ref %s* in %v", want, refs)
 		}
 	}
 }
@@ -86,10 +100,10 @@ func TestApplyMovesKeysAndKeepsServerWorking(t *testing.T) {
 	}
 
 	// Keys are in the store with their original values.
-	if store["claude-desktop/github/GITHUB_PERSONAL_ACCESS_TOKEN"] != "fake-demo-token-not-real-0001" {
+	if lookup(store, "claude-desktop/github/GITHUB_PERSONAL_ACCESS_TOKEN") != "fake-demo-token-not-real-0001" {
 		t.Errorf("github token not stored: %v", store)
 	}
-	if store["claude-code/app/stripe/STRIPE_SECRET_KEY"] != "fake-stripe-value-not-real" {
+	if lookup(store, "claude-code/app/stripe/STRIPE_SECRET_KEY") != "fake-stripe-value-not-real" {
 		t.Errorf("stripe key not stored: %v", store)
 	}
 
@@ -229,5 +243,58 @@ func TestApplyMergesWithAlreadyProtectedServer(t *testing.T) {
 	}
 	if info, _ := os.Stat(cfg); info.Mode().Perm() != 0o600 {
 		t.Errorf("file mode changed to %v", info.Mode().Perm())
+	}
+}
+
+func TestSameServerInTwoProjectsGetsSeparateKeys(t *testing.T) {
+	home := t.TempDir()
+	var dirs []string
+	for i, client := range []string{"client-a", "client-b"} {
+		dir := filepath.Join(home, "work", client, "app")
+		dirs = append(dirs, dir)
+		_ = os.MkdirAll(dir, 0o755)
+		cfg := `{"mcpServers":{"db":{"command":"db-mcp","env":{"DB_PASSWORD":"pw-` + client + `"}}}}`
+		_ = os.WriteFile(filepath.Join(dir, ".mcp.json"), []byte(cfg), 0o600)
+		_ = i
+	}
+	servers, _ := discover.Scan(discover.Env{GOOS: "linux", Home: home, ProjectDirs: dirs})
+	store := vault.Memory{}
+	if _, err := Apply(MakePlan(servers), Options{Home: home, Launcher: "/opt/agentscan", Store: store}); err != nil {
+		t.Fatal(err)
+	}
+	if len(store) != 2 {
+		t.Fatalf("want 2 separate store entries, got %v", store)
+	}
+	after, _ := discover.Scan(discover.Env{GOOS: "linux", Home: home, ProjectDirs: dirs})
+	for i, s := range after {
+		want := "pw-client-" + string(rune('a'+i))
+		if len(s.Protected) != 1 || store[s.Protected[0].Ref] != want {
+			t.Errorf("%s: protected %+v resolves to %q, want %q", s.ConfigPath, s.Protected, store[s.Protected[0].Ref], want)
+		}
+	}
+}
+
+func TestRecordFailureLeavesConfigAlone(t *testing.T) {
+	home := copyFixtures(t)
+	old := saveState
+	saveState = func(vault.State, string) error { return errors.New("disk full") }
+	t.Cleanup(func() { saveState = old })
+	cfg := filepath.Join(home, ".config", "Claude", "claude_desktop_config.json")
+	before, _ := os.ReadFile(cfg)
+	plan, err := Apply(MakePlan(scan(home)), Options{Home: home, Launcher: "/opt/agentscan", Store: vault.Memory{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range plan.Files {
+		if f.Error == "" || f.Backup != "" {
+			t.Errorf("%s: want an error and no backup, got %+v", f.Path, f)
+		}
+	}
+	if after, _ := os.ReadFile(cfg); string(after) != string(before) {
+		t.Error("config was rewritten although the record couldn't be saved")
+	}
+	matches, _ := filepath.Glob(cfg + ".agentguard-backup-*")
+	if len(matches) != 0 {
+		t.Errorf("left a backup holding the old keys: %v", matches)
 	}
 }

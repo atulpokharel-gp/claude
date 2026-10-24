@@ -5,6 +5,8 @@
 package vault
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -64,15 +66,18 @@ func (m Memory) Get(ref string) (string, error) {
 }
 func (m Memory) Delete(ref string) error { delete(m, ref); return nil }
 
-// Ref builds a readable, stable name for one secret, e.g.
-// "claude-desktop/github/GITHUB_PERSONAL_ACCESS_TOKEN".
-func Ref(app, scope, server, envKey string) string {
+// Ref builds a readable, stable, unique name for one secret, e.g.
+// "claude-desktop/github/GITHUB_PERSONAL_ACCESS_TOKEN@3f9a1c2e". The suffix
+// is a short hash of the config file's full path and scope, so the same
+// server name in two projects never shares an entry.
+func Ref(app, configPath, scope, server, envKey string) string {
 	parts := []string{slug(app)}
 	if scope != "" {
 		parts = append(parts, slug(filepath.Base(scope)))
 	}
 	parts = append(parts, slug(server), envKey)
-	return strings.Join(parts, "/")
+	sum := sha256.Sum256([]byte(configPath + "\x00" + scope + "\x00" + server))
+	return strings.Join(parts, "/") + "@" + hex.EncodeToString(sum[:4])
 }
 
 func slug(s string) string {

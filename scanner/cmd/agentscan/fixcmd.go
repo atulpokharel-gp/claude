@@ -14,6 +14,7 @@ import (
 	"github.com/atulpokharel-gp/claude/scanner/internal/discover"
 	"github.com/atulpokharel-gp/claude/scanner/internal/fix"
 	"github.com/atulpokharel-gp/claude/scanner/internal/vault"
+	"golang.org/x/term"
 )
 
 // launcherPath is the agentscan binary written into fixed configs. Tests override it.
@@ -167,13 +168,9 @@ func runRotate(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return 1
 	}
 	fmt.Fprintf(stderr, "Paste the new value for %s and press Enter: ", ref)
-	line, err := bufio.NewReader(stdin).ReadString('\n')
-	if err != nil && line == "" {
-		fmt.Fprintln(stderr, "\nno value entered; nothing changed")
-		return 1
-	}
-	val := strings.TrimRight(line, "\r\n")
-	if val == "" {
+	val, err := readSecret(stdin)
+	fmt.Fprintln(stderr)
+	if err != nil || val == "" {
 		fmt.Fprintln(stderr, "no value entered; nothing changed")
 		return 1
 	}
@@ -195,4 +192,18 @@ func runRotate(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 	fmt.Fprintf(stdout, "Saved the new key for %s. Restart %s, and revoke the old key with the provider if you haven't.\n", ref, e.App)
 	return 0
+}
+
+// readSecret reads one line. From a terminal it turns echo off so the key
+// never shows on screen or in scrollback; from a pipe it reads normally.
+func readSecret(r io.Reader) (string, error) {
+	if f, ok := r.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
+		b, err := term.ReadPassword(int(f.Fd()))
+		return strings.TrimSpace(string(b)), err
+	}
+	line, err := bufio.NewReader(r).ReadString('\n')
+	if err != nil && line == "" {
+		return "", err
+	}
+	return strings.TrimRight(line, "\r\n"), nil
 }

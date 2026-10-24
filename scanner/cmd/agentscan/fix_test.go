@@ -96,17 +96,23 @@ func TestFixSecretsEndToEnd(t *testing.T) {
 	}
 
 	// Rotate one key.
+	var ghRef string
+	for ref := range store {
+		if strings.HasPrefix(ref, "claude-desktop/github/") {
+			ghRef = ref
+		}
+	}
 	out.Reset()
 	in := strings.NewReader("brand-new-value\n")
-	if code := runRotate([]string{"--home", home, "claude-desktop/github/GITHUB_PERSONAL_ACCESS_TOKEN"}, in, &out, &errOut); code != 0 {
+	if code := runRotate([]string{"--home", home, ghRef}, in, &out, &errOut); code != 0 {
 		t.Fatalf("rotate exit %d: %s", code, errOut.String())
 	}
-	if store["claude-desktop/github/GITHUB_PERSONAL_ACCESS_TOKEN"] != "brand-new-value" {
+	if store[ghRef] != "brand-new-value" {
 		t.Error("rotate didn't store the new value")
 	}
 	// Same value again is refused.
 	errOut.Reset()
-	if code := runRotate([]string{"--home", home, "claude-desktop/github/GITHUB_PERSONAL_ACCESS_TOKEN"}, strings.NewReader("brand-new-value\n"), &out, &errOut); code == 0 {
+	if code := runRotate([]string{"--home", home, ghRef}, strings.NewReader("brand-new-value\n"), &out, &errOut); code == 0 {
 		t.Error("rotating to the same value should fail")
 	}
 
