@@ -75,6 +75,8 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 	home := fs.String("home", "", "home directory to scan (default: current user's)")
 	failOn := fs.String("fail-on", "", "exit with code 2 if any server is at or above this risk: high, medium or low")
 	showVersion := fs.Bool("version", false, "print the version and exit")
+	uploadURL := fs.String("upload", "", "send the report to the console at this URL (token from "+TokenEnv+" or --token-file)")
+	tokenFile := fs.String("token-file", "", "file holding the console upload token")
 	var projects multiFlag
 	fs.Var(&projects, "project", "project folder to check for project-level configs (repeatable)")
 	if err := fs.Parse(args); err != nil {
@@ -89,6 +91,18 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return 1
+	}
+	var token string
+	if *uploadURL != "" {
+		// Check these before scanning so a bad setup fails fast.
+		if _, err := checkUploadURL(*uploadURL); err != nil {
+			fmt.Fprintln(stderr, err)
+			return 1
+		}
+		if token, err = uploadToken(*tokenFile); err != nil {
+			fmt.Fprintln(stderr, err)
+			return 1
+		}
 	}
 	ctx := rules.Context{Home: env.Home, NeedsRotation: map[string]bool{}}
 	if st, err := vault.LoadState(env.Home); err != nil {
@@ -123,6 +137,14 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 		}
 	} else {
 		report.WriteText(stdout, rep)
+	}
+
+	if *uploadURL != "" {
+		if err := upload(*uploadURL, token, rep); err != nil {
+			fmt.Fprintln(stderr, "upload failed:", err)
+			return 3
+		}
+		fmt.Fprintln(stderr, "Scan sent to the console.")
 	}
 
 	if *failOn != "" {

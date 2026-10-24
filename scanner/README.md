@@ -72,10 +72,22 @@ listed for fixing by hand. Run agentscan from a permanent location, since its
 path is written into the configs. Rewritten files keep every setting, though
 key order may change.
 
+## Send scans to the console
+
+```sh
+AGENTGUARD_TOKEN=agu_... agentscan --upload https://your-console/api/scans
+agentscan --upload https://your-console/api/scans --token-file C:\ProgramData\agentguard\token
+```
+
+The upload token comes from the client's page in the console. It's read from
+the environment or a file, never a command-line flag, so it doesn't show in the
+process list. Uploads need https (plain http only to `localhost`). Exit code 3
+means the scan ran but the upload failed.
+
 ## Privacy
 
-- Scanning only reads config files and makes no network calls. Only
-  `fix-secrets --apply` and `rotate` change anything.
+- Scanning only reads config files and makes no network calls unless you pass
+  `--upload`. Only `fix-secrets --apply` and `rotate` change anything.
 - Env and header **values** are kept in memory for the checks but never written
   out; the report lists only their names.
 - Arguments that look like tokens and the user/query parts of URLs are replaced

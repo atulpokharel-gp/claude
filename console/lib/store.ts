@@ -1,0 +1,202 @@
+// Reading and writing an MSP's clients, upload tokens and scans.
+
+import { lookup, withTenant } from "./db.ts";
+import { importScan, ScanImportError } from "./scan-import.ts";
+import { newToken, tokenHash } from "./secrets.ts";
+import type { Agent, Client } from "./types.ts";
+
+/** A device counts as scanned when its last scan is this recent. */
+export const SCAN_FRESH_DAYS = 7;
+export const MAX_REPORT_BYTES = 2 * 1024 * 1024;
+
+interface ClientRow {
+  id: string;
+  name: string;
+  industry: string;
+  staff: number;
+  devices_expected: number;
+}
+interface DeviceScanRow {
+  client_id: string;
+  device_id: string;
+  hostname: string;
+  last_scan_at: Date | null;
+  report: unknown;
+}
+
+function buildClient(c: ClientRow, rows: DeviceScanRow[], now: Date): Client {
+  const fresh = now.getTime() - SCAN_FRESH_DAYS * 86_400_000;
+  const agents: Agent[] = [];
+  const warnings: string[] = [];
+  let scanned = 0;
+  let lastScan = "";
+  for (const r of rows) {
+    if (!r.report) continue;
+    let device: Client;
+    try {
+      device = importScan(r.report);
+    } catch {
+      warnings.push(`The last scan from ${r.hostname} couldn't be read.`);
+      continue;
+    }
+    device.agents.forEach((a, i) => agents.push({ ...a, id: `${r.device_id}-${i}` }));
+    warnings.push(...(device.warnings ?? []).map((w) => `${r.hostname}: ${w}`));
+    const at = r.last_scan_at?.toISOString() ?? "";
+    if (at > lastScan) lastScan = at;
+    if (r.last_scan_at && r.last_scan_at.getTime() >= fresh && (device.warnings ?? []).length === 0) scanned++;
+  }
+  return {
+    id: c.id,
+    name: c.name,
+    industry: c.industry,
+    staff: c.staff,
+    devices: Math.max(c.devices_expected, rows.length),
+    devicesScanned: scanned,
+    lastScan: lastScan || new Date(0).toISOString(),
+    agents,
+    warnings,
+  };
+}
+
+const LATEST_SCANS = `
+  select d.client_id, d.id as device_id, d.hostname, d.last_scan_at, s.report
+  from devices d
+  left join lateral (
+    select report from scans where scans.device_id = d.id order by received_at desc limit 1
+  ) s on true`;
+
+export async function listClients(mspId: string, now = new Date()): Promise<Client[]> {
+  return withTenant(mspId, async (db) => {
+    const clients = (await db.query<ClientRow>("select * from clients order by name")).rows;
+    const rows = (await db.query<DeviceScanRow>(LATEST_SCANS)).rows;
+    return clients.map((c) => buildClient(c, rows.filter((r) => r.client_id === c.id), now));
+  });
+}
+
+export interface UploadTokenInfo {
+  id: string;
+  label: string;
+  createdAt: string;
+  lastUsed: string | null;
+}
+
+export async function getClient(
+  mspId: string,
+  clientId: string,
+  now = new Date(),
+): Promise<{ client: Client; tokens: UploadTokenInfo[] } | undefined> {
+  if (!isUuid(clientId)) return undefined;
+  return withTenant(mspId, async (db) => {
+    const c = (await db.query<ClientRow>("select * from clients where id = $1", [clientId])).rows[0];
+    if (!c) return undefined;
+    const rows = (await db.query<DeviceScanRow>(`${LATEST_SCANS} where d.client_id = $1`, [clientId])).rows;
+    const tokens = (
+      await db.query<{ id: string; label: string; created_at: Date; last_used: Date | null }>(
+        "select id, label, created_at, last_used from upload_tokens where client_id = $1 and revoked_at is null order by created_at",
+        [clientId],
+      )
+    ).rows.map((t) => ({
+      id: t.id,
+      label: t.label,
+      createdAt: t.created_at.toISOString(),
+      lastUsed: t.last_used?.toISOString() ?? null,
+    }));
+    return { client: buildClient(c, rows, now), tokens };
+  });
+}
+
+export interface NewClient {
+  name: string;
+  industry?: string;
+  staff?: number;
+  devicesExpected?: number;
+}
+
+export async function createClient(mspId: string, input: NewClient): Promise<string> {
+  const name = input.name.trim();
+  if (!name || name.length > 200) throw new Error("Client name must be 1 to 200 characters.");
+  return withTenant(mspId, async (db) => {
+    const res = await db.query<{ id: string }>(
+      "insert into clients (msp_id, name, industry, staff, devices_expected) values ($1, $2, $3, $4, $5) returning id",
+      [mspId, name, (input.industry ?? "").trim().slice(0, 200), clampInt(input.staff), clampInt(input.devicesExpected)],
+    );
+    return res.rows[0].id;
+  });
+}
+
+/** Creates a token laptops use to send scans for one client. The token is returned once and never stored. */
+export async function createUploadToken(mspId: string, clientId: string, label: string): Promise<string> {
+  if (!isUuid(clientId)) throw new Error("Unknown client.");
+  const token = newToken("agu");
+  await withTenant(mspId, async (db) => {
+    const res = await db.query(
+      `insert into upload_tokens (msp_id, client_id, token_hash, label)
+       select $1, id, $3, $4 from clients where id = $2`,
+      [mspId, clientId, tokenHash(token), label.trim().slice(0, 200)],
+    );
+    if (res.rowCount !== 1) throw new Error("Unknown client.");
+  });
+  return token;
+}
+
+export async function revokeUploadToken(mspId: string, tokenId: string): Promise<void> {
+  if (!isUuid(tokenId)) return;
+  await withTenant(mspId, (db) => db.query("update upload_tokens set revoked_at = now() where id = $1", [tokenId]));
+}
+
+export class UploadError extends Error {
+  readonly status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+  }
+}
+
+/** Stores a scan sent by a laptop. Throws UploadError with an HTTP status on bad input. */
+export async function ingestScan(token: string | undefined, report: unknown, now = new Date()) {
+  if (!token || !token.startsWith("agu_")) throw new UploadError("Missing or malformed upload token.", 401);
+  const owner = await lookup<{ client_id: string; msp_id: string }>("select * from upload_check_token($1)", [
+    tokenHash(token),
+  ]);
+  if (!owner) throw new UploadError("Upload token not recognized or revoked.", 401);
+
+  try {
+    importScan(report); // same checks the console uses to read it back
+  } catch (err) {
+    if (err instanceof ScanImportError) throw new UploadError(err.message, 400);
+    throw err;
+  }
+  const r = report as Record<string, unknown>;
+  const hostname = typeof r.hostname === "string" ? r.hostname.trim() : "";
+  if (!hostname || hostname.length > 255) throw new UploadError("The report has no hostname.", 400);
+  const os = typeof r.os === "string" ? r.os.slice(0, 50) : "";
+  let scannedAt = new Date(typeof r.scannedAt === "string" ? r.scannedAt : NaN);
+  // A wrong clock on the laptop shouldn't put scans in the future.
+  if (Number.isNaN(scannedAt.getTime()) || scannedAt > now) scannedAt = now;
+
+  return withTenant(owner.msp_id, async (db) => {
+    const device = await db.query<{ id: string }>(
+      `insert into devices (msp_id, client_id, hostname, os, last_scan_at)
+       values ($1, $2, $3, $4, $5)
+       on conflict (client_id, hostname) do update set os = excluded.os, last_scan_at = excluded.last_scan_at
+       returning id`,
+      [owner.msp_id, owner.client_id, hostname, os, now],
+    );
+    const deviceId = device.rows[0].id;
+    await db.query(
+      "insert into scans (msp_id, client_id, device_id, scanned_at, report) values ($1, $2, $3, $4, $5)",
+      [owner.msp_id, owner.client_id, deviceId, scannedAt, JSON.stringify(report)],
+    );
+    return { clientId: owner.client_id, deviceId };
+  });
+}
+
+function clampInt(v: unknown): number {
+  const n = Math.floor(Number(v));
+  return Number.isFinite(n) && n > 0 ? Math.min(n, 10_000_000) : 0;
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function isUuid(v: string): boolean {
+  return UUID.test(v);
+}

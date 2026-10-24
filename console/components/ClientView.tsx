@@ -79,15 +79,17 @@ export function ClientView({ client }: { client: Client }) {
       <div className="page-head">
         <h1>{client.name}</h1>
         <p className="muted">
-          {client.industry} · {client.staff.toLocaleString("en-US")} staff · last scan{" "}
-          {new Date(client.lastScan).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" })} UTC
+          {[client.industry, `${client.staff.toLocaleString("en-US")} staff`].filter(Boolean).join(" · ")} ·{" "}
+          {new Date(client.lastScan).getTime() > 0
+            ? `last scan ${new Date(client.lastScan).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" })} UTC`
+            : "no scans yet"}
         </p>
       </div>
 
       {client.warnings && client.warnings.length > 0 && (
         <section className="warning" role="alert">
           <h2>This scan is incomplete</h2>
-          <p>Some config files couldn&apos;t be read, so agents in them are missing below. Fix the files or check permissions, then scan again.</p>
+          <p>Some scans couldn&apos;t be read completely, so agents may be missing below. Fix the files or check permissions, then scan again.</p>
           <ul>{client.warnings.map((w) => <li key={w}>{w}</li>)}</ul>
         </section>
       )}
