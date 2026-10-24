@@ -1,7 +1,8 @@
 // Made-up demo data for one MSP and six clients. No real companies or people.
 // Laptop findings use the same rule IDs and wording as the scanner.
 
-import type { Agent, Client, Finding } from "./types.ts";
+import { countRisk } from "./risk.ts";
+import type { Agent, Client, Finding, PersonRef } from "./types.ts";
 
 export const MSP_NAME = "Harbor Managed IT";
 
@@ -112,6 +113,14 @@ const F = {
 let n = 0;
 const id = () => `a${++n}`;
 
+// Made-up laptop owners, by device.
+const DEVICE_OWNER: Record<string, string> = {
+  "MCU-DEV-04": "r.alvarez", "MCU-DATA-02": "k.patel", "MCU-DEV-07": "a.nguyen", "MCU-OPS-11": "b.okafor",
+  "PC-ENG-118": "m.osei", "PC-ENG-122": "p.lindqvist", "OAK-LT-031": "s.novak", "CF-FIN-03": "t.hughes",
+  "CF-DEV-01": "e.ramos", "CF-OPS-09": "t.hughes", "BDG-ADMIN-02": "l.burke", "SUM-MAC-07": "c.moreau",
+};
+const person = (key: string): PersonRef => ({ key, name: key });
+
 function mcp(
   name: string,
   device: string,
@@ -121,7 +130,8 @@ function mcp(
   lastSeen = "2026-10-23",
   protectedKeys?: string[],
 ): Agent {
-  return { id: id(), name, kind: "mcp-server", source: "Laptop scan", location: device, app, reach, findings, revocable: false, lastSeen, protectedKeys };
+  const owner = DEVICE_OWNER[device];
+  return { id: id(), name, kind: "mcp-server", source: "Laptop scan", location: device, app, reach, findings, revocable: false, lastSeen, protectedKeys, people: owner ? [person(owner)] : [] };
 }
 
 function m365(
@@ -143,6 +153,7 @@ function m365(
     findings,
     revocable: true,
     lastSeen,
+    people: [...owner.matchAll(/\b([a-z]\.[a-z]+)\b/g)].map((m) => person(m[1])),
   };
 }
 
@@ -239,4 +250,24 @@ export const clients: Client[] = [
 
 export function getClient(id: string): Client | undefined {
   return clients.find((c) => c.id === id);
+}
+
+/** A made-up 90-day trend ending at today's demo counts: risk falling as the MSP fixes things. */
+export function demoTrend(days = 90): { day: string; high: number; medium: number; low: number; tools: number }[] {
+  const end = Date.parse("2026-10-24T00:00:00Z");
+  const all = clients.flatMap((c) => c.agents);
+  const r = countRisk(all);
+  const now = { high: r.high, medium: r.medium, tools: all.length };
+  return Array.from({ length: days }, (_, i) => {
+    const t = (days - 1 - i) / Math.max(1, days - 1); // 1 at the start, 0 today
+    const step = Math.floor(i / 7); // changes week by week, like real scans
+    const wobble = (step % 3) - 1;
+    return {
+      day: new Date(end - (days - 1 - i) * 86_400_000).toISOString().slice(0, 10),
+      high: Math.max(0, Math.round(now.high + t * 14 + (t > 0.1 ? wobble : 0))),
+      medium: Math.max(0, Math.round(now.medium + t * 6 - (t > 0.1 ? wobble : 0))),
+      low: 0,
+      tools: Math.max(1, Math.round(now.tools - t * 9)),
+    };
+  });
 }

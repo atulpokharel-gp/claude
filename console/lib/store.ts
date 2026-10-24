@@ -3,6 +3,7 @@
 import { checkClientLimit, PLAN_LIMITS, type Plan } from "./accounts.ts";
 import { lookup, withTenant } from "./db.ts";
 import { appToAgent, discover, GraphError, revokeApp, TENANT_ID, type Fetch, type M365App } from "./m365.ts";
+import { snapshotOf } from "./insights.ts";
 import { importScan, ScanImportError } from "./scan-import.ts";
 import { newToken, tokenHash } from "./secrets.ts";
 import type { Agent, Client } from "./types.ts";
@@ -180,6 +181,12 @@ export class UploadError extends Error {
 
 /** Stores a scan sent by a laptop. Throws UploadError with an HTTP status on bad input. */
 export async function ingestScan(token: string | undefined, report: unknown, now = new Date()) {
+  const saved = await saveScan(token, report, now);
+  await snapshotClient(saved.mspId, saved.clientId, now);
+  return { clientId: saved.clientId, deviceId: saved.deviceId };
+}
+
+async function saveScan(token: string | undefined, report: unknown, now: Date) {
   // agu_ tokens were issued before the rename and are still valid.
   if (!token || !(token.startsWith("zlu_") || token.startsWith("agu_"))) throw new UploadError("Missing or malformed upload token.", 401);
   const owner = await lookup<{ client_id: string; msp_id: string }>("select * from upload_check_token($1)", [
@@ -227,7 +234,7 @@ export async function ingestScan(token: string | undefined, report: unknown, now
       "insert into scans (msp_id, client_id, device_id, scanned_at, report) values ($1, $2, $3, $4, $5)",
       [owner.msp_id, owner.client_id, deviceId, scannedAt, JSON.stringify(report)],
     );
-    return { clientId: owner.client_id, deviceId };
+    return { mspId: owner.msp_id, clientId: owner.client_id, deviceId };
   });
 }
 
@@ -248,6 +255,7 @@ export async function connectM365(mspId: string, clientId: string, tenantId: str
 export async function disconnectM365(mspId: string, clientId: string): Promise<void> {
   if (!isUuid(clientId)) return;
   await withTenant(mspId, (db) => db.query("delete from m365_tenants where client_id = $1", [clientId]));
+  await snapshotClient(mspId, clientId);
 }
 
 /** Reads the tenant's AI app grants from Microsoft and stores them. Errors are stored too, for the page to show. */
@@ -265,6 +273,7 @@ export async function syncM365(mspId: string, clientId: string, f: Fetch = fetch
         JSON.stringify(apps),
       ]),
     );
+    await snapshotClient(mspId, clientId);
     return { apps: apps.length };
   } catch (err) {
     const message = err instanceof GraphError ? err.message : "Couldn't reach Microsoft 365.";
@@ -283,6 +292,72 @@ export async function revokeM365App(mspId: string, clientId: string, agentId: st
   if (!t || !app) throw new Error("That app isn't in this client's Microsoft 365 any more.");
   await revokeApp(t.tenant_id, app, f);
   await syncM365(mspId, clientId, f);
+}
+
+/**
+ * Saves today's risk counts for a client, for the trend chart. Never throws:
+ * a failed snapshot must not fail the upload or sync that triggered it.
+ */
+export async function snapshotClient(mspId: string, clientId: string, now = new Date()): Promise<void> {
+  try {
+    const got = await getClient(mspId, clientId, now);
+    if (!got) return;
+    const s = snapshotOf(got.client);
+    await withTenant(mspId, (db) =>
+      db.query(
+        `insert into risk_snapshots (client_id, msp_id, day, high, medium, low, tools, people)
+         values ($1, $2, $3, $4, $5, $6, $7, $8)
+         on conflict (client_id, day) do update set high = excluded.high, medium = excluded.medium,
+           low = excluded.low, tools = excluded.tools, people = excluded.people`,
+        [clientId, mspId, now.toISOString().slice(0, 10), s.high, s.medium, s.low, s.tools, s.people],
+      ),
+    );
+  } catch (err) {
+    console.error(`risk snapshot for client ${clientId} failed: ${(err as Error).message}`);
+  }
+}
+
+export interface TrendPoint {
+  day: string; // YYYY-MM-DD
+  high: number;
+  medium: number;
+  low: number;
+  tools: number;
+}
+
+/**
+ * Risk counts per day for the last `days` days, summed across clients (or one
+ * client). A day with no new snapshot carries each client's last known counts.
+ */
+export async function getTrend(mspId: string, days = 90, now = new Date(), clientId?: string): Promise<TrendPoint[]> {
+  const first = new Date(now.getTime() - (days - 1) * 86_400_000).toISOString().slice(0, 10);
+  const rows = await withTenant(mspId, async (db) =>
+    (
+      await db.query<{ client_id: string; day: string; high: number; medium: number; low: number; tools: number }>(
+        `select client_id, to_char(day, 'YYYY-MM-DD') as day, high, medium, low, tools from risk_snapshots
+         where ($2::uuid is null or client_id = $2)
+           and (day >= $1 or day = (select max(day) from risk_snapshots r2 where r2.client_id = risk_snapshots.client_id and r2.day < $1))
+         order by day`,
+        [first, clientId && isUuid(clientId) ? clientId : null],
+      )
+    ).rows,
+  );
+  const latest = new Map<string, (typeof rows)[number]>();
+  let i = 0;
+  const out: TrendPoint[] = [];
+  for (let d = 0; d < days; d++) {
+    const day = new Date(Date.parse(`${first}T00:00:00Z`) + d * 86_400_000).toISOString().slice(0, 10);
+    while (i < rows.length && rows[i].day <= day) latest.set(rows[i].client_id, rows[i++]);
+    const p: TrendPoint = { day, high: 0, medium: 0, low: 0, tools: 0 };
+    for (const r of latest.values()) {
+      p.high += r.high;
+      p.medium += r.medium;
+      p.low += r.low;
+      p.tools += r.tools;
+    }
+    out.push(p);
+  }
+  return out;
 }
 
 function clampInt(v: unknown): number {

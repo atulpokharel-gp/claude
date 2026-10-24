@@ -64,6 +64,13 @@ func TestAllUsersScansEveryProfile(t *testing.T) {
 	if merged.Summary.High != 2*single.Summary.High {
 		t.Fatalf("summary not merged: %+v vs %+v", merged.Summary, single.Summary)
 	}
+	byUser := map[string]int{}
+	for _, srv := range merged.Servers {
+		byUser[srv.User]++
+	}
+	if byUser["alice"] != single.Summary.Servers || byUser["bob"] != single.Summary.Servers {
+		t.Fatalf("servers not tagged with their profile: %v", byUser)
+	}
 	for _, c := range merged.Configs {
 		if strings.Contains(c.Path, "Public") {
 			t.Fatalf("Public profile should be skipped: %s", c.Path)

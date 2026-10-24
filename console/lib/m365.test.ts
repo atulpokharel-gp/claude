@@ -40,6 +40,20 @@ test("findings describe how the access was granted", async () => {
   const inbox = by("InboxPilot AI");
   assert.deepEqual(inbox.findings.map((f) => f.ruleId), ["M365_USER_GRANT", "M365_UNVERIFIED_PUBLISHER"]);
   assert.match(inbox.findings[0].title, /1 person/);
+  // Named people who approved it; tools approved for everyone list nobody.
+  assert.deepEqual(inbox.people, [{ key: "d.reyes", name: "Dana Reyes", email: "d.reyes@contoso.example" }]);
+  assert.deepEqual(chat.people, []);
+});
+
+test("apps are still listed when Microsoft won't give out names", async () => {
+  const g = fakeGraph();
+  const base = g.fetch;
+  const noNames = (async (input: string | URL | Request, init?: RequestInit) =>
+    String(input).includes("/users?") ? new Response(JSON.stringify({ error: { message: "Insufficient privileges" } }), { status: 403 }) : base(input, init)) as typeof fetch;
+  const apps = await discover(TENANT, noNames);
+  const inbox = appToAgent(apps.find((a) => a.name === "InboxPilot AI")!, "Acme", "2026-10-24T09:00:00Z");
+  assert.deepEqual(inbox.people, []);
+  assert.equal(inbox.findings[0].ruleId, "M365_USER_GRANT");
 });
 
 test("revoking removes every grant the app holds", async () => {

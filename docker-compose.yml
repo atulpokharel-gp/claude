@@ -44,8 +44,9 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
-    # Once a day: delete expired sessions and old scans, re-check Microsoft 365.
-    command: sh -c "while true; do npm run --silent db:cleanup; npm run --silent m365:sync; sleep 86400; done"
+    # Once a day: delete expired sessions and old scans, re-check Microsoft 365,
+    # save each client's risk counts for the trend chart.
+    command: sh -c "while true; do npm run --silent db:cleanup; npm run --silent m365:sync; npm run --silent db:snapshot; sleep 86400; done"
 
   caddy:
     image: caddy:2-alpine

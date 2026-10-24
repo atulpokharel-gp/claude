@@ -1,5 +1,7 @@
 import Link from "next/link";
-import { loadOverview } from "@/lib/data.ts";
+import { loadOverview, loadTrend } from "@/lib/data.ts";
+import { attention } from "@/lib/insights.ts";
+import { TrendChart } from "@/components/TrendChart.tsx";
 import { clientScore, countRisk, keyCounts } from "@/lib/risk.ts";
 import { RiskPill } from "@/components/RiskPill.tsx";
 
@@ -19,7 +21,7 @@ function timeAgo(iso: string, now: Date): string {
 export const dynamic = "force-dynamic";
 
 export default async function Overview() {
-  const { demo, mspName, clients } = await loadOverview();
+  const [{ demo, mspName, clients }, trend] = await Promise.all([loadOverview(), loadTrend(90)]);
   const rows = clients
     .map((c) => ({ c, r: countRisk(c.agents), score: clientScore(c) }))
     .sort((a, b) => b.score - a.score);
@@ -32,6 +34,8 @@ export default async function Overview() {
   const keys = keyCounts(all);
   // The demo data is frozen in time, so measure "ago" from its own clock.
   const now = demo ? new Date("2026-10-24T09:00:00Z") : new Date();
+  const todo = attention(clients, now);
+  const hasTrend = trend.some((p) => p.tools > 0);
 
   return (
     <>
@@ -56,6 +60,37 @@ export default async function Overview() {
         <div className="tile"><b>{revocable}</b><span>high-risk ones you can revoke in one click</span></div>
         <div className="tile"><b>{devices > 0 ? Math.round((scanned / devices) * 100) : 0}%</b><span>of {devices.toLocaleString("en-US")} devices scanned</span></div>
       </section>
+
+      {clients.length > 0 && (
+        <div className="split">
+          <section className="panel">
+            <div className="panel-head">
+              <h2>Risk over the last 90 days</h2>
+              <span className="muted small">High- and medium-risk tools across all clients</span>
+            </div>
+            {hasTrend ? <TrendChart points={trend} /> : <p className="empty">The chart fills in as laptops report and Microsoft 365 is checked, one point a day.</p>}
+          </section>
+          <section className="panel">
+            <div className="panel-head">
+              <h2>Needs attention</h2>
+              <span className="muted small">{todo.length === 0 ? "Nothing right now" : `${todo.length} ${todo.length === 1 ? "item" : "items"}`}</span>
+            </div>
+            {todo.length === 0 ? (
+              <p className="empty">Every client is scanned and nothing is high risk.</p>
+            ) : (
+              <ul className="attention">
+                {todo.slice(0, 8).map((t, i) => (
+                  <li key={`${t.clientId}-${t.kind}-${i}`} className={`attention-${t.kind}`}>
+                    <Link href={`/app/clients/${t.clientId}`}>{t.clientName}</Link>
+                    <span>{t.text}</span>
+                  </li>
+                ))}
+                {todo.length > 8 && <li className="muted small">and {todo.length - 8} more below</li>}
+              </ul>
+            )}
+          </section>
+        </div>
+      )}
 
       <section className="panel">
         <div className="panel-head">

@@ -1,7 +1,7 @@
 // Turns a JSON report from the zinloop scanner into a Client the console can show.
 // Runs in the browser; the file never leaves the viewer's computer.
 
-import type { Agent, Client, Finding, Severity } from "./types.ts";
+import type { Agent, Client, Finding, PersonRef, Severity } from "./types.ts";
 
 const SEVERITIES: Severity[] = ["high", "medium", "low", "none"];
 
@@ -45,6 +45,21 @@ function reachFor(s: Record<string, unknown>): string[] {
   return cmd ? [`Runs: ${cmd}`] : [];
 }
 
+// Profiles that aren't a person.
+const NOT_PEOPLE = new Set(["root", "public", "default", "all users", "shared", "administrator", "system"]);
+
+/** The person a laptop config belongs to: the scanner's user field, or the home folder in the path. */
+export function personFor(raw: Record<string, unknown>): PersonRef | undefined {
+  let name = str(raw.user);
+  if (!name) {
+    const m = str(raw.configPath).match(/(?:^|[\\/])(?:Users|home)[\\/]([^\\/]+)/i);
+    name = m?.[1] ?? "";
+  }
+  name = name.trim().slice(0, 100);
+  if (!name || NOT_PEOPLE.has(name.toLowerCase())) return undefined;
+  return { key: name.toLowerCase(), name };
+}
+
 export function importScan(json: unknown): Client {
   if (!isObj(json) || json.schemaVersion !== 1 || !Array.isArray(json.servers)) {
     throw new ScanImportError(
@@ -71,6 +86,7 @@ export function importScan(json: unknown): Client {
       findings,
       revocable: false,
       lastSeen: scannedAt.slice(0, 10),
+      people: [personFor(raw)].filter((p): p is PersonRef => p !== undefined),
       protectedKeys: (Array.isArray(raw.protectedSecrets) ? raw.protectedSecrets : [])
         .map((p) => (isObj(p) ? str(p.env) : ""))
         .filter(Boolean),

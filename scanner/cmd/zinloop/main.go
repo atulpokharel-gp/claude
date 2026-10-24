@@ -153,7 +153,12 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 			}
 		}
 		servers, configs := discover.Scan(env)
-		parts = append(parts, report.Build(servers, configs, ctx, meta))
+		part := report.Build(servers, configs, ctx, meta)
+		user := filepath.Base(env.Home)
+		for i := range part.Servers {
+			part.Servers[i].User = user
+		}
+		parts = append(parts, part)
 	}
 	rep := report.Merge(meta, parts)
 

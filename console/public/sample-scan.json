@@ -31,7 +31,8 @@
           "detail": "This server gives the AI a terminal. A single malicious instruction hidden in an email, web page or file the agent reads could run commands with the user's full rights.",
           "fix": "Remove it, or replace it with a server that only allows a short list of approved commands and asks before each run."
         }
-      ]
+      ],
+      "user": "dev"
     },
     {
       "name": "files",
@@ -53,7 +54,8 @@
           "detail": "The filesystem server is allowed into /. That covers documents, SSH keys, browser data and other apps' secrets.",
           "fix": "Limit it to the one project folder the agent needs, and use a read-only server where writing isn't required."
         }
-      ]
+      ],
+      "user": "dev"
     },
     {
       "name": "github",
@@ -84,7 +86,8 @@
           "detail": "This server runs @modelcontextprotocol/server-github through npx without a fixed version. If the package is taken over or a bad update is published, it runs on this computer automatically.",
           "fix": "Pin an exact, reviewed version (for example @modelcontextprotocol/server-github@1.2.3) and update it on purpose."
         }
-      ]
+      ],
+      "user": "dev"
     },
     {
       "name": "stripe",
@@ -110,7 +113,8 @@
           "detail": "A long-lived key or token is written directly in the config file (env STRIPE_SECRET_KEY). Anyone or anything that can read this file, including other AI tools and malware, can reuse it.",
           "fix": "Move the value to the operating system's keychain or an environment variable, rotate the key, and give the replacement the smallest permissions it needs."
         }
-      ]
+      ],
+      "user": "dev"
     },
     {
       "name": "internal-wiki",
@@ -134,7 +138,8 @@
           "detail": "Whatever the agent passes to this server goes to wiki.example.com.",
           "fix": "Confirm the company approves this provider and that a data agreement is in place."
         }
-      ]
+      ],
+      "user": "dev"
     },
     {
       "name": "postgres",
@@ -164,7 +169,8 @@
           "detail": "This server's container shares the host network, mounts /var/run/docker.sock, so the container gives little protection.",
           "fix": "Drop --privileged and host networking, and mount only the folder the server needs, read-only if possible."
         }
-      ]
+      ],
+      "user": "dev"
     },
     {
       "name": "playwright",
@@ -184,7 +190,8 @@
           "detail": "This server runs @playwright/mcp@latest through npx without a fixed version. If the package is taken over or a bad update is published, it runs on this computer automatically.",
           "fix": "Pin an exact, reviewed version (for example @playwright/mcp@1.2.3) and update it on purpose."
         }
-      ]
+      ],
+      "user": "dev"
     },
     {
       "name": "sentry",
@@ -201,7 +208,8 @@
           "detail": "Whatever the agent passes to this server goes to mcp.sentry.dev.",
           "fix": "Confirm the company approves this provider and that a data agreement is in place."
         }
-      ]
+      ],
+      "user": "dev"
     },
     {
       "name": "linear",
@@ -221,7 +229,8 @@
           "detail": "Whatever the agent passes to this server goes to mcp.linear.app.",
           "fix": "Confirm the company approves this provider and that a data agreement is in place."
         }
-      ]
+      ],
+      "user": "dev"
     },
     {
       "name": "pinned-time",
@@ -233,7 +242,8 @@
         "mcp-server-time==0.6.2"
       ],
       "risk": "none",
-      "findings": []
+      "findings": [],
+      "user": "dev"
     },
     {
       "name": "local-notes",
@@ -245,7 +255,8 @@
         "--read-only"
       ],
       "risk": "none",
-      "findings": []
+      "findings": [],
+      "user": "dev"
     }
   ],
   "configs": [

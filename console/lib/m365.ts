@@ -5,9 +5,10 @@
 // M365_CLIENT_SECRET). A client's admin grants it consent once; after that the
 // console reads the tenant's consent grants with app-only tokens. Application
 // permissions it needs: Application.Read.All, DelegatedPermissionGrant.ReadWrite.All,
-// AppRoleAssignment.ReadWrite.All. See docs/m365.md.
+// AppRoleAssignment.ReadWrite.All, and User.Read.All (names of the people who
+// approved an app; optional). See docs/m365.md.
 
-import type { Agent, Finding } from "./types.ts";
+import type { Agent, Finding, PersonRef } from "./types.ts";
 
 export const GRAPH = "https://graph.microsoft.com/v1.0";
 const LOGIN = "https://login.microsoftonline.com";
@@ -129,7 +130,7 @@ export interface M365App {
   publisher: string;
   verified: boolean;
   /** Delegated grants: who consented and to what. */
-  grants: { id: string; allUsers: boolean; principalId: string | null; scopes: string[] }[];
+  grants: { id: string; allUsers: boolean; principalId: string | null; scopes: string[]; principalName?: string; principalEmail?: string }[];
   /** App-only permissions (work with nobody signed in). */
   appRoles: { id: string; resourceId: string; value: string }[];
 }
@@ -185,6 +186,28 @@ async function getAll<T>(token: string, url: string, f: Fetch): Promise<T[]> {
   return out;
 }
 
+/**
+ * Looks up the names of the people who approved apps. Optional: without the
+ * User.Read.All permission Microsoft refuses, and apps are listed without names.
+ */
+async function userNames(token: string, ids: string[], f: Fetch): Promise<Map<string, { name: string; email: string }>> {
+  const out = new Map<string, { name: string; email: string }>();
+  // Graph allows up to 15 values in one "in" filter.
+  for (let i = 0; i < ids.length && i < 1500; i += 15) {
+    const list = ids.slice(i, i + 15).filter((id) => /^[0-9a-zA-Z-]{1,64}$/.test(id)).map((id) => `'${id}'`).join(",");
+    if (!list) continue;
+    const res = await f(`${GRAPH}/users?$filter=${encodeURIComponent(`id in (${list})`)}&$select=id,displayName,userPrincipalName`, {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return out;
+    const body = (await res.json().catch(() => ({}))) as { value?: { id: string; displayName?: string | null; userPrincipalName?: string | null }[] };
+    for (const u of body.value ?? []) {
+      out.set(u.id, { name: u.displayName || u.userPrincipalName || "", email: u.userPrincipalName ?? "" });
+    }
+  }
+  return out;
+}
+
 export function isAiApp(sp: Pick<GraphSp, "displayName" | "publisherName" | "appOwnerOrganizationId">): boolean {
   if (sp.appOwnerOrganizationId === MICROSOFT_TENANT) return false;
   return AI_NAMES.test(sp.displayName) || AI_NAMES.test(sp.publisherName ?? "");
@@ -212,6 +235,9 @@ export async function discover(tenantId: string, f: Fetch = fetch): Promise<M365
       )
     : [];
   const roleNames = new Map((graphSp?.appRoles ?? []).map((r) => [r.id, r.value]));
+  const aiIds = new Set(sps.filter(isAiApp).map((sp) => sp.id));
+  const principalIds = [...new Set(grants.filter((x) => aiIds.has(x.clientId) && x.principalId).map((x) => x.principalId as string))];
+  const names = principalIds.length > 0 ? await userNames(token, principalIds, f) : new Map();
 
   const apps: M365App[] = [];
   for (const sp of sps) {
@@ -223,6 +249,9 @@ export async function discover(tenantId: string, f: Fetch = fetch): Promise<M365
         allUsers: x.consentType === "AllPrincipals",
         principalId: x.principalId,
         scopes: x.scope.split(" ").filter((s) => s && !IGNORED.has(s)),
+        ...(x.principalId && names.has(x.principalId)
+          ? { principalName: names.get(x.principalId)!.name, principalEmail: names.get(x.principalId)!.email }
+          : {}),
       }));
     const roles = assignments
       .filter((x) => x.principalId === sp.id)
@@ -337,5 +366,10 @@ export function appToAgent(app: M365App, clientName: string, seenAt: string): Ag
     findings,
     revocable: true,
     lastSeen: seenAt.slice(0, 10),
+    people: app.grants.flatMap((g): PersonRef[] => {
+      if (g.allUsers || !g.principalName) return [];
+      const email = g.principalEmail ?? "";
+      return [{ key: (email.split("@")[0] || g.principalName).toLowerCase(), name: g.principalName, ...(email ? { email } : {}) }];
+    }),
   };
 }
