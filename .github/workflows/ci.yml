@@ -87,3 +87,16 @@ jobs:
       - run: npm test
       - run: npm run build # also generates next-env.d.ts, which typecheck needs
       - run: npm run typecheck
+
+  deploy-files:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the console image
+        run: docker build -t zinloop-console console
+      - name: Check docker-compose.yml
+        run: cp .env.example .env && docker compose config -q
+      - name: Check the RMM scripts
+        run: |
+          sh -n scanner/rmm/install-unix.sh
+          pwsh -NoProfile -Command '$e=$null; [System.Management.Automation.Language.Parser]::ParseFile("scanner/rmm/install-windows.ps1",[ref]$null,[ref]$e) | Out-Null; if ($e) { $e; exit 1 }'

@@ -4,7 +4,7 @@
 import { hasDatabase } from "./db.ts";
 import { clients as sampleClients, getClient as sampleClient, MSP_NAME } from "./sample-data.ts";
 import { requireSession } from "./session.ts";
-import { getClient, listClients, type UploadTokenInfo } from "./store.ts";
+import { getClient, listClients, type M365Status, type UploadTokenInfo } from "./store.ts";
 import type { Client } from "./types.ts";
 
 export interface Overview {
@@ -24,12 +24,13 @@ export interface ClientDetail {
   mspName: string;
   client: Client;
   tokens: UploadTokenInfo[];
+  m365: M365Status | null;
 }
 
 export async function loadClient(id: string): Promise<ClientDetail | undefined> {
   if (!hasDatabase()) {
     const client = sampleClient(id);
-    return client && { demo: true, mspName: MSP_NAME, client, tokens: [] };
+    return client && { demo: true, mspName: MSP_NAME, client, tokens: [], m365: null };
   }
   const s = await requireSession();
   const got = await getClient(s.mspId, id);

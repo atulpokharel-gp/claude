@@ -118,6 +118,7 @@ begin
   execute format('create policy owner_cleanup on invites for delete to %I using (true)', current_user);
   execute format('create policy owner_cleanup on scans for delete to %I using (true)', current_user);
   execute format('create policy owner_lookup on scans for select to %I using (true)', current_user);
+  execute format('create policy owner_lookup on m365_tenants for select to %I using (true)', current_user);
 end $$;
 
 grant select, insert, update, delete on invites, m365_tenants to zinloop_app;

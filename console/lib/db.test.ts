@@ -26,7 +26,19 @@ import {
 import { codeAt, currentStep } from "./totp.ts";
 import { cleanup } from "../scripts/cleanup.ts";
 import { setPlan } from "../scripts/set-plan.ts";
-import { createClient, createUploadToken, getClient, ingestScan, listClients, revokeUploadToken, UploadError } from "./store.ts";
+import {
+  connectM365,
+  createClient,
+  createUploadToken,
+  getClient,
+  ingestScan,
+  listClients,
+  revokeM365App,
+  revokeUploadToken,
+  syncM365,
+  UploadError,
+} from "./store.ts";
+import { fakeGraph, TENANT } from "./m365-fake.ts";
 
 const adminUrl = process.env.TEST_DATABASE_ADMIN_URL;
 process.env.APP_SECRET ??= randomBytes(32).toString("base64");
@@ -262,5 +274,34 @@ describe("database", { skip: !adminUrl && "set TEST_DATABASE_ADMIN_URL to run" }
     assert.equal(n.scans, 1);
     const left = await withTenant(a.mspId, (db) => db.query<{ scanned_at: Date }>("select scanned_at from scans where client_id = $1", [id]));
     assert.deepEqual(left.rows.map((r) => r.scanned_at.toISOString()), ["2026-02-01T00:00:00.000Z"]);
+  });
+  test("Microsoft 365 apps show up as agents and can be revoked", async () => {
+    process.env.M365_CLIENT_ID = "test-client";
+    process.env.M365_CLIENT_SECRET = "test-secret";
+    const g = fakeGraph();
+    const id = await createClient(a.mspId, { name: "Cloud Co" });
+    assert.deepEqual(await syncM365(a.mspId, id, g.fetch), { error: "Microsoft 365 isn't connected for this client." });
+    await assert.rejects(connectM365(b.mspId, id, TENANT), /Unknown client/);
+    await connectM365(a.mspId, id, TENANT);
+    assert.deepEqual(await syncM365(a.mspId, id, g.fetch), { apps: 3 });
+
+    const got = (await getClient(a.mspId, id))!;
+    assert.equal(got.m365?.tenantId, TENANT);
+    const m365 = got.client.agents.filter((x) => x.source === "Microsoft 365");
+    assert.equal(m365.length, 3);
+    assert.ok((await listClients(a.mspId)).find((c) => c.id === id)!.agents.length === 3);
+    assert.equal(await getClient(b.mspId, id), undefined);
+
+    const notes = m365.find((x) => x.name === "Meeting Notes Bot")!;
+    await assert.rejects(revokeM365App(b.mspId, id, notes.id, g.fetch), /isn't in this client/);
+    await revokeM365App(a.mspId, id, notes.id, g.fetch);
+    const after = (await getClient(a.mspId, id))!.client.agents.map((x) => x.name).sort();
+    assert.deepEqual(after, ["ChatGPT", "InboxPilot AI"]);
+
+    // A tenant that removed consent leaves a readable error on the client.
+    await connectM365(a.mspId, id, "99999999-2222-3333-4444-555555555555");
+    const r = await syncM365(a.mspId, id, g.fetch);
+    assert.ok("error" in r && /Application not found/.test(r.error));
+    assert.match((await getClient(a.mspId, id))!.m365!.lastError!, /Application not found/);
   });
 });

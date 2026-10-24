@@ -4,6 +4,9 @@ import { notFound } from "next/navigation";
 import { loadClient } from "@/lib/data.ts";
 import { ClientView } from "@/components/ClientView.tsx";
 import { ConnectLaptops } from "@/components/ConnectLaptops.tsx";
+import { M365Panel } from "@/components/M365Panel.tsx";
+import { hasM365 } from "@/lib/m365.ts";
+import { revokeM365Action } from "../m365-actions.ts";
 
 export const dynamic = "force-dynamic";
 
@@ -15,14 +18,26 @@ async function consoleUrl(): Promise<string> {
   return `${proto}://${host}`;
 }
 
-export default async function ClientPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function ClientPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ m365?: string }>;
+}) {
   const { id } = await params;
+  const { m365: notice } = await searchParams;
   const detail = await loadClient(id);
   if (!detail) notFound();
   return (
     <>
       <p className="small"><Link href="/app">← All clients</Link></p>
-      <ClientView client={detail.client} reportHref={`/app/clients/${detail.client.id}/report`} />
+      <ClientView
+        client={detail.client}
+        reportHref={`/app/clients/${detail.client.id}/report`}
+        onRevoke={detail.demo ? undefined : revokeM365Action.bind(null, detail.client.id)}
+      />
+      {!detail.demo && <M365Panel clientId={detail.client.id} status={detail.m365} available={hasM365()} notice={notice} />}
       {!detail.demo && <ConnectLaptops clientId={detail.client.id} tokens={detail.tokens} consoleUrl={await consoleUrl()} />}
     </>
   );

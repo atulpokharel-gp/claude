@@ -11,7 +11,8 @@
     "db:migrate": "node --experimental-strip-types scripts/migrate.ts",
     "db:create-msp": "node --experimental-strip-types scripts/create-msp.ts",
     "db:set-plan": "node --experimental-strip-types scripts/set-plan.ts",
-    "db:cleanup": "node --experimental-strip-types scripts/cleanup.ts"
+    "db:cleanup": "node --experimental-strip-types scripts/cleanup.ts",
+    "m365:sync": "node --experimental-strip-types scripts/m365-sync.ts"
   },
   "dependencies": {
     "next": "15.5.28",

@@ -29,7 +29,16 @@ function matches(a: Agent, f: Filter): boolean {
   return true;
 }
 
-export function ClientView({ client, reportHref }: { client: Client; reportHref?: string }) {
+export function ClientView({
+  client,
+  reportHref,
+  onRevoke,
+}: {
+  client: Client;
+  reportHref?: string;
+  /** Revokes a Microsoft 365 app for real. Without it (demo), revoking only changes the screen. */
+  onRevoke?: (agentId: string) => Promise<{ error?: string }>;
+}) {
   const [filter, setFilter] = useState<Filter>("all");
   const [open, setOpen] = useState<Set<string>>(() => {
     const first = sortAgents(client.agents)[0];
@@ -57,9 +66,19 @@ export function ClientView({ client, reportHref }: { client: Client; reportHref?
     });
   }
 
-  function revoke(a: Agent) {
-    setRevoked((prev) => new Set(prev).add(a.id));
+  async function revoke(a: Agent) {
     setConfirming(null);
+    if (onRevoke) {
+      const r = await onRevoke(a.id);
+      if (r.error) {
+        flash(r.error);
+        return;
+      }
+      setRevoked((prev) => new Set(prev).add(a.id));
+      flash(`Revoked ${a.name}'s access in Microsoft 365.`);
+      return;
+    }
+    setRevoked((prev) => new Set(prev).add(a.id));
     flash(`Revoked access for ${a.name} (demo, nothing was changed)`);
   }
 

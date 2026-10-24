@@ -2,6 +2,7 @@
 
 import { checkClientLimit, PLAN_LIMITS, type Plan } from "./accounts.ts";
 import { lookup, withTenant } from "./db.ts";
+import { appToAgent, discover, GraphError, revokeApp, TENANT_ID, type Fetch, type M365App } from "./m365.ts";
 import { importScan, ScanImportError } from "./scan-import.ts";
 import { newToken, tokenHash } from "./secrets.ts";
 import type { Agent, Client } from "./types.ts";
@@ -25,7 +26,21 @@ interface DeviceScanRow {
   report: unknown;
 }
 
-function buildClient(c: ClientRow, rows: DeviceScanRow[], now: Date): Client {
+interface M365Row {
+  client_id: string;
+  tenant_id: string;
+  last_sync_at: Date | null;
+  last_error: string | null;
+  apps: M365App[];
+}
+
+export interface M365Status {
+  tenantId: string;
+  lastSync: string | null;
+  lastError: string | null;
+}
+
+function buildClient(c: ClientRow, rows: DeviceScanRow[], now: Date, m365?: M365Row): Client {
   const fresh = now.getTime() - SCAN_FRESH_DAYS * 86_400_000;
   const agents: Agent[] = [];
   const warnings: string[] = [];
@@ -45,6 +60,10 @@ function buildClient(c: ClientRow, rows: DeviceScanRow[], now: Date): Client {
     const at = r.last_scan_at?.toISOString() ?? "";
     if (at > lastScan) lastScan = at;
     if (r.last_scan_at && r.last_scan_at.getTime() >= fresh && (device.warnings ?? []).length === 0) scanned++;
+  }
+  if (m365) {
+    const seen = (m365.last_sync_at ?? now).toISOString();
+    for (const app of m365.apps) agents.push(appToAgent(app, c.name, seen));
   }
   return {
     id: c.id,
@@ -70,7 +89,10 @@ export async function listClients(mspId: string, now = new Date()): Promise<Clie
   return withTenant(mspId, async (db) => {
     const clients = (await db.query<ClientRow>("select * from clients order by name")).rows;
     const rows = (await db.query<DeviceScanRow>(LATEST_SCANS)).rows;
-    return clients.map((c) => buildClient(c, rows.filter((r) => r.client_id === c.id), now));
+    const tenants = (await db.query<M365Row>("select * from m365_tenants")).rows;
+    return clients.map((c) =>
+      buildClient(c, rows.filter((r) => r.client_id === c.id), now, tenants.find((t) => t.client_id === c.id)),
+    );
   });
 }
 
@@ -85,7 +107,7 @@ export async function getClient(
   mspId: string,
   clientId: string,
   now = new Date(),
-): Promise<{ client: Client; tokens: UploadTokenInfo[] } | undefined> {
+): Promise<{ client: Client; tokens: UploadTokenInfo[]; m365: M365Status | null } | undefined> {
   if (!isUuid(clientId)) return undefined;
   return withTenant(mspId, async (db) => {
     const c = (await db.query<ClientRow>("select * from clients where id = $1", [clientId])).rows[0];
@@ -102,7 +124,9 @@ export async function getClient(
       createdAt: t.created_at.toISOString(),
       lastUsed: t.last_used?.toISOString() ?? null,
     }));
-    return { client: buildClient(c, rows, now), tokens };
+    const t = (await db.query<M365Row>("select * from m365_tenants where client_id = $1", [clientId])).rows[0];
+    const m365 = t ? { tenantId: t.tenant_id, lastSync: t.last_sync_at?.toISOString() ?? null, lastError: t.last_error } : null;
+    return { client: buildClient(c, rows, now, t), tokens, m365 };
   });
 }
 
@@ -204,6 +228,60 @@ export async function ingestScan(token: string | undefined, report: unknown, now
     );
     return { clientId: owner.client_id, deviceId };
   });
+}
+
+/** Links a client to its Microsoft 365 tenant after the admin granted consent. */
+export async function connectM365(mspId: string, clientId: string, tenantId: string): Promise<void> {
+  if (!isUuid(clientId) || !TENANT_ID.test(tenantId)) throw new Error("Unknown client or tenant.");
+  await withTenant(mspId, async (db) => {
+    const res = await db.query(
+      `insert into m365_tenants (client_id, msp_id, tenant_id)
+       select id, $1, $3 from clients where id = $2
+       on conflict (client_id) do update set tenant_id = excluded.tenant_id, connected_at = now(), last_error = null`,
+      [mspId, clientId, tenantId.toLowerCase()],
+    );
+    if (res.rowCount !== 1) throw new Error("Unknown client.");
+  });
+}
+
+export async function disconnectM365(mspId: string, clientId: string): Promise<void> {
+  if (!isUuid(clientId)) return;
+  await withTenant(mspId, (db) => db.query("delete from m365_tenants where client_id = $1", [clientId]));
+}
+
+/** Reads the tenant's AI app grants from Microsoft and stores them. Errors are stored too, for the page to show. */
+export async function syncM365(mspId: string, clientId: string, f: Fetch = fetch): Promise<{ apps: number } | { error: string }> {
+  if (!isUuid(clientId)) return { error: "Unknown client." };
+  const t = await withTenant(mspId, async (db) =>
+    (await db.query<{ tenant_id: string }>("select tenant_id from m365_tenants where client_id = $1", [clientId])).rows[0],
+  );
+  if (!t) return { error: "Microsoft 365 isn't connected for this client." };
+  try {
+    const apps = await discover(t.tenant_id, f);
+    await withTenant(mspId, (db) =>
+      db.query("update m365_tenants set apps = $2, last_sync_at = now(), last_error = null where client_id = $1", [
+        clientId,
+        JSON.stringify(apps),
+      ]),
+    );
+    return { apps: apps.length };
+  } catch (err) {
+    const message = err instanceof GraphError ? err.message : "Couldn't reach Microsoft 365.";
+    await withTenant(mspId, (db) => db.query("update m365_tenants set last_error = $2 where client_id = $1", [clientId, message]));
+    return { error: message };
+  }
+}
+
+/** Revokes every grant of one AI app in the client's tenant, then re-reads the tenant. */
+export async function revokeM365App(mspId: string, clientId: string, agentId: string, f: Fetch = fetch): Promise<void> {
+  if (!isUuid(clientId) || !agentId.startsWith("m365-")) throw new Error("Unknown app.");
+  const t = await withTenant(mspId, async (db) =>
+    (await db.query<M365Row>("select * from m365_tenants where client_id = $1", [clientId])).rows[0],
+  );
+  const app = t?.apps.find((a) => `m365-${a.servicePrincipalId}` === agentId);
+  if (!t || !app) throw new Error("That app isn't in this client's Microsoft 365 any more.");
+  await revokeApp(t.tenant_id, app, f);
+  await syncM365(mspId, clientId, f);
 }
 
 function clampInt(v: unknown): number {

@@ -7,6 +7,8 @@ import { signOutAction } from "@/app/(site)/login/actions.ts";
 import { Logo } from "@/components/Logo.tsx";
 
 export const metadata: Metadata = { title: "Console" };
+// Pages depend on the session and on DATABASE_URL at run time, never at build time.
+export const dynamic = "force-dynamic";
 
 export default async function ConsoleLayout({ children }: { children: React.ReactNode }) {
   const demo = !hasDatabase();

@@ -40,7 +40,14 @@ go build -o zinloop ./cmd/zinloop
 ./zinloop --json                # JSON to stdout
 ./zinloop --out scan.json       # also save JSON (file mode 0600)
 ./zinloop --fail-on high        # exit code 2 if anything is high risk
+./zinloop --all-users           # every user profile (run as administrator/root)
 ```
+
+RMM tools run scripts as SYSTEM or root, whose own home has no AI configs, so
+use `--all-users` there. [`rmm/`](rmm/) has ready-made install scripts for
+Windows (PowerShell) and macOS/Linux that download the scanner from your
+console, check its SHA-256, store the upload token where only administrators
+can read it, run the scan and can schedule it daily.
 
 ## Fix plain-text keys
 
