@@ -69,8 +69,16 @@ test("keeps config read errors and marks the scan incomplete", () => {
   assert.equal(c.devicesScanned, 0);
 });
 
-test("a clean scan has no warnings and counts as scanned", () => {
+test("a skipped server entry shows up as a warning", () => {
   const c = importScan(sample);
+  assert.equal(c.warnings?.length, 1);
+  assert.match(c.warnings![0], /broken/);
+  assert.equal(c.devicesScanned, 0);
+});
+
+test("a clean scan has no warnings and counts as scanned", () => {
+  const clean = { ...sample, configs: sample.configs.map(({ error: _e, ...c }: { error?: string }) => c) };
+  const c = importScan(clean);
   assert.deepEqual(c.warnings, []);
   assert.equal(c.devicesScanned, 1);
 });
