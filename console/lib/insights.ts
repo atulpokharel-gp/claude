@@ -70,6 +70,8 @@ export interface ToolSummary {
   kind: Agent["kind"];
   apps: string[];
   clients: { id: string; name: string }[];
+  /** Clients where this tool has a high or medium finding. */
+  affectedClients: number;
   people: number;
   /** How many installs or grants were found. */
   count: number;
@@ -82,27 +84,30 @@ export interface ToolSummary {
 
 /** Each AI tool or MCP server once, with where it's used. */
 export function toolsFrom(clients: Client[]): ToolSummary[] {
-  const out = new Map<string, ToolSummary & { findingCounts: Map<string, number>; peopleIds: Set<string> }>();
+  const out = new Map<string, Omit<ToolSummary, "affectedClients"> & { findingCounts: Map<string, number>; peopleIds: Set<string>; affected: Set<string> }>();
   for (const c of clients) {
     for (const a of c.agents) {
       const key = toolKey(a.name);
       let t = out.get(key);
       if (!t) {
-        t = { key, name: a.name, kind: a.kind, apps: [], clients: [], people: 0, count: 0, risk: "none", orgWide: false, findingCounts: new Map(), peopleIds: new Set() };
+        t = { key, name: a.name, kind: a.kind, apps: [], clients: [], people: 0, count: 0, risk: "none", orgWide: false, findingCounts: new Map(), peopleIds: new Set(), affected: new Set() };
         out.set(key, t);
       }
       t.count++;
       if (!t.apps.includes(a.app)) t.apps.push(a.app);
       if (!t.clients.some((x) => x.id === c.id)) t.clients.push({ id: c.id, name: c.name });
       for (const p of a.people ?? []) t.peopleIds.add(`${c.id}:${p.key}`);
-      t.risk = worse(t.risk, worst(a.findings));
+      const risk = worst(a.findings);
+      t.risk = worse(t.risk, risk);
+      if (risk === "high" || risk === "medium") t.affected.add(c.id);
       if (a.findings.some((f) => f.ruleId === "M365_ORG_WIDE_GRANT")) t.orgWide = true;
       for (const f of a.findings) if (f.severity !== "none") t.findingCounts.set(f.title, (t.findingCounts.get(f.title) ?? 0) + 1);
     }
   }
   return [...out.values()]
-    .map(({ findingCounts, peopleIds, ...t }) => ({
+    .map(({ findingCounts, peopleIds, affected, ...t }) => ({
       ...t,
+      affectedClients: affected.size,
       people: peopleIds.size,
       topFinding: [...findingCounts.entries()].sort((x, y) => y[1] - x[1])[0]?.[0],
     }))

@@ -197,6 +197,12 @@ describe("database", { skip: !adminUrl && "set TEST_DATABASE_ADMIN_URL to run" }
     assert.ok(n >= 1);
     const after = await getTrend(a.mspId, 1, new Date("2026-10-25T12:00:00Z"), id);
     assert.equal(after[0].day, "2026-10-25");
+
+    // It also trims old points, running as a non-superuser owner.
+    await snapshotAll(ownerUrl, new Date("2026-10-25T01:00:00Z"), 2);
+    const kept = await withTenant(a.mspId, async (db) => (await db.query<{ day: string }>("select day::text from risk_snapshots where client_id = $1 order by day", [id])).rows.map((r) => r.day));
+    assert.ok(kept.length > 0 && kept.every((d) => d >= "2026-10-23"), `older points removed: ${kept.join(", ")}`);
+    assert.ok(kept.includes("2026-10-25"));
   });
 
   test("bad tokens and bad reports are refused", async () => {

@@ -12,7 +12,7 @@ const KIND: Record<string, string> = { "mcp-server": "MCP server", "copilot-agen
 export default async function ToolsPage() {
   const { clients } = await loadOverview();
   const tools = toolsFrom(clients);
-  const shared = tools.filter((t) => t.clients.length > 1 && (t.risk === "high" || t.risk === "medium"));
+  const shared = tools.filter((t) => t.affectedClients > 1);
 
   return (
     <>
@@ -27,7 +27,7 @@ export default async function ToolsPage() {
           {shared.slice(0, 4).map((t, i) => (
             <span key={t.key}>
               {i > 0 && ", "}
-              {t.name} ({t.clients.length} clients)
+              {t.name} ({t.affectedClients} clients)
             </span>
           ))}
           {shared.length > 4 && ` and ${shared.length - 4} more`} have problems at more than one client.
