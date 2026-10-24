@@ -17,7 +17,7 @@ const high = { ruleId: "SECRET_IN_CONFIG", severity: "high" as const, title: "Cr
 test("people merge a laptop profile with the same person's Microsoft 365 sign-in", () => {
   const c = client("acme", [
     agent({ name: "github", findings: [high], people: [{ key: "d.reyes", name: "d.reyes" }] }),
-    agent({ name: "InboxPilot", source: "Microsoft 365", kind: "oauth-app", location: "Acme Microsoft 365 · 1 user", people: [{ key: "d.reyes", name: "Dana Reyes", email: "d.reyes@acme.example" }] }),
+    agent({ name: "InboxPilot", source: "Microsoft 365", kind: "oauth-app", location: "Acme Microsoft 365 · 1 user", people: [{ key: "d.reyes@acme.example", name: "Dana Reyes", email: "d.reyes@acme.example" }] }),
     agent({ name: "time", location: "PC-2 · VS Code", people: [{ key: "sam", name: "sam" }] }),
   ]);
   const people = peopleFrom([c]);
@@ -30,6 +30,22 @@ test("people merge a laptop profile with the same person's Microsoft 365 sign-in
   assert.equal(dana.risk, "high");
   // The same key at another client is a different person.
   assert.equal(peopleFrom([c, client("other", [agent({ people: [{ key: "d.reyes", name: "d.reyes" }] })])]).length, 3);
+});
+
+test("two Microsoft 365 users with the same name before @ stay separate", () => {
+  const one = { key: "alice@one.example", name: "Alice One", email: "alice@one.example" };
+  const two = { key: "alice@two.example", name: "Alice Two", email: "alice@two.example" };
+  const c = client("acme", [
+    agent({ name: "InboxPilot", source: "Microsoft 365", kind: "oauth-app", findings: [high], people: [one, two] }),
+    // A laptop profile called alice could be either, so it isn't merged.
+    agent({ name: "github", people: [{ key: "alice", name: "alice" }] }),
+  ]);
+  const people = peopleFrom([c]);
+  assert.deepEqual(people.map((p) => p.name).sort(), ["Alice One", "Alice Two", "alice"]);
+  for (const p of people) assert.equal(p.tools.length, 1);
+  assert.equal(people.find((p) => p.name === "Alice One")!.findings, 1);
+  assert.equal(toolsFrom([c]).find((t) => t.key === "inboxpilot")!.people, 2);
+  assert.equal(snapshotOf(c).people, 3);
 });
 
 test("tools are listed once with every client that uses them", () => {
@@ -63,7 +79,13 @@ test("needs attention lists high risk first, then clients that stopped reporting
 });
 
 test("snapshots count tools by their worst finding", () => {
-  const s = snapshotOf(client("a", [agent({ findings: [high], people: [{ key: "p", name: "p" }] }), agent({})]));
+  const s = snapshotOf(
+    client("a", [
+      agent({ findings: [high], people: [{ key: "p", name: "p" }] }),
+      agent({ source: "Microsoft 365", people: [{ key: "p@a.example", name: "P", email: "p@a.example" }] }),
+    ]),
+  );
+  // The laptop profile and the Microsoft 365 user are the same person.
   assert.deepEqual(s, { high: 1, medium: 0, low: 0, tools: 2, people: 1 });
 });
 
