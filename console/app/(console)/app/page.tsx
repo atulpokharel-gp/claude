@@ -35,7 +35,7 @@ export default async function Overview() {
   // The demo data is frozen in time, so measure "ago" from its own clock.
   const now = demo ? new Date("2026-10-24T09:00:00Z") : new Date();
   const todo = attention(clients, now);
-  const hasTrend = trend.some((p) => p.tools > 0);
+  const hasTrend = trend.length >= 2 && trend.some((p) => p.tools > 0);
 
   return (
     <>
