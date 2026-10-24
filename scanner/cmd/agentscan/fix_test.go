@@ -150,6 +150,21 @@ func TestFixRefusesUnrecognizedLauncherName(t *testing.T) {
 	}
 }
 
+func TestFixWritesAbsoluteLauncherPath(t *testing.T) {
+	home := fixtureHome(t)
+	useMemoryStore(t)
+	t.Chdir(home)
+	var out, errOut bytes.Buffer
+	if code := run([]string{"fix-secrets", "--home", home, "--apply", "--launcher", "agentscan"}, &out, &errOut); code != 0 {
+		t.Fatalf("exit %d: %s", code, errOut.String())
+	}
+	data, _ := os.ReadFile(filepath.Join(home, ".config", "Claude", "claude_desktop_config.json"))
+	want, _ := json.Marshal(filepath.Join(home, "agentscan"))
+	if !bytes.Contains(data, want) {
+		t.Errorf("config should name the launcher by absolute path %s:\n%s", want, data)
+	}
+}
+
 func TestFixReportsUnreadableConfigs(t *testing.T) {
 	home := fixtureHome(t)
 	useMemoryStore(t)

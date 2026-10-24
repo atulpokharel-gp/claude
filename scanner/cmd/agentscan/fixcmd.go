@@ -61,6 +61,14 @@ func runFix(args []string, stdout, stderr io.Writer) int {
 				return 1
 			}
 		}
+		// The AI app starts servers from its own working folder, so a
+		// relative path would point nowhere.
+		if abs, err := filepath.Abs(lp); err != nil {
+			fmt.Fprintln(stderr, "cannot resolve the launcher path:", err)
+			return 1
+		} else {
+			lp = abs
+		}
 		if !discover.IsLauncherName(lp) {
 			fmt.Fprintf(stderr, "the launcher must be named agentscan (or agentscan.exe on Windows) so later scans recognize it; got %s\n", lp)
 			return 1
