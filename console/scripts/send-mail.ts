@@ -32,13 +32,21 @@ export async function sendPending(adminUrl: string, transport: Transport, from: 
   let sent = 0;
   let failed = 0;
   try {
+    // Someone who turned an email off since it was queued doesn't get it.
+    await db.query(
+      `delete from outbox o using users u
+       where u.id = o.user_id and o.sent_at is null
+         and not case o.kind when 'alert' then u.alert_emails when 'weekly' then u.weekly_email else false end`,
+    );
     for (let i = 0; i < max; i++) {
       await db.query("begin");
       const row = (
         await db.query<{ id: string; to_email: string; subject: string; body_text: string; body_html: string; unsubscribe_url: string; attempts: number }>(
-          `select id, to_email, subject, body_text, body_html, unsubscribe_url, attempts from outbox
-           where sent_at is null and attempts < $1 and next_try_at <= now()
-           order by id limit 1 for update skip locked`,
+          `select o.id, o.to_email, o.subject, o.body_text, o.body_html, o.unsubscribe_url, o.attempts
+           from outbox o join users u on u.id = o.user_id
+           where o.sent_at is null and o.attempts < $1 and o.next_try_at <= now()
+             and case o.kind when 'alert' then u.alert_emails when 'weekly' then u.weekly_email else false end
+           order by o.id limit 1 for update of o skip locked`,
           [MAX_ATTEMPTS],
         )
       ).rows[0];

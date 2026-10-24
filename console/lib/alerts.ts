@@ -37,7 +37,7 @@ export function highRiskFindings(client: Client): Map<string, AlertFinding> {
   for (const a of client.agents) {
     for (const f of a.findings) {
       if (f.severity !== "high") continue;
-      const where = a.source === "Microsoft 365" ? a.id : a.location;
+      const where = a.source === "Microsoft 365" ? a.id : `${a.location}|${a.app}|${a.configPath ?? ""}`;
       const key = `${toolKey(a.name)}|${f.ruleId}|${where}`.slice(0, 600);
       if (!out.has(key)) out.set(key, { tool: a.name, title: f.title, place: `${a.app} · ${a.location}` });
     }
