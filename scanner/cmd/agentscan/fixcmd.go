@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -77,6 +78,10 @@ func runFix(args []string, stdout, stderr io.Writer) int {
 			fmt.Fprintln(stderr, "agentscan is running from a temporary folder (go run?). Build it, put it somewhere permanent, and run it from there, or pass --launcher.")
 			return 1
 		}
+		if err := checkLauncher(lp); err != nil {
+			fmt.Fprintln(stderr, err)
+			return 1
+		}
 		plan, err = fix.Apply(plan, fix.Options{Home: env.Home, Launcher: lp, Store: newStore(), Now: time.Now})
 		if err != nil {
 			fmt.Fprintln(stderr, err)
@@ -104,6 +109,22 @@ func runFix(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 	return 0
+}
+
+// checkLauncher makes sure the launcher is a real program, so configs are
+// never pointed at a path that can't start their servers.
+func checkLauncher(p string) error {
+	info, err := os.Stat(p)
+	if err != nil {
+		return fmt.Errorf("launcher %s not found; nothing was changed", p)
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("launcher %s isn't a program file; nothing was changed", p)
+	}
+	if runtime.GOOS != "windows" && info.Mode().Perm()&0o111 == 0 {
+		return fmt.Errorf("launcher %s isn't executable; nothing was changed", p)
+	}
+	return nil
 }
 
 func writePlan(w io.Writer, plan fix.Plan, applied, incomplete bool) {
@@ -208,15 +229,23 @@ func runRotate(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "That's the same key as before. Create a new one with the provider first.")
 		return 1
 	}
-	if err := store.Set(ref, val); err != nil {
-		fmt.Fprintln(stderr, "couldn't save to the password store:", err)
-		return 1
-	}
+	// Record first, then store the key. If the record can't be saved, the
+	// store is untouched and the same new key can be entered again later.
+	prev := e
 	now := time.Now().UTC()
 	e.RotatedAt = &now
 	st.Entries[ref] = e
 	if err := st.Save(env.Home); err != nil {
-		fmt.Fprintln(stderr, "key saved, but the record couldn't be updated:", err)
+		fmt.Fprintln(stderr, "couldn't update the record of moved keys; nothing changed:", err)
+		return 1
+	}
+	if err := store.Set(ref, val); err != nil {
+		st.Entries[ref] = prev
+		if saveErr := st.Save(env.Home); saveErr != nil {
+			fmt.Fprintf(stderr, "couldn't save to the password store (%v), and couldn't undo the record (%v); run agentscan rotate %s again\n", err, saveErr, ref)
+			return 1
+		}
+		fmt.Fprintln(stderr, "couldn't save to the password store; nothing changed:", err)
 		return 1
 	}
 	fmt.Fprintf(stdout, "Saved the new key for %s. Restart %s, and revoke the old key with the provider if you haven't.\n", ref, e.App)

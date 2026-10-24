@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -37,6 +38,16 @@ func fixtureHome(t *testing.T) string {
 	return dst
 }
 
+// fakeLauncher creates an executable file named agentscan in dir.
+func fakeLauncher(t *testing.T, dir string) string {
+	t.Helper()
+	p := filepath.Join(dir, "agentscan")
+	if err := os.WriteFile(p, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
 func useMemoryStore(t *testing.T) vault.Memory {
 	t.Helper()
 	store := vault.Memory{}
@@ -66,7 +77,7 @@ func TestFixSecretsEndToEnd(t *testing.T) {
 
 	// Apply.
 	out.Reset()
-	if code := run([]string{"fix-secrets", "--home", home, "--apply", "--launcher", "/opt/agentguard/agentscan"}, &out, &errOut); code != 0 {
+	if code := run([]string{"fix-secrets", "--home", home, "--apply", "--launcher", fakeLauncher(t, home)}, &out, &errOut); code != 0 {
 		t.Fatalf("apply exit %d: %s\n%s", code, errOut.String(), out.String())
 	}
 	if strings.Contains(out.String(), "fake-demo-token") {
@@ -153,6 +164,7 @@ func TestFixRefusesUnrecognizedLauncherName(t *testing.T) {
 func TestFixWritesAbsoluteLauncherPath(t *testing.T) {
 	home := fixtureHome(t)
 	useMemoryStore(t)
+	fakeLauncher(t, home)
 	t.Chdir(home)
 	var out, errOut bytes.Buffer
 	if code := run([]string{"fix-secrets", "--home", home, "--apply", "--launcher", "agentscan"}, &out, &errOut); code != 0 {
@@ -162,6 +174,66 @@ func TestFixWritesAbsoluteLauncherPath(t *testing.T) {
 	want, _ := json.Marshal(filepath.Join(home, "agentscan"))
 	if !bytes.Contains(data, want) {
 		t.Errorf("config should name the launcher by absolute path %s:\n%s", want, data)
+	}
+}
+
+func TestFixRefusesMissingOrNonExecutableLauncher(t *testing.T) {
+	home := fixtureHome(t)
+	useMemoryStore(t)
+	cfg := filepath.Join(home, ".config", "Claude", "claude_desktop_config.json")
+	before, _ := os.ReadFile(cfg)
+	missing := filepath.Join(home, "nowhere", "agentscan")
+	notExec := filepath.Join(home, "agentscan")
+	_ = os.WriteFile(notExec, []byte("x"), 0o644)
+	cases := []string{missing}
+	if runtime.GOOS != "windows" {
+		cases = append(cases, notExec)
+	}
+	for _, lp := range cases {
+		var out, errOut bytes.Buffer
+		if code := run([]string{"fix-secrets", "--home", home, "--apply", "--launcher", lp}, &out, &errOut); code == 0 {
+			t.Errorf("%s: should be refused", lp)
+		}
+	}
+	if after, _ := os.ReadFile(cfg); !bytes.Equal(before, after) {
+		t.Error("config changed even though the launcher was refused")
+	}
+}
+
+func TestRotateKeepsStoreWhenRecordCantBeSaved(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("relies on Unix directory permissions")
+	}
+	home := fixtureHome(t)
+	store := useMemoryStore(t)
+	var out, errOut bytes.Buffer
+	if code := run([]string{"fix-secrets", "--home", home, "--apply", "--launcher", fakeLauncher(t, home)}, &out, &errOut); code != 0 {
+		t.Fatalf("apply exit %d: %s", code, errOut.String())
+	}
+	var ref string
+	for r := range store {
+		ref = r
+		break
+	}
+	old := store[ref]
+	stateDir := filepath.Dir(vault.StatePath(home))
+	_ = os.Chmod(stateDir, 0o500)
+	t.Cleanup(func() { _ = os.Chmod(stateDir, 0o700) })
+	if os.WriteFile(filepath.Join(stateDir, "probe"), nil, 0o600) == nil {
+		t.Skip("running with permissions that ignore read-only folders")
+	}
+	if code := runRotate([]string{"--home", home, ref}, strings.NewReader("new-key\n"), &out, &errOut); code == 0 {
+		t.Fatal("rotate should fail when the record can't be saved")
+	}
+	if store[ref] != old {
+		t.Fatal("the store changed even though the record wasn't saved")
+	}
+	_ = os.Chmod(stateDir, 0o700)
+	if code := runRotate([]string{"--home", home, ref}, strings.NewReader("new-key\n"), &out, &errOut); code != 0 {
+		t.Fatalf("retry with the same new key should work: %s", errOut.String())
+	}
+	if store[ref] != "new-key" {
+		t.Error("retry didn't store the new key")
 	}
 }
 
