@@ -180,7 +180,8 @@ export class UploadError extends Error {
 
 /** Stores a scan sent by a laptop. Throws UploadError with an HTTP status on bad input. */
 export async function ingestScan(token: string | undefined, report: unknown, now = new Date()) {
-  if (!token || !token.startsWith("zlu_")) throw new UploadError("Missing or malformed upload token.", 401);
+  // agu_ tokens were issued before the rename and are still valid.
+  if (!token || !(token.startsWith("zlu_") || token.startsWith("agu_"))) throw new UploadError("Missing or malformed upload token.", 401);
   const owner = await lookup<{ client_id: string; msp_id: string }>("select * from upload_check_token($1)", [
     tokenHash(token),
   ]);

@@ -11,6 +11,7 @@ import pg from "pg";
 import { migrate } from "../scripts/migrate.ts";
 import { createMsp } from "../scripts/create-msp.ts";
 import { closePool, getPool, withTenant } from "./db.ts";
+import { tokenHash } from "./secrets.ts";
 import { checkSession, finishMfa, signIn, signOut } from "./auth.ts";
 import {
   acceptInvite,
@@ -162,6 +163,16 @@ describe("database", { skip: !adminUrl && "set TEST_DATABASE_ADMIN_URL to run" }
     await ingestScan(token, { ...sample, configs: [], scannedAt: "2026-06-01T00:00:00Z" }, now);
     got = await getClient(a.mspId, id, now);
     assert.equal(got!.client.devicesScanned, 1);
+  });
+
+  test("upload tokens issued before the rename (agu_) still work", async () => {
+    const id = await createClient(a.mspId, { name: "Legacy Co", devicesExpected: 1 });
+    const legacy = "agu_" + randomBytes(32).toString("base64url");
+    await withTenant(a.mspId, (db) =>
+      db.query("insert into upload_tokens (msp_id, client_id, token_hash, label) values ($1, $2, $3, 'old')", [a.mspId, id, tokenHash(legacy)]),
+    );
+    await ingestScan(legacy, { ...sample, configs: [] });
+    await assert.rejects(ingestScan("agu_nope", sample), (e: UploadError) => e.status === 401);
   });
 
   test("bad tokens and bad reports are refused", async () => {
