@@ -460,6 +460,14 @@ describe("database", { skip: !adminUrl && "set TEST_DATABASE_ADMIN_URL to run" }
     assert.match(alert.headers!["List-Unsubscribe"], /^<https:\/\/app\.example\/api\/unsubscribe\?t=/);
     assert.equal(alert.headers!["List-Unsubscribe-Post"], "List-Unsubscribe=One-Click");
 
+    // Removing someone drops their unsent mail.
+    const gone = (await checkSession(await acceptInvite(await createInvite(s.mspId, s.userId, "leaver@mail.example"), "Leaver", "another long password")))!;
+    await withTenant(s.mspId, (db) =>
+      db.query("insert into outbox (msp_id, dedupe_key, kind, user_id, to_email, subject, body_text, body_html) values ($1, 'test:leaver', 'weekly', $2, 'leaver@mail.example', 's', 't', 'h')", [s.mspId, gone.userId]),
+    );
+    await removeMember(s.mspId, s.userId, gone.userId);
+    assert.ok(!(await outbox()).some((m) => m.to_email === "leaver@mail.example"));
+
     // Unsubscribe turns off one kind of email for that person only.
     assert.equal(await unsubscribe(viewer.userId, "weekly"), "boss@mailco.example");
     assert.deepEqual(await getEmailPrefs(s.mspId, viewer.userId), { alerts: true, weekly: false });

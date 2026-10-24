@@ -26,13 +26,19 @@ export function unsubscribeUrl(userId: string, kind: EmailKind): string | null {
   return `${base}/unsubscribe?t=${encodeURIComponent(sign("unsub", { u: userId, k: kind }, UNSUBSCRIBE_SECONDS))}`;
 }
 
-/** Each high-risk finding at a client, keyed so the same problem is recognized on the next scan. */
+/**
+ * Each high-risk finding at a client, keyed so the same problem is recognized
+ * on the next scan: by device and config path for laptop finds, and by the
+ * app's stable ID for Microsoft 365 apps (their location text includes a user
+ * count that changes).
+ */
 export function highRiskFindings(client: Client): Map<string, AlertFinding> {
   const out = new Map<string, AlertFinding>();
   for (const a of client.agents) {
     for (const f of a.findings) {
       if (f.severity !== "high") continue;
-      const key = `${toolKey(a.name)}|${f.ruleId}|${a.location}`.slice(0, 600);
+      const where = a.source === "Microsoft 365" ? a.id : a.location;
+      const key = `${toolKey(a.name)}|${f.ruleId}|${where}`.slice(0, 600);
       if (!out.has(key)) out.set(key, { tool: a.name, title: f.title, place: `${a.app} · ${a.location}` });
     }
   }
@@ -46,9 +52,9 @@ interface Recipient {
 
 async function enqueue(db: Db, mspId: string, dedupeKey: string, kind: EmailKind, to: Recipient, mail: Email, unsubscribe: string | null): Promise<boolean> {
   const res = await db.query(
-    `insert into outbox (msp_id, dedupe_key, kind, to_email, subject, body_text, body_html, unsubscribe_url)
-     values ($1, $2, $3, $4, $5, $6, $7, $8) on conflict (dedupe_key) do nothing`,
-    [mspId, dedupeKey.slice(0, 300), kind, to.email, mail.subject.slice(0, 300), mail.text, mail.html, unsubscribe ?? ""],
+    `insert into outbox (msp_id, dedupe_key, kind, user_id, to_email, subject, body_text, body_html, unsubscribe_url)
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9) on conflict (dedupe_key) do nothing`,
+    [mspId, dedupeKey.slice(0, 300), kind, to.id, to.email, mail.subject.slice(0, 300), mail.text, mail.html, unsubscribe ?? ""],
   );
   return res.rowCount === 1;
 }
