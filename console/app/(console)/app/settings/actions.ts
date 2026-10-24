@@ -29,8 +29,17 @@ function fail(err: unknown): FormState {
 
 export type TotpSetup = FormState & { secret?: string; qr?: string };
 
+/** Pages that show the user's own account: team settings and the client portal. */
+function refreshAccount(): void {
+  revalidatePath("/app/settings");
+  revalidatePath("/portal/account");
+}
+
+// The own-account actions below (two-factor, password, other devices) also
+// work for client viewers. Everything else is for the MSP team only.
+
 export async function startTotpAction(): Promise<TotpSetup> {
-  const s = await requireSession({ mfaSetup: true });
+  const s = await requireSession({ mfaSetup: true, viewer: true });
   if (!hasAppSecret()) return { error: "Two-factor sign-in needs APP_SECRET set on the server. Ask whoever runs your console." };
   const secret = await startTotp(s.mspId, s.userId);
   const qr = await QRCode.toString(otpauthUri(secret, s.email), { type: "svg", margin: 1, errorCorrectionLevel: "M" });
@@ -38,29 +47,29 @@ export async function startTotpAction(): Promise<TotpSetup> {
 }
 
 export async function enableTotpAction(_prev: FormState, form: FormData): Promise<FormState> {
-  const s = await requireSession({ mfaSetup: true });
+  const s = await requireSession({ mfaSetup: true, viewer: true });
   try {
     await enableTotp(s.mspId, s.userId, String(form.get("code") ?? ""));
   } catch (err) {
     return fail(err);
   }
-  revalidatePath("/app/settings");
+  refreshAccount();
   return { ok: "Two-factor sign-in is on. You'll be asked for a code each time you sign in." };
 }
 
 export async function disableTotpAction(_prev: FormState, form: FormData): Promise<FormState> {
-  const s = await requireSession();
+  const s = await requireSession({ viewer: true });
   try {
     await disableTotp(s.mspId, s.userId, String(form.get("password") ?? ""));
   } catch (err) {
     return fail(err);
   }
-  revalidatePath("/app/settings");
+  refreshAccount();
   return { ok: "Two-factor sign-in is off." };
 }
 
 export async function changePasswordAction(_prev: FormState, form: FormData): Promise<FormState> {
-  const s = await requireSession();
+  const s = await requireSession({ viewer: true });
   try {
     const token = await changePassword(s.mspId, s.userId, String(form.get("current") ?? ""), String(form.get("next") ?? ""), await requestInfo());
     await setSessionCookie(token);
@@ -120,8 +129,8 @@ export async function requireMfaAction(_prev: FormState, form: FormData): Promis
 }
 
 export async function endOtherSessionsAction(_prev: FormState): Promise<FormState> {
-  const s = await requireSession({ mfaSetup: true });
+  const s = await requireSession({ mfaSetup: true, viewer: true });
   const n = await endOtherSessions(s, (await requestInfo()).ip);
-  revalidatePath("/app/settings");
+  refreshAccount();
   return { ok: n === 0 ? "You weren't signed in anywhere else." : `Signed out ${n} other ${n === 1 ? "device" : "devices"}.` };
 }

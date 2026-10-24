@@ -3,7 +3,7 @@
 import { useActionState } from "react";
 import { joinAction } from "../../free-scan/actions.ts";
 
-export function JoinForm({ token, email }: { token: string; email: string }) {
+export function JoinForm({ token, email, viewer = false }: { token: string; email: string; viewer?: boolean }) {
   const [state, action, pending] = useActionState(joinAction, {});
   return (
     <form action={action} className="zform" key={state.error}>
@@ -22,7 +22,7 @@ export function JoinForm({ token, email }: { token: string; email: string }) {
         <span className="hint">At least 12 characters.</span>
       </div>
       {state.error && <p className="zerror" role="alert">{state.error}</p>}
-      <button type="submit" className="zbtn zbtn-main" disabled={pending}>{pending ? "Joining…" : "Join the team"}</button>
+      <button type="submit" className="zbtn zbtn-main" disabled={pending}>{pending ? "Creating your login…" : viewer ? "Create my login" : "Join the team"}</button>
     </form>
   );
 }

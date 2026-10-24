@@ -25,6 +25,7 @@ export const AUDIT_ACTIONS = {
   m365_app_revoked: "Revoked an AI app in Microsoft 365",
   client_login_created: "Invited a client viewer",
   client_login_removed: "Removed a client viewer",
+  client_viewer_joined: "Client viewer joined",
 } as const;
 
 export type AuditAction = keyof typeof AUDIT_ACTIONS;

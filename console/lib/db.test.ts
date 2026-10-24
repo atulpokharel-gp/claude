@@ -18,10 +18,13 @@ import {
   acceptInvite,
   changePassword,
   checkInvite,
+  createClientViewerInvite,
   createInvite,
   disableTotp,
   enableTotp,
   getTeam,
+  listClientViewers,
+  removeClientViewer,
   removeMember,
   setRequireMfa,
   signUp,
@@ -322,6 +325,70 @@ describe("database", { skip: !adminUrl && "set TEST_DATABASE_ADMIN_URL to run" }
     const ids = (await listAudit(msp.mspId, { limit: 5000 })).map((e) => BigInt(e.id));
     assert.equal(ids[0], BigInt(last));
     for (let i = 1; i < ids.length; i++) assert.ok(ids[i - 1] > ids[i], "sorted by number, not text");
+  });
+
+  test("client viewers see only their own client and can't change anything", async () => {
+    const ownerToken = await signUp({ name: "Owner", mspName: "Viewer IT", email: "owner@viewer.example", password: "long enough password" });
+    const s = (await checkSession(ownerToken))!;
+    await setPlan(ownerUrl, "owner@viewer.example", "partner");
+    const mine = await createClient(s.mspId, { name: "Mine Co" });
+    const other = await createClient(s.mspId, { name: "Other Co" });
+    for (const id of [mine, other]) await ingestScan(await createUploadToken(s.mspId, id, ""), sample);
+
+    // Only the owner can give out logins, and only for a client of their own.
+    const memberToken = await acceptInvite(await createInvite(s.mspId, s.userId, "tech@viewer.example"), "Tech", "another long password");
+    const member = (await checkSession(memberToken))!;
+    await assert.rejects(createClientViewerInvite(s.mspId, member.userId, mine, "boss@mine.example"), /Only the account owner/);
+    const bClient = await createClient(b.mspId, { name: "B's client" });
+    await assert.rejects(createClientViewerInvite(s.mspId, s.userId, bClient, "boss@mine.example"), /wasn't found/);
+
+    const link = await createClientViewerInvite(s.mspId, s.userId, mine, "Boss@Mine.example");
+    const inv = (await checkInvite(link))!;
+    assert.equal(inv.role, "viewer");
+    assert.equal(inv.clientName, "Mine Co");
+    const viewerToken = await acceptInvite(link, "Boss", "a long viewer password");
+    const v = (await checkSession(viewerToken))!;
+    assert.equal(v.role, "viewer");
+    assert.equal(v.clientId, mine);
+    assert.equal(v.clientName, "Mine Co");
+    assert.ok(!(await getTeam(s.mspId)).members.some((m) => m.email === "boss@mine.example"), "viewers aren't teammates");
+    assert.deepEqual((await listClientViewers(s.mspId, mine)).viewers.map((x) => x.email), ["boss@mine.example"]);
+    assert.equal((await listClientViewers(s.mspId, other)).viewers.length, 0);
+
+    // Scoped to their client, the database shows nothing else.
+    const scope = { mspId: v.mspId, clientId: v.clientId };
+    const rows = (sql: string) => withTenant(scope, async (db) => (await db.query(sql)).rows);
+    assert.ok((await getClient(scope, mine))!.client.agents.length > 0);
+    assert.equal(await getClient(scope, other), undefined);
+    assert.deepEqual((await rows("select id from clients")).map((r) => r.id), [mine]);
+    assert.ok((await rows("select client_id from scans")).every((r) => r.client_id === mine));
+    assert.ok((await rows("select client_id from devices")).every((r) => r.client_id === mine));
+    assert.equal((await rows("select id from upload_tokens")).length, 0);
+    assert.equal((await rows("select id from invites")).length, 0);
+    assert.equal((await rows("select id from audit_log")).length, 0);
+    assert.deepEqual((await rows("select email from users")).map((r) => r.email), ["boss@mine.example"]);
+    const scopedTrend = await getTrend(scope, 1, new Date(), mine);
+    assert.deepEqual(scopedTrend, await getTrend(s.mspId, 1, new Date(), mine));
+    assert.equal((await getTrend(scope, 1, new Date(), other))[0].tools, 0, "asking for another client's trend gets nothing");
+
+    // And it refuses changes to client data.
+    await assert.rejects(withTenant(scope, (db) => db.query("insert into clients (msp_id, name) values ($1, 'New')", [s.mspId])), /row-level security/);
+    await assert.rejects(withTenant(scope, (db) => db.query("update clients set name = 'Renamed'")), /row-level security/);
+    await assert.rejects(withTenant(scope, (db) => db.query("insert into upload_tokens (msp_id, client_id, token_hash) values ($1, $2, '\\x00')", [s.mspId, mine])), /row-level security/);
+    assert.equal((await withTenant(scope, (db) => db.query("delete from scans"))).rowCount, 0);
+    assert.equal((await withTenant(scope, (db) => db.query("delete from clients"))).rowCount, 0);
+    assert.equal((await withTenant(scope, (db) => db.query("update msps set require_mfa = false"))).rowCount, 0);
+    await assert.rejects(withTenant(scope, (db) => db.query("update users set client_id = $1", [other])), /row-level security/);
+    assert.equal((await getClient(s.mspId, mine))!.client.name, "Mine Co");
+
+    // Removing the login signs them out; a member can't, and the team page can't remove viewers.
+    await assert.rejects(removeClientViewer(s.mspId, member.userId, mine, v.userId), /Only the account owner/);
+    await assert.rejects(removeMember(s.mspId, s.userId, v.userId));
+    await assert.rejects(removeClientViewer(s.mspId, s.userId, other, v.userId), /wasn't found/);
+    await removeClientViewer(s.mspId, s.userId, mine, v.userId);
+    assert.equal(await checkSession(viewerToken), null);
+    const actions = (await listAudit(s.mspId)).map((e) => e.action);
+    for (const a of ["client_login_created", "client_viewer_joined", "client_login_removed"]) assert.ok(actions.includes(a as never), a);
   });
 
   test("owners can require two-factor sign-in for the whole team", async () => {

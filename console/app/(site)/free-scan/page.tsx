@@ -2,14 +2,17 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { hasDatabase } from "@/lib/db.ts";
-import { currentSession } from "@/lib/session.ts";
+import { currentSession, homeFor } from "@/lib/session.ts";
 import { SignUpForm } from "./SignUpForm.tsx";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Free exposure scan" };
 
 export default async function FreeScan({ searchParams }: { searchParams: Promise<{ partner?: string }> }) {
-  if (hasDatabase() && (await currentSession())) redirect("/app");
+  if (hasDatabase()) {
+    const s = await currentSession({ viewer: true });
+    if (s) redirect(homeFor(s));
+  }
   const { partner } = await searchParams;
   return (
     <section className="section">

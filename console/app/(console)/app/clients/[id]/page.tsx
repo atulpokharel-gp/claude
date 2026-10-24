@@ -5,6 +5,7 @@ import { loadClient } from "@/lib/data.ts";
 import { ClientView } from "@/components/ClientView.tsx";
 import { ConnectLaptops } from "@/components/ConnectLaptops.tsx";
 import { M365Panel } from "@/components/M365Panel.tsx";
+import { ClientLogins } from "@/components/ClientLogins.tsx";
 import { hasM365 } from "@/lib/m365.ts";
 import { revokeM365Action } from "../m365-actions.ts";
 
@@ -39,6 +40,7 @@ export default async function ClientPage({
       />
       {!detail.demo && <M365Panel clientId={detail.client.id} status={detail.m365} available={hasM365()} notice={notice} />}
       {!detail.demo && <ConnectLaptops clientId={detail.client.id} tokens={detail.tokens} consoleUrl={await consoleUrl()} />}
+      {!detail.demo && <ClientLogins clientId={detail.client.id} clientName={detail.client.name} logins={detail.logins} isOwner={detail.isOwner} />}
     </>
   );
 }

@@ -4,7 +4,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { hasDatabase } from "@/lib/db.ts";
 import { hasAppSecret, verifySigned } from "@/lib/crypto.ts";
-import { currentSession } from "@/lib/session.ts";
+import { currentSession, homeFor } from "@/lib/session.ts";
 import { cancelMfaAction } from "./actions.ts";
 import { MFA_COOKIE } from "@/lib/session.ts";
 import { LoginForm, MfaForm } from "./LoginForm.tsx";
@@ -14,7 +14,10 @@ export const metadata: Metadata = { title: "Sign in" };
 
 export default async function LoginPage() {
   if (!hasDatabase()) redirect("/app"); // demo mode has no accounts
-  if (await currentSession()) redirect("/app");
+  {
+    const s = await currentSession({ viewer: true });
+    if (s) redirect(homeFor(s));
+  }
   const pending = (await cookies()).get(MFA_COOKIE)?.value;
   const waitingForCode = hasAppSecret() && verifySigned("mfa", pending) !== null;
   return (
