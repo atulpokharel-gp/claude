@@ -219,7 +219,7 @@ func unpinnedPackage(s discover.Server) []Finding {
 	default:
 		return nil
 	}
-	pkg := firstPackageArg(args)
+	pkg := firstPackageArg(runner, args)
 	if pkg == "" {
 		return nil
 	}
@@ -374,19 +374,70 @@ func isLocalHost(h string) bool {
 	return false
 }
 
-func firstPackageArg(args []string) string {
+// Options that name the server package, and options that take a value that
+// is not the server package, per runner. Values of the second kind (such as
+// uvx --with helper==1.0) must be skipped, or a pinned helper would hide an
+// unpinned server.
+var (
+	packageFlags = map[string][]string{
+		"npx":  {"-p", "--package"},
+		"bunx": {"-p", "--package"},
+		"pnpm": {"--package"},
+		"yarn": {"-p", "--package"},
+		"bun":  {"-p", "--package"},
+		"uvx":  {"--from"},
+	}
+	valueFlags = map[string][]string{
+		"npx":  {"-c", "--call", "--registry", "--cache", "--userconfig", "-w", "--workspace"},
+		"bunx": {"--registry", "--cwd"},
+		"pnpm": {"--registry", "-C", "--dir"},
+		"yarn": {"--registry", "--cwd"},
+		"bun":  {"--registry", "--cwd"},
+		"uvx": {
+			"--with", "-w", "--with-editable", "--with-requirements", "-p", "--python",
+			"--index", "--index-url", "-i", "--extra-index-url", "--default-index", "-f", "--find-links",
+			"-c", "--constraints", "--overrides", "-b", "--build-constraints", "--cache-dir",
+			"--directory", "--project", "--config-file", "--env-file", "--color", "--resolution",
+			"--prerelease", "--exclude-newer", "-P", "--upgrade-package", "--reinstall-package",
+			"--refresh-package", "--no-binary-package", "--no-build-package", "--index-strategy",
+			"--keyring-provider", "--link-mode", "-C", "--config-setting", "--allow-insecure-host",
+		},
+	}
+)
+
+func firstPackageArg(runner string, args []string) string {
+	isOne := func(list []string, a string) bool {
+		for _, f := range list {
+			if a == f {
+				return true
+			}
+		}
+		return false
+	}
 	for i := 0; i < len(args); i++ {
 		a := args[i]
-		if (a == "-p" || a == "--package" || a == "--from") && i+1 < len(args) {
-			return args[i+1]
+		if a == "--" {
+			if i+1 < len(args) {
+				return args[i+1]
+			}
+			return ""
 		}
-		if strings.HasPrefix(a, "--package=") || strings.HasPrefix(a, "--from=") {
-			return strings.SplitN(a, "=", 2)[1]
+		if !strings.HasPrefix(a, "-") {
+			return a
 		}
-		if strings.HasPrefix(a, "-") {
-			continue
+		name, val, hasVal := strings.Cut(a, "=")
+		switch {
+		case isOne(packageFlags[runner], name):
+			if hasVal {
+				return val
+			}
+			if i+1 < len(args) {
+				return args[i+1]
+			}
+			return ""
+		case isOne(valueFlags[runner], name) && !hasVal:
+			i++ // skip the option's value
 		}
-		return a
 	}
 	return ""
 }
