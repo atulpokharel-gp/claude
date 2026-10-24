@@ -301,7 +301,8 @@ export function appToAgent(app: M365App, clientName: string, seenAt: string): Ag
   const reach = [...new Set([...appOnly, ...delegated].map((s) => SCOPES[s]?.reach ?? s))];
   const sensitive = (s: string) => SCOPES[s]?.sensitive ?? false;
   const orgWide = app.grants.some((g) => g.allUsers);
-  const users = app.grants.filter((g) => !g.allUsers).length;
+  // One person can hold several grants for one app (e.g. to different APIs); count people, not grants.
+  const users = new Set(app.grants.filter((g) => !g.allUsers).map((g) => g.principalId ?? g.id)).size;
   const findings: Finding[] = [];
 
   const appOnlySensitive = [...appOnly].filter(sensitive);
@@ -366,10 +367,14 @@ export function appToAgent(app: M365App, clientName: string, seenAt: string): Ag
     findings,
     revocable: true,
     lastSeen: seenAt.slice(0, 10),
-    people: app.grants.flatMap((g): PersonRef[] => {
-      if (g.allUsers || !g.principalName) return [];
-      const email = g.principalEmail ?? "";
-      return [{ key: (email.split("@")[0] || g.principalName).toLowerCase(), name: g.principalName, ...(email ? { email } : {}) }];
-    }),
+    people: [
+      ...new Map(
+        app.grants.flatMap((g): [string, PersonRef][] => {
+          if (g.allUsers || !g.principalName) return [];
+          const email = g.principalEmail ?? "";
+          return [[g.principalId ?? g.id, { key: (email.split("@")[0] || g.principalName).toLowerCase(), name: g.principalName, ...(email ? { email } : {}) }]];
+        }),
+      ).values(),
+    ],
   };
 }

@@ -43,6 +43,13 @@ test("findings describe how the access was granted", async () => {
   // Named people who approved it; tools approved for everyone list nobody.
   assert.deepEqual(inbox.people, [{ key: "d.reyes", name: "Dana Reyes", email: "d.reyes@contoso.example" }]);
   assert.deepEqual(chat.people, []);
+
+  // Two grants from the same person (to different APIs) are still one person.
+  const app = apps.find((a) => a.name === "InboxPilot AI")!;
+  const twice = appToAgent({ ...app, grants: [...app.grants, { ...app.grants[0], id: "g1-other-api", scopes: ["User.Read"] }] }, "Acme", "2026-10-24T09:00:00Z");
+  assert.equal(twice.people!.length, 1);
+  assert.match(twice.findings[0].title, /1 person/);
+  assert.match(twice.location, /1 user$/);
 });
 
 test("apps are still listed when Microsoft won't give out names", async () => {
