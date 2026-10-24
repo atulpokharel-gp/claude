@@ -169,3 +169,7 @@
 .check { display: flex; gap: 10px; align-items: flex-start; font-size: 15px; color: var(--z-body); flex-basis: 100%; }
 .check input { width: 20px; height: 20px; margin-top: 2px; flex: none; }
 .link-btn { background: none; border: 0; padding: 0; font: inherit; color: var(--z-ink); text-decoration: underline; cursor: pointer; }
+
+/* "Sign in with Microsoft" under the password form. */
+.auth .sso { margin-top: 12px; }
+.auth .sso .zbtn { width: 100%; }

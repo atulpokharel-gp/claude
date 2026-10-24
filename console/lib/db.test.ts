@@ -40,6 +40,7 @@ import { snapshotAll } from "../scripts/snapshot.ts";
 import { queueAllWeekly } from "../scripts/weekly.ts";
 import { recordRun } from "../scripts/job-runs.ts";
 import { checkHealth } from "./health.ts";
+import { getMicrosoftLink, linkMicrosoft, signInWithMicrosoft, unlinkMicrosoft } from "./identities.ts";
 import { sendPending, type Mail } from "../scripts/send-mail.ts";
 import { checkAlerts, unsubscribeUrl } from "./alerts.ts";
 import {
@@ -480,6 +481,33 @@ describe("database", { skip: !adminUrl && "set TEST_DATABASE_ADMIN_URL to run" }
     await assert.rejects(getPool().query("select * from job_runs"), /permission denied/);
     await recordRun(ownerUrl, "backup");
     assert.equal((await checkHealth(true)).ok, true);
+  });
+
+  test("a linked Microsoft account signs in; an unlinked or reused one doesn't", async () => {
+    const tok = await signUp({ name: "Owner", mspName: "SSO IT", email: "owner@sso.example", password: "long enough password" });
+    const s = (await checkSession(tok))!;
+    const dana = { tenantId: "11111111-2222-3333-4444-555555555555", objectId: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", label: "dana@contoso.example", name: "Dana" };
+    assert.deepEqual(await signInWithMicrosoft(dana), { kind: "not-linked" });
+    await linkMicrosoft(s, dana);
+    assert.equal((await getMicrosoftLink(s))?.label, "dana@contoso.example");
+    const r = await signInWithMicrosoft(dana, { ip: "203.0.113.9" });
+    assert.equal(r.kind, "session");
+    assert.equal((await checkSession((r as { token: string }).token))?.userId, s.userId);
+    // Same object ID in a different tenant is a different person.
+    assert.deepEqual(await signInWithMicrosoft({ ...dana, tenantId: "99999999-2222-3333-4444-555555555555" }), { kind: "not-linked" });
+    // One Microsoft account can't be linked to two Zinloop logins, even across MSPs.
+    const other = (await checkSession(await signUp({ name: "B", mspName: "Other IT", email: "b@other.example", password: "long enough password" })))!;
+    await assert.rejects(linkMicrosoft(other, dana), /already linked/);
+    // With two-factor on, Microsoft sign-in still asks for the code.
+    const secret = await startTotp(s.mspId, s.userId);
+    await enableTotp(s.mspId, s.userId, codeAt(secret, currentStep()));
+    assert.equal((await signInWithMicrosoft(dana)).kind, "mfa");
+    await unlinkMicrosoft(s);
+    assert.equal(await getMicrosoftLink(s), null);
+    assert.deepEqual(await signInWithMicrosoft(dana), { kind: "not-linked" });
+    const actions = (await listAudit(s.mspId)).map((e) => e.action);
+    for (const a of ["microsoft_linked", "microsoft_unlinked", "signed_in"]) assert.ok(actions.includes(a as never), a);
+    assert.ok((await listAudit(s.mspId)).some((e) => e.action === "signed_in" && e.detail.method === "microsoft"));
   });
 
   test("owners can require two-factor sign-in for the whole team", async () => {

@@ -15,6 +15,7 @@ import {
   startTotp,
 } from "@/lib/accounts.ts";
 import { endOtherSessions } from "@/lib/auth.ts";
+import { unlinkMicrosoft } from "@/lib/identities.ts";
 import { requestInfo } from "@/lib/request-audit.ts";
 import { hasAppSecret } from "@/lib/crypto.ts";
 import { requireSession, setSessionCookie } from "@/lib/session.ts";
@@ -142,4 +143,10 @@ export async function emailPrefsAction(_prev: FormState, form: FormData): Promis
   await setEmailPrefs(s.mspId, s.userId, { alerts: s.role !== "viewer" && form.get("alerts") === "on", weekly: form.get("weekly") === "on" });
   refreshAccount();
   return { ok: "Saved." };
+}
+
+export async function unlinkMicrosoftAction(): Promise<void> {
+  const s = await requireSession({ viewer: true, mfaSetup: true });
+  await unlinkMicrosoft(s, (await requestInfo()).ip);
+  refreshAccount();
 }
