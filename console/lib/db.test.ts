@@ -12,15 +12,18 @@ import { migrate } from "../scripts/migrate.ts";
 import { createMsp } from "../scripts/create-msp.ts";
 import { closePool, getPool, withTenant } from "./db.ts";
 import { tokenHash } from "./secrets.ts";
-import { checkSession, finishMfa, signIn, signOut } from "./auth.ts";
+import { checkSession, endOtherSessions, finishMfa, listSessions, signIn, signOut } from "./auth.ts";
+import { listAudit } from "./audit.ts";
 import {
   acceptInvite,
   changePassword,
   checkInvite,
   createInvite,
+  disableTotp,
   enableTotp,
   getTeam,
   removeMember,
+  setRequireMfa,
   signUp,
   startTotp,
 } from "./accounts.ts";
@@ -290,9 +293,80 @@ describe("database", { skip: !adminUrl && "set TEST_DATABASE_ADMIN_URL to run" }
     // Another MSP can't use or see this team.
     assert.ok(!(await getTeam(a.mspId)).members.some((m) => m.email === "tech@team.example"));
 
-    await assert.rejects(removeMember(s.mspId, tech.userId, s.userId), /owner can't be removed/);
+    // Members can't manage the team.
+    await assert.rejects(removeMember(s.mspId, tech.userId, s.userId), /Only the account owner/);
+    await assert.rejects(createInvite(s.mspId, tech.userId, "x@team.example"), /Only the account owner/);
+    assert.equal(tech.role, "member");
     await removeMember(s.mspId, s.userId, tech.userId);
     assert.equal(await checkSession(techToken), null, "removed member is signed out");
+
+    // Each step is in the audit log, and only this MSP can read it.
+    const log = await listAudit(s.mspId);
+    assert.deepEqual(
+      log.map((e) => e.action).reverse(),
+      ["signed_up", "invite_created", "member_joined", "member_removed"],
+    );
+    assert.equal(log[0].target, "tech@team.example");
+    assert.equal(log[0].actorEmail, "owner@team.example");
+    assert.ok(!(await listAudit(a.mspId)).some((e) => e.target === "tech@team.example"));
+    // The app role can add entries but never change or delete them.
+    await assert.rejects(withTenant(s.mspId, (db) => db.query("delete from audit_log")), /permission denied/);
+    await assert.rejects(withTenant(s.mspId, (db) => db.query("update audit_log set action = 'signed_in'")), /permission denied/);
+  });
+
+  test("the audit log lists newest first even when ids gain a digit", async () => {
+    const msp = await createMsp(ownerUrl, "Order IT", "admin@order.example");
+    const add = () =>
+      withTenant(msp.mspId, async (db) => (await db.query<{ id: string }>("insert into audit_log (msp_id, action) values ($1, 'signed_in') returning id::text", [msp.mspId])).rows[0].id);
+    const first = await add();
+    let last = first;
+    while (last.length === first.length) last = await add();
+    const ids = (await listAudit(msp.mspId, { limit: 5000 })).map((e) => BigInt(e.id));
+    assert.equal(ids[0], BigInt(last));
+    for (let i = 1; i < ids.length; i++) assert.ok(ids[i - 1] > ids[i], "sorted by number, not text");
+  });
+
+  test("owners can require two-factor sign-in for the whole team", async () => {
+    const t = await signUp({ name: "Req", mspName: "Req IT", email: "req@req.example", password: "long enough password" });
+    const s = (await checkSession(t))!;
+    assert.equal(s.requireMfa, false);
+    await assert.rejects(setRequireMfa(s.mspId, s.userId, true), /your own account first/);
+    const secret = await startTotp(s.mspId, s.userId);
+    await enableTotp(s.mspId, s.userId, codeAt(secret, currentStep()));
+    await setRequireMfa(s.mspId, s.userId, true);
+    const after = (await checkSession(t))!;
+    assert.equal(after.requireMfa, true);
+    assert.equal(after.mfa, true);
+    await assert.rejects(disableTotp(s.mspId, s.userId, "long enough password"), /requires two-factor/);
+    const log = await listAudit(s.mspId, { action: "require_mfa_changed" });
+    assert.equal(log[0].detail.required, true);
+  });
+
+  test("sessions are listed, can be ended elsewhere, and end after being idle", async () => {
+    const t1 = await signUp({ name: "Ses", mspName: "Ses IT", email: "ses@ses.example", password: "long enough password" });
+    const r = await signIn("ses@ses.example", "long enough password", "203.0.113.9", "Mozilla/5.0 (Windows NT 10.0) Chrome/130");
+    const t2 = r.kind === "session" ? r.token : "";
+    const s1 = (await checkSession(t1))!;
+    const list = await listSessions(s1);
+    assert.equal(list.length, 2);
+    assert.equal(list.filter((x) => x.current).length, 1);
+    assert.ok(list.some((x) => x.ip === "203.0.113.9" && x.userAgent.includes("Chrome")));
+    assert.equal(await endOtherSessions(s1), 1);
+    assert.equal(await checkSession(t2), null);
+    assert.ok(await checkSession(t1));
+
+    // A session unused for longer than the idle limit stops working.
+    const owner = new pg.Client({ connectionString: ownerUrl });
+    await owner.connect();
+    try {
+      await owner.query("update sessions set last_seen_at = now() - interval '10 hours' where id = $1", [s1.sessionId]);
+    } finally {
+      await owner.end();
+    }
+    assert.equal(await checkSession(t1), null);
+    const failed = await signIn("ses@ses.example", "wrong password");
+    assert.equal(failed.kind, "wrong");
+    assert.equal((await listAudit(s1.mspId, { action: "sign_in_failed" })).length, 1);
   });
 
   test("changing the password signs out other sessions", async () => {

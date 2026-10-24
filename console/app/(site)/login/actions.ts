@@ -1,9 +1,9 @@
 "use server";
 
-import { cookies, headers } from "next/headers";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { finishMfa, MFA_PENDING_SECONDS, signIn, signOut, type SignInResult } from "@/lib/auth.ts";
-import { clientIp } from "@/lib/ratelimit.ts";
+import { requestInfo } from "@/lib/request-audit.ts";
 import { clearSessionCookie, currentSession, MFA_COOKIE, sessionToken, setSessionCookie } from "@/lib/session.ts";
 
 export type SignInState = { error?: string; email?: string };
@@ -33,14 +33,14 @@ export async function signInAction(_prev: SignInState, form: FormData): Promise<
   const password = String(form.get("password") ?? "");
   // Hand the email back so the form keeps it after React resets the inputs.
   if (!email || !password) return { error: "Enter your email and password.", email };
-  const ip = clientIp((await headers()).get("x-forwarded-for"));
-  return finish(await signIn(email, password, ip), email);
+  const { ip, userAgent } = await requestInfo();
+  return finish(await signIn(email, password, ip, userAgent), email);
 }
 
 export async function mfaAction(_prev: SignInState, form: FormData): Promise<SignInState> {
   const code = String(form.get("code") ?? "");
   const pending = (await cookies()).get(MFA_COOKIE)?.value;
-  return finish(await finishMfa(pending, code));
+  return finish(await finishMfa(pending, code, await requestInfo()));
 }
 
 export async function cancelMfaAction(): Promise<void> {

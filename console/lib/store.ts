@@ -283,7 +283,8 @@ export async function syncM365(mspId: string, clientId: string, f: Fetch = fetch
 }
 
 /** Revokes every grant of one AI app in the client's tenant, then re-reads the tenant. */
-export async function revokeM365App(mspId: string, clientId: string, agentId: string, f: Fetch = fetch): Promise<void> {
+/** Returns the app's name. */
+export async function revokeM365App(mspId: string, clientId: string, agentId: string, f: Fetch = fetch): Promise<string> {
   if (!isUuid(clientId) || !agentId.startsWith("m365-")) throw new Error("Unknown app.");
   const t = await withTenant(mspId, async (db) =>
     (await db.query<M365Row>("select * from m365_tenants where client_id = $1", [clientId])).rows[0],
@@ -292,6 +293,7 @@ export async function revokeM365App(mspId: string, clientId: string, agentId: st
   if (!t || !app) throw new Error("That app isn't in this client's Microsoft 365 any more.");
   await revokeApp(t.tenant_id, app, f);
   await syncM365(mspId, clientId, f);
+  return app.name;
 }
 
 /**
