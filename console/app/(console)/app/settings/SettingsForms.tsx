@@ -6,6 +6,7 @@ import {
   disableTotpAction,
   enableTotpAction,
   endOtherSessionsAction,
+  emailPrefsAction,
   requireMfaAction,
   inviteAction,
   removeMemberAction,
@@ -161,6 +162,28 @@ export function EndOtherSessions({ others }: { others: number }) {
     <form action={action} className="form inline">
       <button className="btn" type="submit" disabled={pending || others === 0}>Sign out everywhere else</button>
       <Result state={state} />
+    </form>
+  );
+}
+
+export function EmailPrefsForm({ alerts, weekly, viewer = false }: { alerts: boolean; weekly: boolean; viewer?: boolean }) {
+  const [state, action, pending] = useActionState(emailPrefsAction, {});
+  return (
+    <form action={action} className="form">
+      {!viewer && (
+        <label className="check">
+          <input type="checkbox" name="alerts" defaultChecked={alerts} />
+          <span><b>Alerts</b>: email me when a new high-risk AI tool is found at any client.</span>
+        </label>
+      )}
+      <label className="check">
+        <input type="checkbox" name="weekly" defaultChecked={weekly} />
+        <span>
+          <b>Weekly summary</b>: {viewer ? "a short Monday email on how things look at your company." : "a Monday email with each client's risk, what changed and what needs attention."}
+        </span>
+      </label>
+      <Result state={state} />
+      <button className="btn" type="submit" disabled={pending}>Save email settings</button>
     </form>
   );
 }

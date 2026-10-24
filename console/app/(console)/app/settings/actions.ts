@@ -10,6 +10,7 @@ import {
   enableTotp,
   removeMember,
   revokeInvite,
+  setEmailPrefs,
   setRequireMfa,
   startTotp,
 } from "@/lib/accounts.ts";
@@ -133,4 +134,12 @@ export async function endOtherSessionsAction(_prev: FormState): Promise<FormStat
   const n = await endOtherSessions(s, (await requestInfo()).ip);
   refreshAccount();
   return { ok: n === 0 ? "You weren't signed in anywhere else." : `Signed out ${n} other ${n === 1 ? "device" : "devices"}.` };
+}
+
+export async function emailPrefsAction(_prev: FormState, form: FormData): Promise<FormState> {
+  const s = await requireSession({ viewer: true });
+  // Viewers only get the weekly summary; alerts go to the MSP team.
+  await setEmailPrefs(s.mspId, s.userId, { alerts: s.role !== "viewer" && form.get("alerts") === "on", weekly: form.get("weekly") === "on" });
+  refreshAccount();
+  return { ok: "Saved." };
 }

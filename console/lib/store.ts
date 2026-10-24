@@ -4,6 +4,7 @@ import { checkClientLimit, PLAN_LIMITS, type Plan } from "./accounts.ts";
 import { lookup, withTenant, type Tenant } from "./db.ts";
 import { appToAgent, discover, GraphError, revokeApp, TENANT_ID, type Fetch, type M365App } from "./m365.ts";
 import { snapshotOf } from "./insights.ts";
+import { checkAlerts } from "./alerts.ts";
 import { importScan, ScanImportError } from "./scan-import.ts";
 import { newToken, tokenHash } from "./secrets.ts";
 import type { Agent, Client } from "./types.ts";
@@ -184,6 +185,7 @@ export class UploadError extends Error {
 export async function ingestScan(token: string | undefined, report: unknown, now = new Date()) {
   const saved = await saveScan(token, report, now);
   await snapshotClient(saved.mspId, saved.clientId, now);
+  await checkAlerts(saved.mspId, saved.clientId, now);
   return { clientId: saved.clientId, deviceId: saved.deviceId };
 }
 
@@ -275,6 +277,7 @@ export async function syncM365(mspId: string, clientId: string, f: Fetch = fetch
       ]),
     );
     await snapshotClient(mspId, clientId);
+    await checkAlerts(mspId, clientId);
     return { apps: apps.length };
   } catch (err) {
     const message = err instanceof GraphError ? err.message : "Couldn't reach Microsoft 365.";

@@ -1,12 +1,12 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { getTeam, PLAN_LIMITS } from "@/lib/accounts.ts";
+import { getEmailPrefs, getTeam, PLAN_LIMITS } from "@/lib/accounts.ts";
 import { listSessions } from "@/lib/auth.ts";
 import { hasDatabase } from "@/lib/db.ts";
 import { requireSession } from "@/lib/session.ts";
 import { revokeInviteAction } from "./actions.ts";
-import { ChangePassword, InviteForm, RemoveMember, RequireMfa, TwoFactor } from "./SettingsForms.tsx";
+import { ChangePassword, EmailPrefsForm, InviteForm, RemoveMember, RequireMfa, TwoFactor } from "./SettingsForms.tsx";
 import { SessionsPanel } from "@/components/SessionsPanel.tsx";
 
 export const dynamic = "force-dynamic";
@@ -18,7 +18,7 @@ export default async function Settings({ searchParams }: { searchParams: Promise
   if (!hasDatabase()) redirect("/app");
   const s = await requireSession({ mfaSetup: true });
   const sp = await searchParams;
-  const [team, sessions] = await Promise.all([getTeam(s.mspId), listSessions(s)]);
+  const [team, sessions, prefs] = await Promise.all([getTeam(s.mspId), listSessions(s), getEmailPrefs(s.mspId, s.userId)]);
   const isOwner = s.role === "owner";
   const me = team.members.find((m) => m.id === s.userId);
   const limits = PLAN_LIMITS[team.plan];
@@ -65,6 +65,11 @@ export default async function Settings({ searchParams }: { searchParams: Promise
       )}
 
       <SessionsPanel sessions={sessions} />
+
+      <section className="panel">
+        <div className="panel-head"><h2>Email</h2></div>
+        <div className="panel-body"><EmailPrefsForm alerts={prefs.alerts} weekly={prefs.weekly} /></div>
+      </section>
 
       <section className="panel">
         <div className="panel-head"><h2>Password</h2></div>

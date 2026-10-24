@@ -26,6 +26,9 @@ import {
   listClientViewers,
   removeClientViewer,
   removeMember,
+  getEmailPrefs,
+  setEmailPrefs,
+  unsubscribe,
   setRequireMfa,
   signUp,
   startTotp,
@@ -34,6 +37,9 @@ import { codeAt, currentStep } from "./totp.ts";
 import { cleanup } from "../scripts/cleanup.ts";
 import { setPlan } from "../scripts/set-plan.ts";
 import { snapshotAll } from "../scripts/snapshot.ts";
+import { queueAllWeekly } from "../scripts/weekly.ts";
+import { sendPending, type Mail } from "../scripts/send-mail.ts";
+import { checkAlerts, unsubscribeUrl } from "./alerts.ts";
 import {
   connectM365,
   createClient,
@@ -389,6 +395,74 @@ describe("database", { skip: !adminUrl && "set TEST_DATABASE_ADMIN_URL to run" }
     assert.equal(await checkSession(viewerToken), null);
     const actions = (await listAudit(s.mspId)).map((e) => e.action);
     for (const a of ["client_login_created", "client_viewer_joined", "client_login_removed"]) assert.ok(actions.includes(a as never), a);
+  });
+
+  test("new high-risk tools are emailed once, and the weekly summary goes to everyone who wants it", async () => {
+    process.env.CONSOLE_URL = "https://app.example";
+    const ownerToken = await signUp({ name: "Owner", mspName: "Mail IT", email: "owner@mail.example", password: "long enough password" });
+    const s = (await checkSession(ownerToken))!;
+    await setPlan(ownerUrl, "owner@mail.example", "partner");
+    const quiet = (await checkSession(await acceptInvite(await createInvite(s.mspId, s.userId, "quiet@mail.example"), "Quiet", "another long password")))!;
+    await setEmailPrefs(s.mspId, quiet.userId, { alerts: false, weekly: false });
+    assert.deepEqual(await getEmailPrefs(s.mspId, quiet.userId), { alerts: false, weekly: false });
+    const clientId = await createClient(s.mspId, { name: "Mail Co" });
+    const viewer = (await checkSession(await acceptInvite(await createClientViewerInvite(s.mspId, s.userId, clientId, "boss@mailco.example"), "Boss", "a long viewer password")))!;
+    const outbox = () =>
+      withTenant(s.mspId, async (db) => (await db.query<{ kind: string; to_email: string; subject: string; body_text: string; unsubscribe_url: string }>("select kind, to_email, subject, body_text, unsubscribe_url from outbox order by id")).rows);
+
+    const token = await createUploadToken(s.mspId, clientId, "");
+    await ingestScan(token, sample);
+    let mail = await outbox();
+    assert.deepEqual(mail.map((m) => [m.kind, m.to_email]), [["alert", "owner@mail.example"]], "only the team member with alerts on; never viewers");
+    assert.match(mail[0].subject, /new high-risk AI tool problems at Mail Co/);
+    assert.match(mail[0].body_text, /https:\/\/app\.example\/app\/clients\//);
+    assert.ok(mail[0].unsubscribe_url.startsWith("https://app.example/unsubscribe?t="));
+
+    // The same findings again: no new email. Checking twice at once: still one.
+    await ingestScan(token, sample);
+    await Promise.all([checkAlerts(s.mspId, clientId), checkAlerts(s.mspId, clientId)]);
+    assert.equal((await outbox()).length, 1);
+    // Viewers can't read the outbox.
+    assert.equal((await withTenant({ mspId: s.mspId, clientId }, (db) => db.query("select * from outbox"))).rowCount, 0);
+
+    // Weekly: one per person per week, whatever day it runs.
+    const monday = new Date();
+    const queued = await queueAllWeekly(ownerUrl, monday);
+    assert.ok(queued >= 2);
+    assert.equal(await queueAllWeekly(ownerUrl, monday), 0, "running again the same week queues nothing");
+    mail = (await outbox()).filter((m) => m.kind === "weekly");
+    assert.deepEqual(mail.map((m) => m.to_email).sort(), ["boss@mailco.example", "owner@mail.example"]);
+    assert.match(mail.find((m) => m.to_email === "owner@mail.example")!.subject, /across 1 client$/);
+    const forViewer = mail.find((m) => m.to_email === "boss@mailco.example")!;
+    assert.match(forViewer.subject, /^Mail Co: weekly AI security summary/);
+    assert.ok(!forViewer.body_text.includes("Other"), "the viewer's summary is only about their client");
+
+    // Sending: failures are retried later, successes are marked sent.
+    const sent: Mail[] = [];
+    const failing = { sendMail: async () => { throw new Error("SMTP down"); } };
+    const r1 = await sendPending(ownerUrl, failing, "Zinloop <alerts@zinloop.example>");
+    assert.equal(r1.sent, 0);
+    assert.ok(r1.failed >= 3);
+    const ok = { sendMail: async (m: Mail) => { sent.push(m); } };
+    assert.equal((await sendPending(ownerUrl, ok, "Zinloop <alerts@zinloop.example>")).sent, 0, "failed emails wait before the next try");
+    const admin = new pg.Client({ connectionString: ownerUrl });
+    await admin.connect();
+    await admin.query("update outbox set next_try_at = now()");
+    const pending = Number((await admin.query("select count(*) from outbox where sent_at is null")).rows[0].count);
+    const r2 = await sendPending(ownerUrl, ok, "Zinloop <alerts@zinloop.example>");
+    assert.equal(r2.sent, pending);
+    assert.equal(Number((await admin.query("select count(*) from outbox where sent_at is null")).rows[0].count), 0);
+    await admin.end();
+    const alert = sent.find((m) => m.subject.includes("Mail Co") && m.to === "owner@mail.example" && !m.subject.startsWith("Weekly"))!;
+    assert.match(alert.headers!["List-Unsubscribe"], /^<https:\/\/app\.example\/api\/unsubscribe\?t=/);
+    assert.equal(alert.headers!["List-Unsubscribe-Post"], "List-Unsubscribe=One-Click");
+
+    // Unsubscribe turns off one kind of email for that person only.
+    assert.equal(await unsubscribe(viewer.userId, "weekly"), "boss@mailco.example");
+    assert.deepEqual(await getEmailPrefs(s.mspId, viewer.userId), { alerts: true, weekly: false });
+    assert.equal((await getEmailPrefs(s.mspId, s.userId)).weekly, true);
+    assert.ok(unsubscribeUrl(s.userId, "alert"));
+    delete process.env.CONSOLE_URL;
   });
 
   test("owners can require two-factor sign-in for the whole team", async () => {
