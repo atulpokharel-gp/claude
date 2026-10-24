@@ -24,6 +24,9 @@ create table outbox (
   -- One email per (kind, subject of the email, recipient); a repeat insert is ignored.
   dedupe_key  text not null unique check (length(dedupe_key) <= 300),
   kind        text not null check (kind in ('alert', 'weekly')),
+  -- Removing a teammate or client viewer drops their unsent mail with them,
+  -- so nobody gets findings after their access is gone.
+  user_id     uuid not null references users(id) on delete cascade,
   to_email    text not null check (length(to_email) <= 320),
   subject     text not null check (length(subject) <= 300),
   body_text   text not null,
