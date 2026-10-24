@@ -23,6 +23,8 @@ export function TrendChart({ points }: { points: TrendPoint[] }) {
   const ticks = [0, top / 2, top];
   const dateTicks = [0, Math.floor((points.length - 1) / 2), points.length - 1];
   const change = last.high - first.high;
+  const span = points.length - 1;
+  const ago = `${span} ${span === 1 ? "day" : "days"} ago`;
 
   return (
     <figure className="trend">
@@ -57,10 +59,10 @@ export function TrendChart({ points }: { points: TrendPoint[] }) {
       </svg>
       <p className="muted small">
         {change < 0
-          ? `${-change} fewer high-risk tools than ${points.length} days ago.`
+          ? `${-change} fewer high-risk tools than ${ago}.`
           : change > 0
-            ? `${change} more high-risk tools than ${points.length} days ago.`
-            : `Same number of high-risk tools as ${points.length} days ago.`}
+            ? `${change} more high-risk tools than ${ago}.`
+            : `Same number of high-risk tools as ${ago}.`}
       </p>
     </figure>
   );

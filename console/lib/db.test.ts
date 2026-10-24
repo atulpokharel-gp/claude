@@ -195,8 +195,10 @@ describe("database", { skip: !adminUrl && "set TEST_DATABASE_ADMIN_URL to run" }
     assert.equal(trend[2].high, highOnDay1, "no scan on the 22nd: carries the 20th forward");
     assert.equal(trend[3].tools, 0, "the empty scan on the 23rd clears it");
     assert.equal(trend[4].tools, 0);
+    // Days before the first snapshot are left out, not shown as zero.
+    assert.deepEqual((await getTrend(a.mspId, 7, new Date("2026-10-24T12:00:00Z"), id)).map((p) => p.day)[0], "2026-10-20");
     // Another MSP sees none of it.
-    assert.ok((await getTrend(b.mspId, 5, new Date("2026-10-24T12:00:00Z"))).every((p) => p.tools === 0));
+    assert.deepEqual(await getTrend(b.mspId, 5, new Date("2026-10-24T12:00:00Z")), []);
 
     // The daily job writes a point for every client, even without new scans.
     const n = await snapshotAll(ownerUrl, new Date("2026-10-25T01:00:00Z"));
