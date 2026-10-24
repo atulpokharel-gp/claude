@@ -50,7 +50,8 @@ psql "$DATABASE_ADMIN_URL" -c "alter role agentguard_app login password '...'"
 # 3. Create your MSP account; prints a one-time password
 DATABASE_ADMIN_URL=... npm run db:create-msp -- "Your MSP" you@example.com
 # 4. Run the console as the app role
-DATABASE_URL=postgres://agentguard_app:...@host/agentguard npm run build && npm start
+export DATABASE_URL=postgres://agentguard_app:...@host/agentguard
+npm run build && npm start
 ```
 
 Sign in, add a client, and create an upload token on the client's page. Then

@@ -121,6 +121,21 @@ describe("database", { skip: !adminUrl && "set TEST_DATABASE_ADMIN_URL to run" }
     assert.equal(stored.rows[0].n, 0);
   });
 
+  test("a late upload of an old scan doesn't count as fresh", async () => {
+    const id = await createClient(a.mspId, { name: "Late Co", devicesExpected: 1 });
+    const token = await createUploadToken(a.mspId, id, "");
+    const now = new Date("2026-10-24T12:00:00Z");
+    await ingestScan(token, { ...sample, configs: [], scannedAt: "2026-06-01T00:00:00Z" }, now);
+    let got = await getClient(a.mspId, id, now);
+    assert.equal(got!.client.devicesScanned, 0);
+
+    // A fresh scan counts, and replaying the old one afterwards doesn't undo it.
+    await ingestScan(token, { ...sample, configs: [], scannedAt: "2026-10-24T11:00:00Z" }, now);
+    await ingestScan(token, { ...sample, configs: [], scannedAt: "2026-06-01T00:00:00Z" }, now);
+    got = await getClient(a.mspId, id, now);
+    assert.equal(got!.client.devicesScanned, 1);
+  });
+
   test("bad tokens and bad reports are refused", async () => {
     const id = await createClient(a.mspId, { name: "Refuse Co" });
     const token = await createUploadToken(a.mspId, id, "");

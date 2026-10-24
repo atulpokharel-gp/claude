@@ -77,7 +77,7 @@ create table scans (
   scanned_at  timestamptz not null,
   report      jsonb not null
 );
-create index scans_device_latest on scans (device_id, received_at desc);
+create index scans_device_latest on scans (device_id, scanned_at desc, received_at desc);
 
 -- Row-level security on every tenant table.
 do $$

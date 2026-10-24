@@ -62,7 +62,7 @@ const LATEST_SCANS = `
   select d.client_id, d.id as device_id, d.hostname, d.last_scan_at, s.report
   from devices d
   left join lateral (
-    select report from scans where scans.device_id = d.id order by received_at desc limit 1
+    select report from scans where scans.device_id = d.id order by scanned_at desc, received_at desc limit 1
   ) s on true`;
 
 export async function listClients(mspId: string, now = new Date()): Promise<Client[]> {
@@ -178,9 +178,11 @@ export async function ingestScan(token: string | undefined, report: unknown, now
     const device = await db.query<{ id: string }>(
       `insert into devices (msp_id, client_id, hostname, os, last_scan_at)
        values ($1, $2, $3, $4, $5)
-       on conflict (client_id, hostname) do update set os = excluded.os, last_scan_at = excluded.last_scan_at
+       on conflict (client_id, hostname) do update set os = excluded.os,
+         last_scan_at = greatest(devices.last_scan_at, excluded.last_scan_at)
        returning id`,
-      [owner.msp_id, owner.client_id, hostname, os, now],
+      // When the scan ran, not when it arrived, so a late upload doesn't look fresh.
+      [owner.msp_id, owner.client_id, hostname, os, scannedAt],
     );
     const deviceId = device.rows[0].id;
     await db.query(
