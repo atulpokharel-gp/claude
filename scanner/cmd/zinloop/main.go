@@ -100,8 +100,11 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 		if *usersDir != "" {
 			dirs = []string{*usersDir}
 		}
-		for _, h := range listProfiles(dirs) {
-			e := discover.Env{GOOS: goos, Home: h, ProjectDirs: projects}
+		for i, h := range listProfiles(dirs) {
+			e := discover.Env{GOOS: goos, Home: h}
+			if i == 0 {
+				e.ProjectDirs = projects // scan --project folders once, not once per profile
+			}
 			if goos == "windows" {
 				e.AppData = filepath.Join(h, "AppData", "Roaming")
 			}

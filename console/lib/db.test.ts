@@ -230,8 +230,9 @@ describe("database", { skip: !adminUrl && "set TEST_DATABASE_ADMIN_URL to run" }
     // The code used to turn it on can't be used again.
     assert.equal((await finishMfa(pending, codeAt(secret, step))).kind, "wrong");
     assert.equal((await finishMfa("forged.value", codeAt(secret, step + 1))).kind, "wrong");
-    const done = await finishMfa(pending, codeAt(secret, step + 1));
-    assert.equal(done.kind, "session");
+    // Two sign-ins racing with the same code: only one gets in.
+    const raced = await Promise.all([finishMfa(pending, codeAt(secret, step + 1)), finishMfa(pending, codeAt(secret, step + 1))]);
+    assert.deepEqual(raced.map((r) => r.kind).sort(), ["session", "wrong"]);
     assert.equal((await getTeam(s.mspId)).members[0].mfa, true);
   });
 

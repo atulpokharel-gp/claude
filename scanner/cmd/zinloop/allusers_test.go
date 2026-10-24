@@ -77,3 +77,33 @@ func TestAllUsersRejectsHome(t *testing.T) {
 		t.Fatalf("exit %d, want 1", code)
 	}
 }
+
+func TestAllUsersScansProjectOnce(t *testing.T) {
+	users := t.TempDir()
+	copyTree(t, filepath.Join("..", "..", "testdata", "home"), filepath.Join(users, "alice"))
+	copyTree(t, filepath.Join("..", "..", "testdata", "home"), filepath.Join(users, "bob"))
+	project := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(project, ".vscode"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(project, ".vscode", "mcp.json"), []byte(`{"servers":{"crm":{"command":"npx","args":["-y","crm-mcp"]}}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var out, errOut bytes.Buffer
+	if code := run([]string{"--json", "--all-users", "--users-dir", users, "--project", project}, &out, &errOut); code != 0 {
+		t.Fatalf("exit %d: %s", code, errOut.String())
+	}
+	var rep report.Report
+	if err := json.Unmarshal(out.Bytes(), &rep); err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	for _, c := range rep.Configs {
+		if c.Found && strings.HasPrefix(c.Path, project) {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Fatalf("project config reported %d times, want 1", n)
+	}
+}

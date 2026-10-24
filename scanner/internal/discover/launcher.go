@@ -32,14 +32,16 @@ func LauncherArgs(secrets []ProtectedSecret, command string, args []string) []st
 
 // ParseLauncher reports whether command/args start a server through the
 // launcher, and if so returns the protected secrets and the real command.
-// IsLauncherName reports whether a command path names zinloop, so that a
-// config rewritten to start it is recognized on the next scan.
+// IsLauncherName reports whether a command path names zinloop (or agentscan,
+// its name before the rename), so that a config rewritten to start it is
+// recognized on the next scan.
 func IsLauncherName(command string) bool {
 	base := strings.ToLower(command)
 	if i := strings.LastIndexAny(base, `/\`); i >= 0 {
 		base = base[i+1:]
 	}
-	return strings.TrimSuffix(base, ".exe") == "zinloop"
+	base = strings.TrimSuffix(base, ".exe")
+	return base == "zinloop" || base == "agentscan"
 }
 
 func ParseLauncher(command string, args []string) (secrets []ProtectedSecret, inner string, innerArgs []string, ok bool) {

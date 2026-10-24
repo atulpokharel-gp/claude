@@ -62,8 +62,10 @@ export async function finishMfa(pending: string | undefined, code: string): Prom
     if (!row?.totp_secret) return false;
     const step = checkCode(decrypt(row.totp_secret), code, Number(row.totp_last_step));
     if (step === null) return false;
-    await db.query("update users set totp_last_step = $2 where id = $1", [p.u, step]);
-    return true;
+    // Only one request can move the step forward, so a code works once even
+    // when two sign-ins race.
+    const used = await db.query("update users set totp_last_step = $2 where id = $1 and totp_last_step < $2", [p.u, step]);
+    return used.rowCount === 1;
   });
   if (!ok) return { kind: "wrong" };
   return { kind: "session", token: await createSession(p.u, p.m) };

@@ -44,10 +44,12 @@ export function buildReport(client: Client, preparedBy: string, now = new Date()
   const byRule = new Map<string, ReportAction>();
   for (const a of client.agents) {
     for (const f of a.findings) {
-      let act = byRule.get(f.ruleId);
+      // Group by rule and fix: some fixes name the exact key to rotate.
+      const key = `${f.ruleId}\u0000${f.fix}`;
+      let act = byRule.get(key);
       if (!act) {
         act = { ruleId: f.ruleId, severity: f.severity, title: f.title, fix: f.fix, tools: 0, places: [] };
-        byRule.set(f.ruleId, act);
+        byRule.set(key, act);
       }
       act.tools++;
       const place = a.source === "Microsoft 365" ? `Microsoft 365 · ${a.name}` : a.location.split(" · ")[0];

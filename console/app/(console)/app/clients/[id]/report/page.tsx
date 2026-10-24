@@ -49,7 +49,7 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
           ) : (
             <ol className="report-actions">
               {r.actions.map((a) => (
-                <li key={a.ruleId}>
+                <li key={`${a.ruleId}:${a.fix}`}>
                   <div className="report-action-head">
                     <span className={`pill ${a.severity}`}>{severityLabel(a.severity)}</span>
                     <h3>{a.title}</h3>
