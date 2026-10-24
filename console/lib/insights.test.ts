@@ -42,6 +42,7 @@ test("tools are listed once with every client that uses them", () => {
   assert.equal(gh.people, 2);
   assert.equal(gh.count, 2);
   assert.equal(gh.risk, "high");
+  assert.equal(gh.affectedClients, 1, "clean at client b, so not a shared problem");
   assert.equal(gh.topFinding, "Credential stored in plain text");
   assert.equal(tools[0].key, "github", "riskiest first");
 });

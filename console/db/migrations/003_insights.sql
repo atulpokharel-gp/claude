@@ -22,6 +22,8 @@ create policy tenant on risk_snapshots using (msp_id = current_msp()) with check
 do $$
 begin
   execute format('create policy owner_lookup on clients for select to %I using (true)', current_user);
+  -- A DELETE with a WHERE clause also needs to see the rows.
+  execute format('create policy owner_lookup on risk_snapshots for select to %I using (true)', current_user);
   execute format('create policy owner_cleanup on risk_snapshots for delete to %I using (true)', current_user);
 end $$;
 
