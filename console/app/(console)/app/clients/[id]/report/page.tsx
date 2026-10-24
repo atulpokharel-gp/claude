@@ -19,6 +19,15 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
   if (!detail) notFound();
   const now = detail.demo ? new Date("2026-10-24T09:00:00Z") : new Date();
   const r = buildReport(detail.client, detail.mspName, now);
+  // Say plainly whether Microsoft 365 was checked, so an empty list isn't read as "all clear".
+  const m = detail.m365;
+  let m365Note: string | null = null;
+  if (!detail.demo) {
+    if (!m) m365Note = "Microsoft 365 is not connected, so only laptops were checked.";
+    else if (m.lastError || !m.lastSync) {
+      m365Note = `Microsoft 365 could not be checked${m.lastSync ? ` since ${new Date(m.lastSync).toLocaleDateString("en-US", { dateStyle: "long" })}` : ""}, so its results may be missing or out of date.`;
+    } else m365Note = `Microsoft 365 was last checked on ${new Date(m.lastSync).toLocaleDateString("en-US", { dateStyle: "long" })}.`;
+  }
   return (
     <>
       <div className="no-print actions">
@@ -34,6 +43,7 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
         </header>
 
         <p className="report-headline">{r.headline}</p>
+        {m365Note && <p className={m?.lastError || (m && !m.lastSync) ? "report-warning" : "muted"}>{m365Note}</p>}
 
         <section className="report-figures" aria-label="Summary">
           <div><b>{r.tools}</b><span>AI tools connected</span></div>
