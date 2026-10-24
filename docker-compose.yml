@@ -1,0 +1,63 @@
+# Runs the console, Postgres and a daily maintenance job on one server.
+# 1. cp console/.env.example .env and fill it in (see docs/deploy.md)
+# 2. docker compose up -d
+# Put a TLS-terminating proxy (Caddy is included) in front; the console must be
+# served over https for sign-in cookies and scanner uploads.
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: zinloop_owner
+      POSTGRES_PASSWORD: ${DB_OWNER_PASSWORD:?set DB_OWNER_PASSWORD in .env}
+      POSTGRES_DB: zinloop
+    volumes:
+      - db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U zinloop_owner -d zinloop"]
+      interval: 5s
+      retries: 20
+
+  migrate:
+    build: ./console
+    env_file: .env
+    depends_on:
+      db:
+        condition: service_healthy
+    command: >
+      sh -c "npm run db:migrate &&
+             node -e \"const pg=require('pg');const c=new pg.Client(process.env.DATABASE_ADMIN_URL);c.connect().then(()=>c.query('alter role zinloop_app login password ' + c.escapeLiteral(process.env.DB_APP_PASSWORD))).then(()=>c.end())\""
+    restart: "no"
+
+  console:
+    build: ./console
+    env_file: .env
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  maintenance:
+    build: ./console
+    env_file: .env
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    # Once a day: delete expired sessions and old scans, re-check Microsoft 365.
+    command: sh -c "while true; do npm run --silent db:cleanup; npm run --silent m365:sync; sleep 86400; done"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    environment:
+      CONSOLE_HOST: ${CONSOLE_HOST:?set CONSOLE_HOST in .env, e.g. app.zinloop.com}
+    command: caddy reverse-proxy --from ${CONSOLE_HOST} --to console:3000
+    volumes:
+      - caddy:/data
+    depends_on: [console]
+
+volumes:
+  db:
+  caddy:

@@ -1,4 +1,5 @@
-// Creates an MSP account and its first sign-in. Prints a random password once.
+// Creates an MSP account (on the MSP plan, no limits) and its owner. Prints a
+// random password once. Self-serve sign-ups start on the free plan instead.
 //   DATABASE_ADMIN_URL=postgres://... npm run db:create-msp -- "Harbor Managed IT" admin@harbor.example
 
 import { randomBytes, randomUUID } from "node:crypto";
@@ -6,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import pg from "pg";
 import { hashPassword } from "../lib/secrets.ts";
 
-export async function createMsp(url: string, name: string, email: string, password?: string) {
+export async function createMsp(url: string, name: string, email: string, password?: string, plan: "free" | "partner" | "msp" = "msp") {
   const pw = password ?? randomBytes(18).toString("base64url");
   const id = randomUUID();
   const db = new pg.Client({ connectionString: url });
@@ -15,8 +16,8 @@ export async function createMsp(url: string, name: string, email: string, passwo
     await db.query("begin");
     // Owners are subject to row-level security too (it's forced), so act as the new MSP.
     await db.query("select set_config('app.msp_id', $1, true)", [id]);
-    await db.query("insert into msps (id, name) values ($1, $2)", [id, name]);
-    await db.query("insert into users (msp_id, email, password_hash) values ($1, $2, $3)", [
+    await db.query("insert into msps (id, name, plan) values ($1, $2, $3)", [id, name, plan]);
+    await db.query("insert into users (msp_id, email, password_hash, role) values ($1, $2, $3, 'owner')", [
       id,
       email.trim().toLowerCase(),
       await hashPassword(pw),
