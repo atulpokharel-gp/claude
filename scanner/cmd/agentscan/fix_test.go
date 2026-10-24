@@ -135,6 +135,41 @@ func TestFixRefusesTempLauncher(t *testing.T) {
 	}
 }
 
+func TestFixRefusesUnrecognizedLauncherName(t *testing.T) {
+	home := fixtureHome(t)
+	useMemoryStore(t)
+	cfg := filepath.Join(home, ".config", "Claude", "claude_desktop_config.json")
+	before, _ := os.ReadFile(cfg)
+	var out, errOut bytes.Buffer
+	code := run([]string{"fix-secrets", "--home", home, "--apply", "--launcher", filepath.Join(home, "bin", "agent-guard")}, &out, &errOut)
+	if code == 0 || !strings.Contains(errOut.String(), "named agentscan") {
+		t.Errorf("exit %d, stderr %q; want a refusal naming the rule", code, errOut.String())
+	}
+	if after, _ := os.ReadFile(cfg); !bytes.Equal(before, after) {
+		t.Error("config changed even though the launcher was refused")
+	}
+}
+
+func TestFixReportsUnreadableConfigs(t *testing.T) {
+	home := fixtureHome(t)
+	useMemoryStore(t)
+	bad := filepath.Join(home, ".cursor", "mcp.json")
+	if err := os.MkdirAll(filepath.Dir(bad), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(bad, []byte("{not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var out, errOut bytes.Buffer
+	code := run([]string{"fix-secrets", "--home", home}, &out, &errOut)
+	if code == 0 {
+		t.Error("should exit nonzero when a config couldn't be checked")
+	}
+	if !strings.Contains(errOut.String(), "couldn't be checked") || !strings.Contains(errOut.String(), "mcp.json") {
+		t.Errorf("stderr should name the unreadable config:\n%s", errOut.String())
+	}
+}
+
 func TestSecretEnv(t *testing.T) {
 	store := vault.Memory{"r1": "v1"}
 	env, err := secretEnv([]discover.ProtectedSecret{{Env: "TOKEN", Ref: "r1"}}, store, []string{"PATH=/bin", "TOKEN=old"})

@@ -44,8 +44,14 @@ func runFix(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	servers, _ := discover.Scan(env)
+	servers, configs := discover.Scan(env)
 	plan := fix.MakePlan(servers)
+	var unread []discover.ConfigResult
+	for _, c := range configs {
+		if c.Error != "" {
+			unread = append(unread, c)
+		}
+	}
 
 	if *apply {
 		lp := *launcher
@@ -54,6 +60,10 @@ func runFix(args []string, stdout, stderr io.Writer) int {
 				fmt.Fprintln(stderr, "cannot find agentscan's own path; pass --launcher:", err)
 				return 1
 			}
+		}
+		if !discover.IsLauncherName(lp) {
+			fmt.Fprintf(stderr, "the launcher must be named agentscan (or agentscan.exe on Windows) so later scans recognize it; got %s\n", lp)
+			return 1
 		}
 		if strings.Contains(lp, os.TempDir()) && *launcher == "" {
 			fmt.Fprintln(stderr, "agentscan is running from a temporary folder (go run?). Build it, put it somewhere permanent, and run it from there, or pass --launcher.")
@@ -71,7 +81,14 @@ func runFix(args []string, stdout, stderr io.Writer) int {
 		enc.SetIndent("", "  ")
 		_ = enc.Encode(plan)
 	} else {
-		writePlan(stdout, plan, *apply)
+		writePlan(stdout, plan, *apply, len(unread) > 0)
+	}
+	if len(unread) > 0 {
+		fmt.Fprintln(stderr, "\nThese configs couldn't be checked, so they may still hold plain-text keys:")
+		for _, c := range unread {
+			fmt.Fprintf(stderr, "  - %s (%s): %s\n", c.Path, c.App, c.Error)
+		}
+		return 1
 	}
 	for _, f := range plan.Files {
 		if f.Error != "" {
@@ -81,9 +98,13 @@ func runFix(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-func writePlan(w io.Writer, plan fix.Plan, applied bool) {
+func writePlan(w io.Writer, plan fix.Plan, applied, incomplete bool) {
 	if plan.Keys() == 0 && len(plan.Manual) == 0 && len(plan.Files) == 0 {
-		fmt.Fprintln(w, "No plain-text keys found in AI agent configs. Nothing to fix.")
+		if incomplete {
+			fmt.Fprintln(w, "No plain-text keys found in the configs that could be read.")
+		} else {
+			fmt.Fprintln(w, "No plain-text keys found in AI agent configs. Nothing to fix.")
+		}
 		return
 	}
 	verb := "Would move"

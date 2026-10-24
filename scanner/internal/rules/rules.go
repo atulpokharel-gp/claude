@@ -364,12 +364,17 @@ func keyNotRotated(s discover.Server, ctx Context) []Finding {
 		return nil
 	}
 	sort.Strings(pending)
+	sort.Strings(refs)
+	cmds := make([]string, len(refs))
+	for i, r := range refs {
+		cmds[i] = "agentscan rotate " + r
+	}
 	return []Finding{{
 		RuleID:   "KEY_NOT_ROTATED",
 		Severity: Medium,
 		Title:    "Protected now, but the old key was exposed",
 		Detail:   "Agent Guard moved " + strings.Join(pending, ", ") + " into the password store, but the same key sat in plain text before. Anyone who copied the file still has it.",
-		Fix:      "Create a new key with the provider, revoke the old one, then run: agentscan rotate " + strings.Join(refs, " "),
+		Fix:      "Create a new key with the provider, revoke the old one, then run one command per key: " + strings.Join(cmds, "; "),
 	}}
 }
 

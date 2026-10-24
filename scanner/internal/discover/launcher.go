@@ -32,13 +32,18 @@ func LauncherArgs(secrets []ProtectedSecret, command string, args []string) []st
 
 // ParseLauncher reports whether command/args start a server through the
 // launcher, and if so returns the protected secrets and the real command.
-func ParseLauncher(command string, args []string) (secrets []ProtectedSecret, inner string, innerArgs []string, ok bool) {
+// IsLauncherName reports whether a command path names agentscan, so that a
+// config rewritten to start it is recognized on the next scan.
+func IsLauncherName(command string) bool {
 	base := strings.ToLower(command)
 	if i := strings.LastIndexAny(base, `/\`); i >= 0 {
 		base = base[i+1:]
 	}
-	base = strings.TrimSuffix(base, ".exe")
-	if base != "agentscan" || len(args) == 0 || args[0] != LauncherSubcommand {
+	return strings.TrimSuffix(base, ".exe") == "agentscan"
+}
+
+func ParseLauncher(command string, args []string) (secrets []ProtectedSecret, inner string, innerArgs []string, ok bool) {
+	if !IsLauncherName(command) || len(args) == 0 || args[0] != LauncherSubcommand {
 		return nil, "", nil, false
 	}
 	rest := args[1:]
