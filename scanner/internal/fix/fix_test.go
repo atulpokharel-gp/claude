@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -121,7 +122,7 @@ func TestApplyMovesKeysAndKeepsServerWorking(t *testing.T) {
 	if err != nil || string(got) != string(before) {
 		t.Fatalf("backup missing or different: %v", err)
 	}
-	if info, _ := os.Stat(backup); info.Mode().Perm() != 0o600 {
+	if info, _ := os.Stat(backup); runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 { // Windows uses ACLs, not mode bits
 		t.Errorf("backup mode %v, want 0600", info.Mode().Perm())
 	}
 
@@ -241,7 +242,7 @@ func TestApplyMergesWithAlreadyProtectedServer(t *testing.T) {
 	if s.Command != "db-mcp" || strings.Join(s.Args, " ") != "--ro" || len(s.Protected) != 2 {
 		t.Errorf("merge failed: %+v", s)
 	}
-	if info, _ := os.Stat(cfg); info.Mode().Perm() != 0o600 {
+	if info, _ := os.Stat(cfg); runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
 		t.Errorf("file mode changed to %v", info.Mode().Perm())
 	}
 }
