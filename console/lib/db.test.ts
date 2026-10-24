@@ -312,6 +312,18 @@ describe("database", { skip: !adminUrl && "set TEST_DATABASE_ADMIN_URL to run" }
     await assert.rejects(withTenant(s.mspId, (db) => db.query("update audit_log set action = 'signed_in'")), /permission denied/);
   });
 
+  test("the audit log lists newest first even when ids gain a digit", async () => {
+    const msp = await createMsp(ownerUrl, "Order IT", "admin@order.example");
+    const add = () =>
+      withTenant(msp.mspId, async (db) => (await db.query<{ id: string }>("insert into audit_log (msp_id, action) values ($1, 'signed_in') returning id::text", [msp.mspId])).rows[0].id);
+    const first = await add();
+    let last = first;
+    while (last.length === first.length) last = await add();
+    const ids = (await listAudit(msp.mspId, { limit: 5000 })).map((e) => BigInt(e.id));
+    assert.equal(ids[0], BigInt(last));
+    for (let i = 1; i < ids.length; i++) assert.ok(ids[i - 1] > ids[i], "sorted by number, not text");
+  });
+
   test("owners can require two-factor sign-in for the whole team", async () => {
     const t = await signUp({ name: "Req", mspName: "Req IT", email: "req@req.example", password: "long enough password" });
     const s = (await checkSession(t))!;

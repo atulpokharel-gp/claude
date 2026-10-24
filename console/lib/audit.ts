@@ -85,7 +85,7 @@ export async function listAudit(mspId: string, q: AuditQuery = {}): Promise<Audi
       await db.query<{ id: string; at: Date; actor_email: string; action: AuditAction; target: string; detail: Record<string, unknown>; ip: string }>(
         `select id::text, at, actor_email, action, target, detail, ip from audit_log
          where ($1::text is null or action = $1) and ($2::bigint is null or id < $2)
-         order by id desc limit $3`,
+         order by audit_log.id desc limit $3`,
         [action, before, limit],
       )
     ).rows.map((r) => ({
