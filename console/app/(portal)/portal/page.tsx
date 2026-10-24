@@ -10,7 +10,7 @@ export const metadata: Metadata = { title: "Overview" };
 export default async function PortalHome() {
   const data = await loadPortal();
   if (!data) notFound();
-  const hasTrend = data.trend.some((p) => p.tools > 0);
+  const hasTrend = data.trend.length >= 2 && data.trend.some((p) => p.tools > 0);
   return (
     <>
       <div className="page-head">
