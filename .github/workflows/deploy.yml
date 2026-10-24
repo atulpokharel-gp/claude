@@ -1,0 +1,121 @@
+name: deploy
+
+# Staging: every commit on main that passes CI is built into images and
+# deployed to the staging server.
+# Production: push a tag like v1.2.0 on a commit that already passed CI (and so
+# already has images); it's deployed to the production server, after approval
+# if the production environment requires reviewers.
+# Servers are set up once by hand (docs/deploy.md); until then these jobs
+# build the images and skip the deploy.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-${{ github.event_name == 'push' && 'production' || 'staging' }}
+  cancel-in-progress: false
+
+jobs:
+  images:
+    # Only for main commits that passed CI.
+    if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      console: ${{ steps.names.outputs.console }}
+      backup: ${{ steps.names.outputs.backup }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - id: names
+        run: |
+          owner=$(echo "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')
+          sha=${{ github.event.workflow_run.head_sha }}
+          echo "console=ghcr.io/$owner/zinloop-console:$sha" >> "$GITHUB_OUTPUT"
+          echo "backup=ghcr.io/$owner/zinloop-backup:$sha" >> "$GITHUB_OUTPUT"
+      - name: Build and push
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CONSOLE: ${{ steps.names.outputs.console }}
+          BACKUP: ${{ steps.names.outputs.backup }}
+        run: |
+          printf '%s' "$TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker build -t "$CONSOLE" console
+          docker build -t "$BACKUP" deploy/backup
+          docker push "$CONSOLE"
+          docker push "$BACKUP"
+
+  staging:
+    needs: images
+    runs-on: ubuntu-latest
+    environment: staging
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - name: Deploy to staging
+        env:
+          ENVIRONMENT_NAME: staging
+          CONSOLE_IMAGE: ${{ needs.images.outputs.console }}
+          BACKUP_IMAGE: ${{ needs.images.outputs.backup }}
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+          DEPLOY_DIR: ${{ vars.DEPLOY_DIR }}
+          CONSOLE_URL: ${{ vars.CONSOLE_URL }}
+        run: .github/scripts/remote-deploy.sh
+
+  production:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Find this commit's tested images
+        id: names
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          owner=$(echo "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')
+          console="ghcr.io/$owner/zinloop-console:$GITHUB_SHA"
+          backup="ghcr.io/$owner/zinloop-backup:$GITHUB_SHA"
+          printf '%s' "$TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          if ! docker manifest inspect "$console" >/dev/null 2>&1; then
+            echo "::error::No image for $GITHUB_SHA. Tag a commit on main after CI and the staging deploy have run for it."
+            exit 1
+          fi
+          echo "console=$console" >> "$GITHUB_OUTPUT"
+          echo "backup=$backup" >> "$GITHUB_OUTPUT"
+      - name: Deploy to production
+        env:
+          ENVIRONMENT_NAME: production
+          CONSOLE_IMAGE: ${{ steps.names.outputs.console }}
+          BACKUP_IMAGE: ${{ steps.names.outputs.backup }}
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+          DEPLOY_DIR: ${{ vars.DEPLOY_DIR }}
+          CONSOLE_URL: ${{ vars.CONSOLE_URL }}
+        run: .github/scripts/remote-deploy.sh

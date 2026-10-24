@@ -10,8 +10,13 @@ import {
   enableTotp,
   removeMember,
   revokeInvite,
+  setEmailPrefs,
+  setRequireMfa,
   startTotp,
 } from "@/lib/accounts.ts";
+import { endOtherSessions } from "@/lib/auth.ts";
+import { unlinkMicrosoft } from "@/lib/identities.ts";
+import { requestInfo } from "@/lib/request-audit.ts";
 import { hasAppSecret } from "@/lib/crypto.ts";
 import { requireSession, setSessionCookie } from "@/lib/session.ts";
 import QRCode from "qrcode";
@@ -26,8 +31,17 @@ function fail(err: unknown): FormState {
 
 export type TotpSetup = FormState & { secret?: string; qr?: string };
 
+/** Pages that show the user's own account: team settings and the client portal. */
+function refreshAccount(): void {
+  revalidatePath("/app/settings");
+  revalidatePath("/portal/account");
+}
+
+// The own-account actions below (two-factor, password, other devices) also
+// work for client viewers. Everything else is for the MSP team only.
+
 export async function startTotpAction(): Promise<TotpSetup> {
-  const s = await requireSession();
+  const s = await requireSession({ mfaSetup: true, viewer: true });
   if (!hasAppSecret()) return { error: "Two-factor sign-in needs APP_SECRET set on the server. Ask whoever runs your console." };
   const secret = await startTotp(s.mspId, s.userId);
   const qr = await QRCode.toString(otpauthUri(secret, s.email), { type: "svg", margin: 1, errorCorrectionLevel: "M" });
@@ -35,31 +49,31 @@ export async function startTotpAction(): Promise<TotpSetup> {
 }
 
 export async function enableTotpAction(_prev: FormState, form: FormData): Promise<FormState> {
-  const s = await requireSession();
+  const s = await requireSession({ mfaSetup: true, viewer: true });
   try {
     await enableTotp(s.mspId, s.userId, String(form.get("code") ?? ""));
   } catch (err) {
     return fail(err);
   }
-  revalidatePath("/app/settings");
+  refreshAccount();
   return { ok: "Two-factor sign-in is on. You'll be asked for a code each time you sign in." };
 }
 
 export async function disableTotpAction(_prev: FormState, form: FormData): Promise<FormState> {
-  const s = await requireSession();
+  const s = await requireSession({ viewer: true });
   try {
     await disableTotp(s.mspId, s.userId, String(form.get("password") ?? ""));
   } catch (err) {
     return fail(err);
   }
-  revalidatePath("/app/settings");
+  refreshAccount();
   return { ok: "Two-factor sign-in is off." };
 }
 
 export async function changePasswordAction(_prev: FormState, form: FormData): Promise<FormState> {
-  const s = await requireSession();
+  const s = await requireSession({ viewer: true });
   try {
-    const token = await changePassword(s.mspId, s.userId, String(form.get("current") ?? ""), String(form.get("next") ?? ""));
+    const token = await changePassword(s.mspId, s.userId, String(form.get("current") ?? ""), String(form.get("next") ?? ""), await requestInfo());
     await setSessionCookie(token);
   } catch (err) {
     return fail(err);
@@ -73,7 +87,7 @@ export async function inviteAction(_prev: InviteState, form: FormData): Promise<
   const s = await requireSession();
   const email = String(form.get("email") ?? "");
   try {
-    const token = await createInvite(s.mspId, s.userId, email);
+    const token = await createInvite(s.mspId, s.userId, email, (await requestInfo()).ip);
     const h = await headers();
     const base = process.env.CONSOLE_URL ?? `${h.get("x-forwarded-proto") ?? "https"}://${h.get("host")}`;
     revalidatePath("/app/settings");
@@ -85,7 +99,11 @@ export async function inviteAction(_prev: InviteState, form: FormData): Promise<
 
 export async function revokeInviteAction(form: FormData): Promise<void> {
   const s = await requireSession();
-  await revokeInvite(s.mspId, String(form.get("id") ?? ""));
+  try {
+    await revokeInvite(s.mspId, s.userId, String(form.get("id") ?? ""));
+  } catch (err) {
+    if (!(err instanceof AccountError)) throw err;
+  }
   revalidatePath("/app/settings");
 }
 
@@ -98,4 +116,37 @@ export async function removeMemberAction(_prev: FormState, form: FormData): Prom
   }
   revalidatePath("/app/settings");
   return {};
+}
+
+export async function requireMfaAction(_prev: FormState, form: FormData): Promise<FormState> {
+  const s = await requireSession();
+  const on = form.get("on") === "1";
+  try {
+    await setRequireMfa(s.mspId, s.userId, on, (await requestInfo()).ip);
+  } catch (err) {
+    return fail(err);
+  }
+  revalidatePath("/app/settings");
+  return { ok: on ? "Everyone on your team now needs two-factor sign-in." : "Two-factor sign-in is now optional for your team." };
+}
+
+export async function endOtherSessionsAction(_prev: FormState): Promise<FormState> {
+  const s = await requireSession({ mfaSetup: true, viewer: true });
+  const n = await endOtherSessions(s, (await requestInfo()).ip);
+  refreshAccount();
+  return { ok: n === 0 ? "You weren't signed in anywhere else." : `Signed out ${n} other ${n === 1 ? "device" : "devices"}.` };
+}
+
+export async function emailPrefsAction(_prev: FormState, form: FormData): Promise<FormState> {
+  const s = await requireSession({ viewer: true });
+  // Viewers only get the weekly summary; alerts go to the MSP team.
+  await setEmailPrefs(s.mspId, s.userId, { alerts: s.role !== "viewer" && form.get("alerts") === "on", weekly: form.get("weekly") === "on" });
+  refreshAccount();
+  return { ok: "Saved." };
+}
+
+export async function unlinkMicrosoftAction(): Promise<void> {
+  const s = await requireSession({ viewer: true, mfaSetup: true });
+  await unlinkMicrosoft(s, (await requestInfo()).ip);
+  refreshAccount();
 }

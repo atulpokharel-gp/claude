@@ -250,3 +250,8 @@ code.block { display: block; padding: 8px 10px; background: var(--surface); bord
 .chip-link.medium { border-color: var(--medium); background: var(--medium-soft); }
 .callout { background: var(--accent-soft); border: 1px solid var(--line); border-radius: 8px; padding: 12px 16px; }
 .filter-bar input, .filter-bar select { font: inherit; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); }
+td.bad { color: var(--high); font-weight: 600; }
+
+/* Checkbox with a sentence next to it. */
+.form label.check { display: flex; flex-direction: row; gap: 10px; align-items: flex-start; font-weight: normal; }
+.form label.check input { width: auto; margin-top: 3px; flex: none; }

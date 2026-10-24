@@ -17,9 +17,20 @@ export default async function Join({ params }: { params: Promise<{ token: string
       <section className="card strong">
         {invite ? (
           <>
-            <h1 className="disp h2">Join {invite.mspName}</h1>
-            <p className="body">You've been invited to the {invite.mspName} console on Zinloop Security.</p>
-            <JoinForm token={token} email={invite.email} />
+            {invite.role === "viewer" ? (
+              <>
+                <h1 className="disp h2">See {invite.clientName}&apos;s AI security</h1>
+                <p className="body">
+                  {invite.mspName} checks the AI tools at {invite.clientName} with Zinloop Security and has given you a read-only login to see the results and reports.
+                </p>
+              </>
+            ) : (
+              <>
+                <h1 className="disp h2">Join {invite.mspName}</h1>
+                <p className="body">You've been invited to the {invite.mspName} console on Zinloop Security.</p>
+              </>
+            )}
+            <JoinForm token={token} email={invite.email} viewer={invite.role === "viewer"} />
           </>
         ) : (
           <>

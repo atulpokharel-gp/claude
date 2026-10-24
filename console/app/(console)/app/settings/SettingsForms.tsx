@@ -5,6 +5,9 @@ import {
   changePasswordAction,
   disableTotpAction,
   enableTotpAction,
+  endOtherSessionsAction,
+  emailPrefsAction,
+  requireMfaAction,
   inviteAction,
   removeMemberAction,
   startTotpAction,
@@ -130,6 +133,57 @@ export function RemoveMember({ id, name }: { id: string; name: string }) {
       <button className="btn small danger" type="submit" disabled={pending}>Yes, remove</button>
       <button className="btn small" type="button" onClick={() => setConfirm(false)}>Cancel</button>
       {state.error && <span className="form-error">{state.error}</span>}
+    </form>
+  );
+}
+
+export function RequireMfa({ on, canTurnOn }: { on: boolean; canTurnOn: boolean }) {
+  const [state, action, pending] = useActionState(requireMfaAction, {});
+  return (
+    <form action={action} className="form">
+      <p>
+        {on
+          ? "Everyone on your team must use two-factor sign-in. Teammates without it are sent to set it up before they can see any client data."
+          : "Two-factor sign-in is optional. Requiring it is strongly recommended: your console holds access to every client."}
+      </p>
+      <input type="hidden" name="on" value={on ? "0" : "1"} />
+      <button className={on ? "btn" : "btn primary"} type="submit" disabled={pending || (!on && !canTurnOn)}>
+        {on ? "Make it optional" : "Require two-factor sign-in for everyone"}
+      </button>
+      {!on && !canTurnOn && <p className="muted small">Turn on two-factor sign-in for your own account first.</p>}
+      <Result state={state} />
+    </form>
+  );
+}
+
+export function EndOtherSessions({ others }: { others: number }) {
+  const [state, action, pending] = useActionState(endOtherSessionsAction, {});
+  return (
+    <form action={action} className="form inline">
+      <button className="btn" type="submit" disabled={pending || others === 0}>Sign out everywhere else</button>
+      <Result state={state} />
+    </form>
+  );
+}
+
+export function EmailPrefsForm({ alerts, weekly, viewer = false }: { alerts: boolean; weekly: boolean; viewer?: boolean }) {
+  const [state, action, pending] = useActionState(emailPrefsAction, {});
+  return (
+    <form action={action} className="form">
+      {!viewer && (
+        <label className="check">
+          <input type="checkbox" name="alerts" defaultChecked={alerts} />
+          <span><b>Alerts</b>: email me when a new high-risk AI tool is found at any client.</span>
+        </label>
+      )}
+      <label className="check">
+        <input type="checkbox" name="weekly" defaultChecked={weekly} />
+        <span>
+          <b>Weekly summary</b>: {viewer ? "a short Monday email on how things look at your company." : "a Monday email with each client's risk, what changed and what needs attention."}
+        </span>
+      </label>
+      <Result state={state} />
+      <button className="btn" type="submit" disabled={pending}>Save email settings</button>
     </form>
   );
 }

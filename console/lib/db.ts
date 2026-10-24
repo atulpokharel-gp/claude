@@ -28,12 +28,20 @@ export async function closePool(): Promise<void> {
 
 export type Db = pg.PoolClient;
 
-/** Runs fn in a transaction that can only see and change rows of mspId. */
-export async function withTenant<T>(mspId: string, fn: (db: Db) => Promise<T>): Promise<T> {
+/**
+ * Who a transaction works for: an MSP, or one client of an MSP (a client
+ * viewer). With a clientId the database hides other clients' rows and refuses
+ * changes to client data (see migration 005).
+ */
+export type Tenant = string | { mspId: string; clientId?: string | null };
+
+/** Runs fn in a transaction that can only see and change rows of the tenant. */
+export async function withTenant<T>(tenant: Tenant, fn: (db: Db) => Promise<T>): Promise<T> {
+  const { mspId, clientId } = typeof tenant === "string" ? { mspId: tenant, clientId: null } : tenant;
   const db = await getPool().connect();
   try {
     await db.query("begin");
-    await db.query("select set_config('app.msp_id', $1, true)", [mspId]);
+    await db.query("select set_config('app.msp_id', $1, true), set_config('app.client_id', $2, true)", [mspId, clientId ?? ""]);
     const out = await fn(db);
     await db.query("commit");
     return out;

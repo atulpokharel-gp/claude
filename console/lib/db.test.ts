@@ -12,15 +12,24 @@ import { migrate } from "../scripts/migrate.ts";
 import { createMsp } from "../scripts/create-msp.ts";
 import { closePool, getPool, withTenant } from "./db.ts";
 import { tokenHash } from "./secrets.ts";
-import { checkSession, finishMfa, signIn, signOut } from "./auth.ts";
+import { checkSession, endOtherSessions, finishMfa, listSessions, signIn, signOut } from "./auth.ts";
+import { listAudit } from "./audit.ts";
 import {
   acceptInvite,
   changePassword,
   checkInvite,
+  createClientViewerInvite,
   createInvite,
+  disableTotp,
   enableTotp,
   getTeam,
+  listClientViewers,
+  removeClientViewer,
   removeMember,
+  getEmailPrefs,
+  setEmailPrefs,
+  unsubscribe,
+  setRequireMfa,
   signUp,
   startTotp,
 } from "./accounts.ts";
@@ -28,6 +37,12 @@ import { codeAt, currentStep } from "./totp.ts";
 import { cleanup } from "../scripts/cleanup.ts";
 import { setPlan } from "../scripts/set-plan.ts";
 import { snapshotAll } from "../scripts/snapshot.ts";
+import { queueAllWeekly } from "../scripts/weekly.ts";
+import { recordRun } from "../scripts/job-runs.ts";
+import { checkHealth } from "./health.ts";
+import { getMicrosoftLink, linkMicrosoft, signInWithMicrosoft, unlinkMicrosoft } from "./identities.ts";
+import { sendPending, type Mail } from "../scripts/send-mail.ts";
+import { checkAlerts, unsubscribeUrl } from "./alerts.ts";
 import {
   connectM365,
   createClient,
@@ -290,9 +305,275 @@ describe("database", { skip: !adminUrl && "set TEST_DATABASE_ADMIN_URL to run" }
     // Another MSP can't use or see this team.
     assert.ok(!(await getTeam(a.mspId)).members.some((m) => m.email === "tech@team.example"));
 
-    await assert.rejects(removeMember(s.mspId, tech.userId, s.userId), /owner can't be removed/);
+    // Members can't manage the team.
+    await assert.rejects(removeMember(s.mspId, tech.userId, s.userId), /Only the account owner/);
+    await assert.rejects(createInvite(s.mspId, tech.userId, "x@team.example"), /Only the account owner/);
+    assert.equal(tech.role, "member");
     await removeMember(s.mspId, s.userId, tech.userId);
     assert.equal(await checkSession(techToken), null, "removed member is signed out");
+
+    // Each step is in the audit log, and only this MSP can read it.
+    const log = await listAudit(s.mspId);
+    assert.deepEqual(
+      log.map((e) => e.action).reverse(),
+      ["signed_up", "invite_created", "member_joined", "member_removed"],
+    );
+    assert.equal(log[0].target, "tech@team.example");
+    assert.equal(log[0].actorEmail, "owner@team.example");
+    assert.ok(!(await listAudit(a.mspId)).some((e) => e.target === "tech@team.example"));
+    // The app role can add entries but never change or delete them.
+    await assert.rejects(withTenant(s.mspId, (db) => db.query("delete from audit_log")), /permission denied/);
+    await assert.rejects(withTenant(s.mspId, (db) => db.query("update audit_log set action = 'signed_in'")), /permission denied/);
+  });
+
+  test("the audit log lists newest first even when ids gain a digit", async () => {
+    const msp = await createMsp(ownerUrl, "Order IT", "admin@order.example");
+    const add = () =>
+      withTenant(msp.mspId, async (db) => (await db.query<{ id: string }>("insert into audit_log (msp_id, action) values ($1, 'signed_in') returning id::text", [msp.mspId])).rows[0].id);
+    const first = await add();
+    let last = first;
+    while (last.length === first.length) last = await add();
+    const ids = (await listAudit(msp.mspId, { limit: 5000 })).map((e) => BigInt(e.id));
+    assert.equal(ids[0], BigInt(last));
+    for (let i = 1; i < ids.length; i++) assert.ok(ids[i - 1] > ids[i], "sorted by number, not text");
+  });
+
+  test("client viewers see only their own client and can't change anything", async () => {
+    const ownerToken = await signUp({ name: "Owner", mspName: "Viewer IT", email: "owner@viewer.example", password: "long enough password" });
+    const s = (await checkSession(ownerToken))!;
+    await setPlan(ownerUrl, "owner@viewer.example", "partner");
+    const mine = await createClient(s.mspId, { name: "Mine Co" });
+    const other = await createClient(s.mspId, { name: "Other Co" });
+    for (const id of [mine, other]) await ingestScan(await createUploadToken(s.mspId, id, ""), sample);
+
+    // Only the owner can give out logins, and only for a client of their own.
+    const memberToken = await acceptInvite(await createInvite(s.mspId, s.userId, "tech@viewer.example"), "Tech", "another long password");
+    const member = (await checkSession(memberToken))!;
+    await assert.rejects(createClientViewerInvite(s.mspId, member.userId, mine, "boss@mine.example"), /Only the account owner/);
+    const bClient = await createClient(b.mspId, { name: "B's client" });
+    await assert.rejects(createClientViewerInvite(s.mspId, s.userId, bClient, "boss@mine.example"), /wasn't found/);
+
+    const link = await createClientViewerInvite(s.mspId, s.userId, mine, "Boss@Mine.example");
+    const inv = (await checkInvite(link))!;
+    assert.equal(inv.role, "viewer");
+    assert.equal(inv.clientName, "Mine Co");
+    const viewerToken = await acceptInvite(link, "Boss", "a long viewer password");
+    const v = (await checkSession(viewerToken))!;
+    assert.equal(v.role, "viewer");
+    assert.equal(v.clientId, mine);
+    assert.equal(v.clientName, "Mine Co");
+    assert.ok(!(await getTeam(s.mspId)).members.some((m) => m.email === "boss@mine.example"), "viewers aren't teammates");
+    assert.deepEqual((await listClientViewers(s.mspId, mine)).viewers.map((x) => x.email), ["boss@mine.example"]);
+    assert.equal((await listClientViewers(s.mspId, other)).viewers.length, 0);
+
+    // Scoped to their client, the database shows nothing else.
+    const scope = { mspId: v.mspId, clientId: v.clientId };
+    const rows = (sql: string) => withTenant(scope, async (db) => (await db.query(sql)).rows);
+    assert.ok((await getClient(scope, mine))!.client.agents.length > 0);
+    assert.equal(await getClient(scope, other), undefined);
+    assert.deepEqual((await rows("select id from clients")).map((r) => r.id), [mine]);
+    assert.ok((await rows("select client_id from scans")).every((r) => r.client_id === mine));
+    assert.ok((await rows("select client_id from devices")).every((r) => r.client_id === mine));
+    assert.equal((await rows("select id from upload_tokens")).length, 0);
+    assert.equal((await rows("select id from invites")).length, 0);
+    assert.equal((await rows("select id from audit_log")).length, 0);
+    assert.deepEqual((await rows("select email from users")).map((r) => r.email), ["boss@mine.example"]);
+    const scopedTrend = await getTrend(scope, 1, new Date(), mine);
+    assert.deepEqual(scopedTrend, await getTrend(s.mspId, 1, new Date(), mine));
+    assert.deepEqual(await getTrend(scope, 1, new Date(), other), [], "asking for another client's trend gets nothing");
+
+    // And it refuses changes to client data.
+    await assert.rejects(withTenant(scope, (db) => db.query("insert into clients (msp_id, name) values ($1, 'New')", [s.mspId])), /row-level security/);
+    await assert.rejects(withTenant(scope, (db) => db.query("update clients set name = 'Renamed'")), /row-level security/);
+    await assert.rejects(withTenant(scope, (db) => db.query("insert into upload_tokens (msp_id, client_id, token_hash) values ($1, $2, '\\x00')", [s.mspId, mine])), /row-level security/);
+    assert.equal((await withTenant(scope, (db) => db.query("delete from scans"))).rowCount, 0);
+    assert.equal((await withTenant(scope, (db) => db.query("delete from clients"))).rowCount, 0);
+    assert.equal((await withTenant(scope, (db) => db.query("update msps set require_mfa = false"))).rowCount, 0);
+    await assert.rejects(withTenant(scope, (db) => db.query("update users set client_id = $1", [other])), /row-level security/);
+    assert.equal((await getClient(s.mspId, mine))!.client.name, "Mine Co");
+
+    // Removing the login signs them out; a member can't, and the team page can't remove viewers.
+    await assert.rejects(removeClientViewer(s.mspId, member.userId, mine, v.userId), /Only the account owner/);
+    await assert.rejects(removeMember(s.mspId, s.userId, v.userId));
+    await assert.rejects(removeClientViewer(s.mspId, s.userId, other, v.userId), /wasn't found/);
+    await removeClientViewer(s.mspId, s.userId, mine, v.userId);
+    assert.equal(await checkSession(viewerToken), null);
+    const actions = (await listAudit(s.mspId)).map((e) => e.action);
+    for (const a of ["client_login_created", "client_viewer_joined", "client_login_removed"]) assert.ok(actions.includes(a as never), a);
+  });
+
+  test("new high-risk tools are emailed once, and the weekly summary goes to everyone who wants it", async () => {
+    process.env.CONSOLE_URL = "https://app.example";
+    const ownerToken = await signUp({ name: "Owner", mspName: "Mail IT", email: "owner@mail.example", password: "long enough password" });
+    const s = (await checkSession(ownerToken))!;
+    await setPlan(ownerUrl, "owner@mail.example", "partner");
+    const quiet = (await checkSession(await acceptInvite(await createInvite(s.mspId, s.userId, "quiet@mail.example"), "Quiet", "another long password")))!;
+    await setEmailPrefs(s.mspId, quiet.userId, { alerts: false, weekly: false });
+    assert.deepEqual(await getEmailPrefs(s.mspId, quiet.userId), { alerts: false, weekly: false });
+    const clientId = await createClient(s.mspId, { name: "Mail Co" });
+    const viewer = (await checkSession(await acceptInvite(await createClientViewerInvite(s.mspId, s.userId, clientId, "boss@mailco.example"), "Boss", "a long viewer password")))!;
+    const outbox = () =>
+      withTenant(s.mspId, async (db) => (await db.query<{ kind: string; to_email: string; subject: string; body_text: string; unsubscribe_url: string }>("select kind, to_email, subject, body_text, unsubscribe_url from outbox order by id")).rows);
+
+    const token = await createUploadToken(s.mspId, clientId, "");
+    await ingestScan(token, sample);
+    let mail = await outbox();
+    assert.deepEqual(mail.map((m) => [m.kind, m.to_email]), [["alert", "owner@mail.example"]], "only the team member with alerts on; never viewers");
+    assert.match(mail[0].subject, /new high-risk AI tool problems at Mail Co/);
+    assert.match(mail[0].body_text, /https:\/\/app\.example\/app\/clients\//);
+    assert.ok(mail[0].unsubscribe_url.startsWith("https://app.example/unsubscribe?t="));
+
+    // The same findings again: no new email. Checking twice at once: still one.
+    await ingestScan(token, sample);
+    await Promise.all([checkAlerts(s.mspId, clientId), checkAlerts(s.mspId, clientId)]);
+    assert.equal((await outbox()).length, 1);
+    // Viewers can't read the outbox.
+    assert.equal((await withTenant({ mspId: s.mspId, clientId }, (db) => db.query("select * from outbox"))).rowCount, 0);
+
+    // Weekly: one per person per week, whatever day it runs.
+    const monday = new Date();
+    const queued = await queueAllWeekly(ownerUrl, monday);
+    assert.ok(queued >= 2);
+    assert.equal(await queueAllWeekly(ownerUrl, monday), 0, "running again the same week queues nothing");
+    mail = (await outbox()).filter((m) => m.kind === "weekly");
+    assert.deepEqual(mail.map((m) => m.to_email).sort(), ["boss@mailco.example", "owner@mail.example"]);
+    assert.match(mail.find((m) => m.to_email === "owner@mail.example")!.subject, /across 1 client$/);
+    const forViewer = mail.find((m) => m.to_email === "boss@mailco.example")!;
+    assert.match(forViewer.subject, /^Mail Co: weekly AI security summary/);
+    assert.ok(!forViewer.body_text.includes("Other"), "the viewer's summary is only about their client");
+
+    // Sending: failures are retried later, successes are marked sent.
+    const sent: Mail[] = [];
+    const failing = { sendMail: async () => { throw new Error("SMTP down"); } };
+    const r1 = await sendPending(ownerUrl, failing, "Zinloop <alerts@zinloop.example>");
+    assert.equal(r1.sent, 0);
+    assert.ok(r1.failed >= 3);
+    const ok = { sendMail: async (m: Mail) => { sent.push(m); } };
+    assert.equal((await sendPending(ownerUrl, ok, "Zinloop <alerts@zinloop.example>")).sent, 0, "failed emails wait before the next try");
+    const admin = new pg.Client({ connectionString: ownerUrl });
+    await admin.connect();
+    await admin.query("update outbox set next_try_at = now()");
+    const pending = Number((await admin.query("select count(*) from outbox where sent_at is null")).rows[0].count);
+    const r2 = await sendPending(ownerUrl, ok, "Zinloop <alerts@zinloop.example>");
+    assert.equal(r2.sent, pending);
+    assert.equal(Number((await admin.query("select count(*) from outbox where sent_at is null")).rows[0].count), 0);
+    await admin.end();
+    const alert = sent.find((m) => m.subject.includes("Mail Co") && m.to === "owner@mail.example" && !m.subject.startsWith("Weekly"))!;
+    assert.match(alert.headers!["List-Unsubscribe"], /^<https:\/\/app\.example\/api\/unsubscribe\?t=/);
+    assert.equal(alert.headers!["List-Unsubscribe-Post"], "List-Unsubscribe=One-Click");
+
+    // Removing someone drops their unsent mail.
+    const gone = (await checkSession(await acceptInvite(await createInvite(s.mspId, s.userId, "leaver@mail.example"), "Leaver", "another long password")))!;
+    await withTenant(s.mspId, (db) =>
+      db.query("insert into outbox (msp_id, dedupe_key, kind, user_id, to_email, subject, body_text, body_html) values ($1, 'test:leaver', 'weekly', $2, 'leaver@mail.example', 's', 't', 'h')", [s.mspId, gone.userId]),
+    );
+    await removeMember(s.mspId, s.userId, gone.userId);
+    assert.ok(!(await outbox()).some((m) => m.to_email === "leaver@mail.example"));
+
+    // Unsubscribe turns off one kind of email for that person only.
+    assert.equal(await unsubscribe(viewer.userId, "weekly"), "boss@mailco.example");
+    assert.deepEqual(await getEmailPrefs(s.mspId, viewer.userId), { alerts: true, weekly: false });
+    assert.equal((await getEmailPrefs(s.mspId, s.userId)).weekly, true);
+    assert.ok(unsubscribeUrl(s.userId, "alert"));
+
+    // Mail queued before someone turned it off isn't sent.
+    await withTenant(s.mspId, (db) =>
+      db.query(
+        `insert into outbox (msp_id, dedupe_key, kind, user_id, to_email, subject, body_text, body_html)
+         values ($1, 'test:off', 'weekly', $2, 'boss@mailco.example', 'late weekly', 't', 'h'), ($1, 'test:on', 'alert', $2, 'boss@mailco.example', 'still wanted', 't', 'h')`,
+        [s.mspId, viewer.userId],
+      ),
+    );
+    sent.length = 0;
+    assert.equal((await sendPending(ownerUrl, ok, "Zinloop <alerts@zinloop.example>")).sent, 1);
+    assert.deepEqual(sent.map((m) => m.subject), ["still wanted"]);
+    assert.ok(!(await outbox()).some((m) => m.subject === "late weekly"), "dropped, not just skipped");
+    delete process.env.CONSOLE_URL;
+  });
+
+  test("the health check sees the database and background job results", async () => {
+    assert.deepEqual(await checkHealth(false), { ok: true, database: "ok" });
+    await recordRun(ownerUrl, "backup");
+    await recordRun(ownerUrl, "snapshot");
+    assert.deepEqual((await checkHealth(true)).jobs, { backup: "ok", snapshot: "ok" });
+    await recordRun(ownerUrl, "backup", new Error("disk full"));
+    const h = await checkHealth(true);
+    assert.equal(h.ok, false);
+    assert.equal(h.jobs!.backup, "failing");
+    // The app role can only read the summary, not the table or error text.
+    await assert.rejects(getPool().query("select * from job_runs"), /permission denied/);
+    await recordRun(ownerUrl, "backup");
+    assert.equal((await checkHealth(true)).ok, true);
+  });
+
+  test("a linked Microsoft account signs in; an unlinked or reused one doesn't", async () => {
+    const tok = await signUp({ name: "Owner", mspName: "SSO IT", email: "owner@sso.example", password: "long enough password" });
+    const s = (await checkSession(tok))!;
+    const dana = { tenantId: "11111111-2222-3333-4444-555555555555", objectId: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", label: "dana@contoso.example", name: "Dana" };
+    assert.deepEqual(await signInWithMicrosoft(dana), { kind: "not-linked" });
+    await linkMicrosoft(s, dana);
+    assert.equal((await getMicrosoftLink(s))?.label, "dana@contoso.example");
+    const r = await signInWithMicrosoft(dana, { ip: "203.0.113.9" });
+    assert.equal(r.kind, "session");
+    assert.equal((await checkSession((r as { token: string }).token))?.userId, s.userId);
+    // Same object ID in a different tenant is a different person.
+    assert.deepEqual(await signInWithMicrosoft({ ...dana, tenantId: "99999999-2222-3333-4444-555555555555" }), { kind: "not-linked" });
+    // One Microsoft account can't be linked to two Zinloop logins, even across MSPs.
+    const other = (await checkSession(await signUp({ name: "B", mspName: "Other IT", email: "b@other.example", password: "long enough password" })))!;
+    await assert.rejects(linkMicrosoft(other, dana), /already linked/);
+    // With two-factor on, Microsoft sign-in still asks for the code.
+    const secret = await startTotp(s.mspId, s.userId);
+    await enableTotp(s.mspId, s.userId, codeAt(secret, currentStep()));
+    assert.equal((await signInWithMicrosoft(dana)).kind, "mfa");
+    await unlinkMicrosoft(s);
+    assert.equal(await getMicrosoftLink(s), null);
+    assert.deepEqual(await signInWithMicrosoft(dana), { kind: "not-linked" });
+    const actions = (await listAudit(s.mspId)).map((e) => e.action);
+    for (const a of ["microsoft_linked", "microsoft_unlinked", "signed_in"]) assert.ok(actions.includes(a as never), a);
+    assert.ok((await listAudit(s.mspId)).some((e) => e.action === "signed_in" && e.detail.method === "microsoft"));
+  });
+
+  test("owners can require two-factor sign-in for the whole team", async () => {
+    const t = await signUp({ name: "Req", mspName: "Req IT", email: "req@req.example", password: "long enough password" });
+    const s = (await checkSession(t))!;
+    assert.equal(s.requireMfa, false);
+    await assert.rejects(setRequireMfa(s.mspId, s.userId, true), /your own account first/);
+    const secret = await startTotp(s.mspId, s.userId);
+    await enableTotp(s.mspId, s.userId, codeAt(secret, currentStep()));
+    await setRequireMfa(s.mspId, s.userId, true);
+    const after = (await checkSession(t))!;
+    assert.equal(after.requireMfa, true);
+    assert.equal(after.mfa, true);
+    await assert.rejects(disableTotp(s.mspId, s.userId, "long enough password"), /requires two-factor/);
+    const log = await listAudit(s.mspId, { action: "require_mfa_changed" });
+    assert.equal(log[0].detail.required, true);
+  });
+
+  test("sessions are listed, can be ended elsewhere, and end after being idle", async () => {
+    const t1 = await signUp({ name: "Ses", mspName: "Ses IT", email: "ses@ses.example", password: "long enough password" });
+    const r = await signIn("ses@ses.example", "long enough password", "203.0.113.9", "Mozilla/5.0 (Windows NT 10.0) Chrome/130");
+    const t2 = r.kind === "session" ? r.token : "";
+    const s1 = (await checkSession(t1))!;
+    const list = await listSessions(s1);
+    assert.equal(list.length, 2);
+    assert.equal(list.filter((x) => x.current).length, 1);
+    assert.ok(list.some((x) => x.ip === "203.0.113.9" && x.userAgent.includes("Chrome")));
+    assert.equal(await endOtherSessions(s1), 1);
+    assert.equal(await checkSession(t2), null);
+    assert.ok(await checkSession(t1));
+
+    // A session unused for longer than the idle limit stops working.
+    const owner = new pg.Client({ connectionString: ownerUrl });
+    await owner.connect();
+    try {
+      await owner.query("update sessions set last_seen_at = now() - interval '10 hours' where id = $1", [s1.sessionId]);
+    } finally {
+      await owner.end();
+    }
+    assert.equal(await checkSession(t1), null);
+    const failed = await signIn("ses@ses.example", "wrong password");
+    assert.equal(failed.kind, "wrong");
+    assert.equal((await listAudit(s1.mspId, { action: "sign_in_failed" })).length, 1);
   });
 
   test("changing the password signs out other sessions", async () => {

@@ -1,8 +1,24 @@
-# Runs the console, Postgres and a daily maintenance job on one server.
-# 1. cp console/.env.example .env and fill it in (see docs/deploy.md)
-# 2. docker compose up -d
-# Put a TLS-terminating proxy (Caddy is included) in front; the console must be
-# served over https for sign-in cookies and scanner uploads.
+# Runs Zinloop on one server: Postgres, the console, background jobs, nightly
+# backups and Caddy for HTTPS. Staging and production are two servers running
+# this same file with their own .env (see docs/deploy.md).
+# 1. cp .env.example .env and fill it in
+# 2. docker compose up -d --build   (or let the deploy workflow pull images)
+
+# Keep container logs from filling the disk: 5 files of 10 MB per service.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+# The console, migrations and jobs share one image. Deploys set CONSOLE_IMAGE
+# to a tested image from GitHub's registry; without it, it's built here.
+x-console: &console
+  image: ${CONSOLE_IMAGE:-zinloop-console:local}
+  build: ./console
+  env_file: .env
+  logging: *logging
+
 services:
   db:
     image: postgres:16-alpine
@@ -17,10 +33,10 @@ services:
       test: ["CMD-SHELL", "pg_isready -U zinloop_owner -d zinloop"]
       interval: 5s
       retries: 20
+    logging: *logging
 
   migrate:
-    build: ./console
-    env_file: .env
+    <<: *console
     depends_on:
       db:
         condition: service_healthy
@@ -30,23 +46,49 @@ services:
     restart: "no"
 
   console:
-    build: ./console
-    env_file: .env
+    <<: *console
     restart: unless-stopped
     depends_on:
       migrate:
         condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/health >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
 
   maintenance:
-    build: ./console
+    <<: *console
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    # Every 5 minutes: send queued emails. Once a day: delete expired sessions
+    # and old scans, re-check Microsoft 365, save each client's risk counts for
+    # the trend chart, and queue the weekly summary (one per person per week).
+    command: >
+      sh -c 'i=0; while true; do
+               if [ $$((i % 288)) -eq 0 ]; then
+                 npm run --silent db:cleanup; npm run --silent m365:sync;
+                 npm run --silent db:snapshot; npm run --silent mail:weekly;
+               fi;
+               npm run --silent mail:send; i=$$((i + 1)); sleep 300;
+             done'
+
+  # Nightly pg_dump to the backups volume (kept BACKUP_KEEP_DAYS), plus an
+  # encrypted off-site copy when BACKUP_S3_URI is set. See docs/deploy.md.
+  backup:
+    build: ./deploy/backup
+    image: ${BACKUP_IMAGE:-zinloop-backup:local}
     env_file: .env
     restart: unless-stopped
     depends_on:
       migrate:
         condition: service_completed_successfully
-    # Once a day: delete expired sessions and old scans, re-check Microsoft 365,
-    # save each client's risk counts for the trend chart.
-    command: sh -c "while true; do npm run --silent db:cleanup; npm run --silent m365:sync; npm run --silent db:snapshot; sleep 86400; done"
+    volumes:
+      - backups:/backups
+    logging: *logging
 
   caddy:
     image: caddy:2-alpine
@@ -57,8 +99,12 @@ services:
     command: caddy reverse-proxy --from ${CONSOLE_HOST} --to console:3000
     volumes:
       - caddy:/data
-    depends_on: [console]
+    depends_on:
+      console:
+        condition: service_healthy
+    logging: *logging
 
 volumes:
   db:
   caddy:
+  backups:

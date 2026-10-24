@@ -1,9 +1,10 @@
 // Reading and writing an MSP's clients, upload tokens and scans.
 
 import { checkClientLimit, PLAN_LIMITS, type Plan } from "./accounts.ts";
-import { lookup, withTenant } from "./db.ts";
+import { lookup, withTenant, type Tenant } from "./db.ts";
 import { appToAgent, discover, GraphError, revokeApp, TENANT_ID, type Fetch, type M365App } from "./m365.ts";
 import { snapshotOf } from "./insights.ts";
+import { checkAlerts } from "./alerts.ts";
 import { importScan, ScanImportError } from "./scan-import.ts";
 import { newToken, tokenHash } from "./secrets.ts";
 import type { Agent, Client } from "./types.ts";
@@ -104,13 +105,14 @@ export interface UploadTokenInfo {
   lastUsed: string | null;
 }
 
+/** One client's results. Pass { mspId, clientId } as the tenant for a client viewer. */
 export async function getClient(
-  mspId: string,
+  tenant: Tenant,
   clientId: string,
   now = new Date(),
 ): Promise<{ client: Client; tokens: UploadTokenInfo[]; m365: M365Status | null } | undefined> {
   if (!isUuid(clientId)) return undefined;
-  return withTenant(mspId, async (db) => {
+  return withTenant(tenant, async (db) => {
     const c = (await db.query<ClientRow>("select * from clients where id = $1", [clientId])).rows[0];
     if (!c) return undefined;
     const rows = (await db.query<DeviceScanRow>(`${LATEST_SCANS} where d.client_id = $1`, [clientId])).rows;
@@ -183,6 +185,7 @@ export class UploadError extends Error {
 export async function ingestScan(token: string | undefined, report: unknown, now = new Date()) {
   const saved = await saveScan(token, report, now);
   await snapshotClient(saved.mspId, saved.clientId, now);
+  await checkAlerts(saved.mspId, saved.clientId, now);
   return { clientId: saved.clientId, deviceId: saved.deviceId };
 }
 
@@ -274,6 +277,7 @@ export async function syncM365(mspId: string, clientId: string, f: Fetch = fetch
       ]),
     );
     await snapshotClient(mspId, clientId);
+    await checkAlerts(mspId, clientId);
     return { apps: apps.length };
   } catch (err) {
     const message = err instanceof GraphError ? err.message : "Couldn't reach Microsoft 365.";
@@ -283,7 +287,8 @@ export async function syncM365(mspId: string, clientId: string, f: Fetch = fetch
 }
 
 /** Revokes every grant of one AI app in the client's tenant, then re-reads the tenant. */
-export async function revokeM365App(mspId: string, clientId: string, agentId: string, f: Fetch = fetch): Promise<void> {
+/** Returns the app's name. */
+export async function revokeM365App(mspId: string, clientId: string, agentId: string, f: Fetch = fetch): Promise<string> {
   if (!isUuid(clientId) || !agentId.startsWith("m365-")) throw new Error("Unknown app.");
   const t = await withTenant(mspId, async (db) =>
     (await db.query<M365Row>("select * from m365_tenants where client_id = $1", [clientId])).rows[0],
@@ -292,6 +297,7 @@ export async function revokeM365App(mspId: string, clientId: string, agentId: st
   if (!t || !app) throw new Error("That app isn't in this client's Microsoft 365 any more.");
   await revokeApp(t.tenant_id, app, f);
   await syncM365(mspId, clientId, f);
+  return app.name;
 }
 
 /**
@@ -331,9 +337,9 @@ export interface TrendPoint {
  * Days before the first snapshot are left out rather than shown as zero, so a
  * new account's chart doesn't look like things got worse.
  */
-export async function getTrend(mspId: string, days = 90, now = new Date(), clientId?: string): Promise<TrendPoint[]> {
+export async function getTrend(tenant: Tenant, days = 90, now = new Date(), clientId?: string): Promise<TrendPoint[]> {
   const first = new Date(now.getTime() - (days - 1) * 86_400_000).toISOString().slice(0, 10);
-  const rows = await withTenant(mspId, async (db) =>
+  const rows = await withTenant(tenant, async (db) =>
     (
       await db.query<{ client_id: string; day: string; high: number; medium: number; low: number; tools: number }>(
         `select client_id, to_char(day, 'YYYY-MM-DD') as day, high, medium, low, tools from risk_snapshots
