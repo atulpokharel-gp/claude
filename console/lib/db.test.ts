@@ -470,6 +470,19 @@ describe("database", { skip: !adminUrl && "set TEST_DATABASE_ADMIN_URL to run" }
     assert.deepEqual(await getEmailPrefs(s.mspId, viewer.userId), { alerts: true, weekly: false });
     assert.equal((await getEmailPrefs(s.mspId, s.userId)).weekly, true);
     assert.ok(unsubscribeUrl(s.userId, "alert"));
+
+    // Mail queued before someone turned it off isn't sent.
+    await withTenant(s.mspId, (db) =>
+      db.query(
+        `insert into outbox (msp_id, dedupe_key, kind, user_id, to_email, subject, body_text, body_html)
+         values ($1, 'test:off', 'weekly', $2, 'boss@mailco.example', 'late weekly', 't', 'h'), ($1, 'test:on', 'alert', $2, 'boss@mailco.example', 'still wanted', 't', 'h')`,
+        [s.mspId, viewer.userId],
+      ),
+    );
+    sent.length = 0;
+    assert.equal((await sendPending(ownerUrl, ok, "Zinloop <alerts@zinloop.example>")).sent, 1);
+    assert.deepEqual(sent.map((m) => m.subject), ["still wanted"]);
+    assert.ok(!(await outbox()).some((m) => m.subject === "late weekly"), "dropped, not just skipped");
     delete process.env.CONSOLE_URL;
   });
 
