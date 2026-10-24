@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { appToAgent, discover, isAiApp, revokeApp } from "./m365.ts";
+import { appToAgent, discover, GraphError, isAiApp, revokeApp, verifyAdmin, verifyUrl } from "./m365.ts";
 import { fakeGraph, TENANT } from "./m365-fake.ts";
 
 process.env.M365_CLIENT_ID = "test-client";
@@ -57,4 +57,33 @@ test("AI apps are recognized by name or publisher", () => {
   assert.ok(isAiApp({ displayName: "Notes", publisherName: "Otter.ai" }));
   assert.ok(!isAiApp({ displayName: "Payroll Sync", publisherName: "Payroll Co" }));
   assert.ok(!isAiApp({ displayName: "Microsoft 365 Copilot", appOwnerOrganizationId: "f8cdef31-a31e-4b4a-93e4-5f571e91255a" }));
+});
+
+// verifyAdmin: the sign-in after consent must prove the admin is in that tenant.
+function tokenFetch(claims: Record<string, unknown>, status = 200): typeof fetch {
+  const idToken = ["e30", Buffer.from(JSON.stringify(claims)).toString("base64url"), "sig"].join(".");
+  return (async () => new Response(JSON.stringify(status === 200 ? { id_token: idToken } : { error_description: "AADSTS54005: code already used" }), { status })) as typeof fetch;
+}
+const GLOBAL_ADMIN = "62e90394-69f5-4237-9190-012177145e10";
+
+test("verifyAdmin accepts an admin of the approved tenant", async () => {
+  await verifyAdmin(TENANT, "code", "https://x/cb", tokenFetch({ aud: "test-client", tid: TENANT, wids: [GLOBAL_ADMIN] }));
+});
+
+test("verifyAdmin rejects a sign-in to another tenant", async () => {
+  await assert.rejects(
+    verifyAdmin(TENANT, "code", "https://x/cb", tokenFetch({ aud: "test-client", tid: "99999999-2222-3333-4444-555555555555", wids: [GLOBAL_ADMIN] })),
+    (e: GraphError) => e.status === 403,
+  );
+});
+
+test("verifyAdmin rejects a user who isn't an admin, or a token for another app", async () => {
+  await assert.rejects(verifyAdmin(TENANT, "code", "https://x/cb", tokenFetch({ aud: "test-client", tid: TENANT, wids: [] })), (e: GraphError) => e.status === 403);
+  await assert.rejects(verifyAdmin(TENANT, "code", "https://x/cb", tokenFetch({ aud: "other-app", tid: TENANT, wids: [GLOBAL_ADMIN] })), (e: GraphError) => e.status === 403);
+  await assert.rejects(verifyAdmin(TENANT, "code", "https://x/cb", tokenFetch({}, 400)), GraphError);
+});
+
+test("verifyUrl signs in at the claimed tenant only", () => {
+  assert.match(verifyUrl(TENANT, "s", "https://x/cb"), new RegExp(`^https://login\\.microsoftonline\\.com/${TENANT}/oauth2/v2\\.0/authorize\\?`));
+  assert.throws(() => verifyUrl("organizations", "s", "https://x/cb"), GraphError);
 });

@@ -27,6 +27,66 @@ export function consentUrl(state: string, redirectUri: string): string {
   return `${LOGIN}/organizations/adminconsent?${q}`;
 }
 
+// Directory roles that can approve app permissions tenant-wide: Global
+// Administrator and Privileged Role Administrator.
+const CONSENT_ROLES = new Set(["62e90394-69f5-4237-9190-012177145e10", "e8611ab8-c189-46e8-94e1-60213ab1f814"]);
+
+/**
+ * Step two of connecting: the admin signs in to the tenant Microsoft named in
+ * the consent answer. That answer arrives as plain URL parameters anyone can
+ * type, so this sign-in is what proves the person controls the tenant.
+ */
+export function verifyUrl(tenantId: string, state: string, redirectUri: string): string {
+  if (!TENANT_ID.test(tenantId)) throw new GraphError("Not a Microsoft tenant ID.", 400);
+  const q = new URLSearchParams({
+    client_id: process.env.M365_CLIENT_ID ?? "",
+    response_type: "code",
+    redirect_uri: redirectUri,
+    response_mode: "query",
+    scope: "openid",
+    state,
+  });
+  return `${LOGIN}/${tenantId}/oauth2/v2.0/authorize?${q}`;
+}
+
+/**
+ * Swaps the sign-in code for an ID token and checks it: issued to us, for this
+ * tenant, to an admin who can approve app permissions. The token comes straight
+ * from Microsoft over HTTPS, so its contents can be trusted without checking
+ * the signature (OpenID Connect Core 3.1.3.7).
+ */
+export async function verifyAdmin(tenantId: string, code: string, redirectUri: string, f: Fetch = fetch): Promise<void> {
+  if (!TENANT_ID.test(tenantId)) throw new GraphError("Not a Microsoft tenant ID.", 400);
+  const res = await f(`${LOGIN}/${tenantId}/oauth2/v2.0/token`, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      client_id: process.env.M365_CLIENT_ID ?? "",
+      client_secret: process.env.M365_CLIENT_SECRET ?? "",
+      grant_type: "authorization_code",
+      code,
+      redirect_uri: redirectUri,
+      scope: "openid",
+    }),
+  });
+  const body = (await res.json().catch(() => ({}))) as { id_token?: string; error_description?: string };
+  if (!res.ok || !body.id_token) {
+    throw new GraphError(`Microsoft refused the sign-in: ${(body.error_description ?? res.statusText).split("\n")[0]}`, res.status || 400);
+  }
+  let claims: { aud?: string; tid?: string; wids?: string[] };
+  try {
+    claims = JSON.parse(Buffer.from(body.id_token.split(".")[1] ?? "", "base64url").toString("utf8"));
+  } catch {
+    throw new GraphError("Microsoft sent an unreadable sign-in token.", 502);
+  }
+  if (claims.aud !== process.env.M365_CLIENT_ID || claims.tid?.toLowerCase() !== tenantId.toLowerCase()) {
+    throw new GraphError("You signed in to a different Microsoft 365 tenant than the one you approved.", 403);
+  }
+  if (!claims.wids?.some((r) => CONSENT_ROLES.has(r))) {
+    throw new GraphError("Sign in as a Global Administrator or Privileged Role Administrator of the client's tenant.", 403);
+  }
+}
+
 // Names that mark an app as an AI tool. Matched against the app's display
 // name and publisher. Microsoft's own apps are skipped (they're covered by
 // Microsoft's admin tools).

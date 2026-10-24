@@ -1,6 +1,25 @@
 -- Self-serve sign-up, plans, team invites, two-factor sign-in, rate limits,
 -- Microsoft 365 connections and cleanup.
 
+-- Databases set up before the rename have the app role as agentguard_app.
+-- Renaming keeps its grants and its password (SCRAM); update DATABASE_URL's
+-- user name to zinloop_app afterwards.
+do $$
+begin
+  if not exists (select from pg_roles where rolname = 'zinloop_app') then
+    if exists (select from pg_roles where rolname = 'agentguard_app') then
+      alter role agentguard_app rename to zinloop_app;
+    else
+      create role zinloop_app nologin;
+    end if;
+  end if;
+end $$;
+-- Repeat 001's grants, in case zinloop_app was new above (for example when
+-- another database on the same server already had the role).
+grant usage on schema public to zinloop_app;
+grant select, insert, update, delete on msps, users, sessions, clients, upload_tokens, devices, scans to zinloop_app;
+grant execute on function current_msp(), auth_check_session(bytea), upload_check_token(bytea) to zinloop_app;
+
 alter table msps
   add column plan text not null default 'free' check (plan in ('free', 'partner', 'msp')),
   add column client_estimate integer not null default 0 check (client_estimate >= 0),

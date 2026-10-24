@@ -6,6 +6,8 @@ const NOTICES: Record<string, string> = {
   declined: "Consent wasn't granted, so nothing was connected.",
   error: "Connected, but the first check failed. See the error below.",
   expired: "That consent link expired. Start again.",
+  "not-admin": "Nothing was connected. Sign in as a Global Administrator of the client's own tenant (the same one that approved access).",
+  "verify-failed": "Nothing was connected because Microsoft couldn't confirm the sign-in. Try again.",
   unavailable: "Microsoft 365 checks aren't set up on this console yet.",
 };
 
