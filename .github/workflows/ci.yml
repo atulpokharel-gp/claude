@@ -31,6 +31,34 @@ jobs:
             GOOS=${target%/*} GOARCH=${target#*/} go build -o /dev/null ./cmd/agentscan
           done
 
+  # Runs the tests on real Windows and macOS, including moving keys into
+  # Windows Credential Manager and the macOS Keychain and starting a server
+  # through the launcher. Fake keys only; they are deleted afterwards.
+  scanner-os:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: scanner
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - run: go vet ./...
+      - name: Tests, including the real password store
+        env:
+          AGENTGUARD_REAL_STORE: "1"
+        run: go test -v -run "TestRealPasswordStore" ./cmd/agentscan && go test ./...
+      - name: Build and run a read-only scan of the test configs
+        shell: bash
+        run: |
+          go build -o agentscan-test${{ runner.os == 'Windows' && '.exe' || '' }} ./cmd/agentscan
+          ./agentscan-test --home testdata/home --project testdata/project
+
   console:
     runs-on: ubuntu-latest
     defaults:
