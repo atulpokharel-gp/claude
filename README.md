@@ -44,11 +44,12 @@ file** and drop in the `scan.json` from the step above, or click **Try a sample 
 ```sh
 cd console
 # 1. Create the tables, as the database owner
-DATABASE_ADMIN_URL=postgres://owner@host/agentguard npm run db:migrate
+export DATABASE_ADMIN_URL=postgres://owner@host/agentguard
+npm run db:migrate
 # 2. Give the app role a password (the migration creates the role without one)
 psql "$DATABASE_ADMIN_URL" -c "alter role agentguard_app login password '...'"
 # 3. Create your MSP account; prints a one-time password
-DATABASE_ADMIN_URL=... npm run db:create-msp -- "Your MSP" you@example.com
+npm run db:create-msp -- "Your MSP" you@example.com
 # 4. Run the console as the app role
 export DATABASE_URL=postgres://agentguard_app:...@host/agentguard
 npm run build && npm start
