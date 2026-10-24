@@ -63,8 +63,8 @@ export default async function Overview() {
           <span className="muted small">Keys saved in plain text in AI agent configs on laptops</span>
         </div>
         <div className="keys-flow">
-          <div><b className="bad">{keys.plain}</b><span>servers with keys in plain text</span><small>Run <code>agentscan fix-secrets --apply</code> on the laptop</small></div>
-          <div><b className="warn">{keys.toReplace}</b><span>protected, old key still needs replacing</span><small>Create a new key, then <code>agentscan rotate</code></small></div>
+          <div><b className="bad">{keys.plain}</b><span>servers with keys in plain text</span><small>Run <code>zinloop fix-secrets --apply</code> on the laptop</small></div>
+          <div><b className="warn">{keys.toReplace}</b><span>protected, old key still needs replacing</span><small>Create a new key, then <code>zinloop rotate</code></small></div>
           <div><b className="good">{keys.done}</b><span>servers with all keys protected and replaced</span><small>Nothing to do</small></div>
         </div>
       </section>

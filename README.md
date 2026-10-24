@@ -1,4 +1,4 @@
-# Agent Guard (working name)
+# Zinloop Security
 
 Security for AI agents, built for MSPs that look after mid-sized companies.
 It finds every AI agent and MCP server a client uses, shows what each one can
@@ -8,7 +8,7 @@ This repository holds the first demo:
 
 | Folder | What it is | Status |
 | --- | --- | --- |
-| [`scanner/`](scanner/) | `agentscan`, a small Go program that finds MCP server configs on a laptop and flags risky settings | Working prototype |
+| [`scanner/`](scanner/) | `zinloop`, a small Go program that finds MCP server configs on a laptop and flags risky settings | Working prototype |
 | [`console/`](console/) | The MSP web console (Next.js). Runs as a demo with made-up clients, or with Postgres: sign-in, clients, and laptops sending their scans | Working prototype |
 
 ## Try it
@@ -17,11 +17,11 @@ This repository holds the first demo:
 
 ```sh
 cd scanner
-go run ./cmd/agentscan                 # readable summary
-go run ./cmd/agentscan --json --out scan.json
+go run ./cmd/zinloop                 # readable summary
+go run ./cmd/zinloop --json --out scan.json
 ```
 
-To fix what it finds, `go run ./cmd/agentscan fix-secrets` previews moving
+To fix what it finds, `go run ./cmd/zinloop fix-secrets` previews moving
 plain-text keys into the computer's password store; see the
 [scanner README](scanner/README.md#fix-plain-text-keys).
 
@@ -44,14 +44,14 @@ file** and drop in the `scan.json` from the step above, or click **Try a sample 
 ```sh
 cd console
 # 1. Create the tables, as the database owner
-export DATABASE_ADMIN_URL=postgres://owner@host/agentguard
+export DATABASE_ADMIN_URL=postgres://owner@host/zinloop
 npm run db:migrate
 # 2. Give the app role a password (the migration creates the role without one)
-psql "$DATABASE_ADMIN_URL" -c "alter role agentguard_app login password '...'"
+psql "$DATABASE_ADMIN_URL" -c "alter role zinloop_app login password '...'"
 # 3. Create your MSP account; prints a one-time password
 npm run db:create-msp -- "Your MSP" you@example.com
 # 4. Run the console as the app role
-export DATABASE_URL=postgres://agentguard_app:...@host/agentguard
+export DATABASE_URL=postgres://zinloop_app:...@host/zinloop
 npm run build && npm start
 ```
 
@@ -59,7 +59,7 @@ Sign in, add a client, and create an upload token on the client's page. Then
 on each laptop, usually through your RMM tool:
 
 ```sh
-AGENTGUARD_TOKEN=agu_... agentscan --upload https://your-console/api/scans
+ZINLOOP_TOKEN=zlu_... zinloop --upload https://your-console/api/scans
 ```
 
 Each MSP's data is kept apart by Postgres row-level security: the console's

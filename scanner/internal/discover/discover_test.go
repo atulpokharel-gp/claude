@@ -103,7 +103,7 @@ func TestEnvValuesNeverSerialized(t *testing.T) {
 func TestParseLauncherRoundTrip(t *testing.T) {
 	secrets := []ProtectedSecret{{Env: "A_TOKEN", Ref: "app/srv/A_TOKEN"}, {Env: "B", Ref: "app/srv/B"}}
 	args := LauncherArgs(secrets, "npx", []string{"-y", "pkg@1.0.0", "--", "x"})
-	got, cmd, rest, ok := ParseLauncher(`C:\Tools\agentscan.exe`, args)
+	got, cmd, rest, ok := ParseLauncher(`C:\Tools\zinloop.exe`, args)
 	if !ok || cmd != "npx" || strings.Join(rest, " ") != "-y pkg@1.0.0 -- x" || len(got) != 2 || got[1].Ref != "app/srv/B" {
 		t.Fatalf("round trip failed: %v %q %q %v", got, cmd, rest, ok)
 	}
@@ -114,11 +114,11 @@ func TestParseLauncherRoundTrip(t *testing.T) {
 		{"exec", "--other", "--", "x"},
 		{"scan", "--", "x"},
 	} {
-		if _, _, _, ok := ParseLauncher("/usr/local/bin/agentscan", bad); ok {
+		if _, _, _, ok := ParseLauncher("/usr/local/bin/zinloop", bad); ok {
 			t.Errorf("%v should not parse", bad)
 		}
 	}
 	if _, _, _, ok := ParseLauncher("npx", args); ok {
-		t.Error("only agentscan is a launcher")
+		t.Error("only zinloop is a launcher")
 	}
 }

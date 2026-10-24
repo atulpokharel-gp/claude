@@ -22,7 +22,7 @@ export async function signIn(email: string, password: string): Promise<string | 
   // Always run one scrypt so a wrong email takes as long as a wrong password.
   const ok = await verifyPassword(password, user?.password_hash ?? DUMMY_PASSWORD_HASH);
   if (!user || !ok) return null;
-  const token = newToken("ags");
+  const token = newToken("zls");
   await withTenant(user.msp_id, (db) =>
     db.query(
       `insert into sessions (token_hash, user_id, msp_id, expires_at)
@@ -34,7 +34,7 @@ export async function signIn(email: string, password: string): Promise<string | 
 }
 
 export async function checkSession(token: string | undefined): Promise<Session | null> {
-  if (!token || !token.startsWith("ags_")) return null;
+  if (!token || !token.startsWith("zls_")) return null;
   const row = await lookup<{ user_id: string; msp_id: string; email: string; msp_name: string }>(
     "select * from auth_check_session($1)",
     [tokenHash(token)],

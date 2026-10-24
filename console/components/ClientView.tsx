@@ -170,7 +170,7 @@ export function ClientView({ client }: { client: Client }) {
                         )}
                         {isRevoked && <span className="small muted">Access revoked. You can add it back from Microsoft Entra if someone still needs it.</span>}
                         {!a.revocable && a.findings.some((f) => f.ruleId === "SECRET_IN_CONFIG") && (
-                          <span className="small muted">Fix on the laptop: <code>agentscan fix-secrets --apply</code></span>
+                          <span className="small muted">Fix on the laptop: <code>zinloop fix-secrets --apply</code></span>
                         )}
                         {!a.revocable && a.findings.length > 0 && (
                           <button type="button" className="btn" onClick={() => copyFix(a)}>Copy fix steps</button>

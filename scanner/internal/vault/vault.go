@@ -19,8 +19,8 @@ import (
 	"github.com/zalando/go-keyring"
 )
 
-// Service is the name every Agent Guard entry is filed under in the password store.
-const Service = "agent-guard"
+// Service is the name every Zinloop entry is filed under in the password store.
+const Service = "zinloop"
 
 // ErrNotFound means the password store has no entry for a ref.
 var ErrNotFound = errors.New("not found in the password store")
@@ -108,14 +108,14 @@ type Entry struct {
 	RotatedAt  *time.Time `json:"rotatedAt,omitempty"`
 }
 
-// State is the record of moved secrets, kept at ~/.agentguard/secrets.json.
+// State is the record of moved secrets, kept at ~/.zinloop/secrets.json.
 type State struct {
 	Entries map[string]Entry `json:"entries"`
 }
 
 // StatePath returns where the record lives for a home directory.
 func StatePath(home string) string {
-	return filepath.Join(home, ".agentguard", "secrets.json")
+	return filepath.Join(home, ".zinloop", "secrets.json")
 }
 
 // LoadState reads the record. A missing file is an empty record.

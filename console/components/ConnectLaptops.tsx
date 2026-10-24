@@ -22,8 +22,8 @@ export function ConnectLaptops({ clientId, tokens, consoleUrl }: { clientId: str
         <div className="token-once" role="status">
           <p><b>Copy this token now.</b> It won&apos;t be shown again.</p>
           <code className="block">{state.token}</code>
-          <p className="small">Put it in the <code>AGENTGUARD_TOKEN</code> environment variable in your RMM tool, then run on each laptop:</p>
-          <code className="block">agentscan --upload {uploadUrl}</code>
+          <p className="small">Put it in the <code>ZINLOOP_TOKEN</code> environment variable in your RMM tool, then run on each laptop:</p>
+          <code className="block">zinloop --upload {uploadUrl}</code>
         </div>
       ) : (
         <form action={action} className="form inline">

@@ -1,4 +1,4 @@
-// Command agentscan finds AI agent (MCP server) configurations on this
+// Command zinloop finds AI agent (MCP server) configurations on this
 // computer and reports risky settings. It only reads files; it changes nothing
 // and sends nothing over the network.
 package main
@@ -68,7 +68,7 @@ func buildEnv(home string, projects []string) (discover.Env, error) {
 }
 
 func runScan(args []string, stdout, stderr io.Writer) int {
-	fs := flag.NewFlagSet("agentscan", flag.ContinueOnError)
+	fs := flag.NewFlagSet("zinloop", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	asJSON := fs.Bool("json", false, "print the report as JSON")
 	out := fs.String("out", "", "also write the JSON report to this file")

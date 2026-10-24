@@ -16,7 +16,7 @@ import (
 
 // TokenEnv holds the console upload token. An environment variable (or a
 // file) keeps the token out of the process list, unlike a command-line flag.
-const TokenEnv = "AGENTGUARD_TOKEN"
+const TokenEnv = "ZINLOOP_TOKEN"
 
 // uploadClient never follows redirects: a redirect could send the token and
 // report to another host or over plain http.
@@ -27,7 +27,7 @@ var uploadClient = &http.Client{
 	},
 }
 
-// uploadToken reads the token from --token-file or AGENTGUARD_TOKEN.
+// uploadToken reads the token from --token-file or ZINLOOP_TOKEN.
 func uploadToken(tokenFile string) (string, error) {
 	if tokenFile != "" {
 		b, err := os.ReadFile(tokenFile)
@@ -71,8 +71,8 @@ func upload(rawURL, token string, rep any) error {
 	if err != nil {
 		return err
 	}
-	if !strings.HasPrefix(token, "agu_") {
-		return errors.New("that doesn't look like an upload token (it should start with agu_)")
+	if !strings.HasPrefix(token, "zlu_") {
+		return errors.New("that doesn't look like an upload token (it should start with zlu_)")
 	}
 	body, err := json.Marshal(rep)
 	if err != nil {
@@ -84,7 +84,7 @@ func upload(rawURL, token string, rep any) error {
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("User-Agent", "agentscan/"+version)
+	req.Header.Set("User-Agent", "zinloop/"+version)
 	resp, err := uploadClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("couldn't reach the console: %w", err)

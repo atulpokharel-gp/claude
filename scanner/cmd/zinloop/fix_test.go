@@ -38,10 +38,10 @@ func fixtureHome(t *testing.T) string {
 	return dst
 }
 
-// fakeLauncher creates an executable file named agentscan in dir.
+// fakeLauncher creates an executable file named zinloop in dir.
 func fakeLauncher(t *testing.T, dir string) string {
 	t.Helper()
-	p := filepath.Join(dir, "agentscan")
+	p := filepath.Join(dir, "zinloop")
 	if err := os.WriteFile(p, []byte("#!/bin/sh\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -138,7 +138,7 @@ func TestFixRefusesTempLauncher(t *testing.T) {
 	home := fixtureHome(t)
 	useMemoryStore(t)
 	old := launcherPath
-	launcherPath = func() (string, error) { return filepath.Join(os.TempDir(), "go-build123", "agentscan"), nil }
+	launcherPath = func() (string, error) { return filepath.Join(os.TempDir(), "go-build123", "zinloop"), nil }
 	t.Cleanup(func() { launcherPath = old })
 	var out, errOut bytes.Buffer
 	if code := run([]string{"fix-secrets", "--home", home, "--apply"}, &out, &errOut); code == 0 {
@@ -152,8 +152,8 @@ func TestFixRefusesUnrecognizedLauncherName(t *testing.T) {
 	cfg := filepath.Join(home, ".config", "Claude", "claude_desktop_config.json")
 	before, _ := os.ReadFile(cfg)
 	var out, errOut bytes.Buffer
-	code := run([]string{"fix-secrets", "--home", home, "--apply", "--launcher", filepath.Join(home, "bin", "agent-guard")}, &out, &errOut)
-	if code == 0 || !strings.Contains(errOut.String(), "named agentscan") {
+	code := run([]string{"fix-secrets", "--home", home, "--apply", "--launcher", filepath.Join(home, "bin", "other-tool")}, &out, &errOut)
+	if code == 0 || !strings.Contains(errOut.String(), "named zinloop") {
 		t.Errorf("exit %d, stderr %q; want a refusal naming the rule", code, errOut.String())
 	}
 	if after, _ := os.ReadFile(cfg); !bytes.Equal(before, after) {
@@ -167,11 +167,11 @@ func TestFixWritesAbsoluteLauncherPath(t *testing.T) {
 	fakeLauncher(t, home)
 	t.Chdir(home)
 	var out, errOut bytes.Buffer
-	if code := run([]string{"fix-secrets", "--home", home, "--apply", "--launcher", "agentscan"}, &out, &errOut); code != 0 {
+	if code := run([]string{"fix-secrets", "--home", home, "--apply", "--launcher", "zinloop"}, &out, &errOut); code != 0 {
 		t.Fatalf("exit %d: %s", code, errOut.String())
 	}
 	data, _ := os.ReadFile(filepath.Join(home, ".config", "Claude", "claude_desktop_config.json"))
-	want, _ := json.Marshal(filepath.Join(home, "agentscan"))
+	want, _ := json.Marshal(filepath.Join(home, "zinloop"))
 	if !bytes.Contains(data, want) {
 		t.Errorf("config should name the launcher by absolute path %s:\n%s", want, data)
 	}
@@ -182,8 +182,8 @@ func TestFixRefusesMissingOrNonExecutableLauncher(t *testing.T) {
 	useMemoryStore(t)
 	cfg := filepath.Join(home, ".config", "Claude", "claude_desktop_config.json")
 	before, _ := os.ReadFile(cfg)
-	missing := filepath.Join(home, "nowhere", "agentscan")
-	notExec := filepath.Join(home, "agentscan")
+	missing := filepath.Join(home, "nowhere", "zinloop")
+	notExec := filepath.Join(home, "zinloop")
 	_ = os.WriteFile(notExec, []byte("x"), 0o644)
 	cases := []string{missing}
 	if runtime.GOOS != "windows" {
@@ -266,7 +266,7 @@ func TestSecretEnv(t *testing.T) {
 	if strings.Join(env, ",") != "PATH=/bin,TOKEN=v1" {
 		t.Errorf("env = %v", env)
 	}
-	if _, err := secretEnv([]discover.ProtectedSecret{{Env: "X", Ref: "missing"}}, store, nil); err == nil || !strings.Contains(err.Error(), "agentscan rotate") {
+	if _, err := secretEnv([]discover.ProtectedSecret{{Env: "X", Ref: "missing"}}, store, nil); err == nil || !strings.Contains(err.Error(), "zinloop rotate") {
 		t.Errorf("missing key error = %v", err)
 	}
 }

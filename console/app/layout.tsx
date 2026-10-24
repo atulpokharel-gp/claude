@@ -7,7 +7,7 @@ import { signOutAction } from "./login/actions.ts";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Agent Guard console",
+  title: "Zinloop Security console",
   description: "See every AI agent and MCP server across your clients, and shut down the risky ones.",
 };
 
@@ -22,7 +22,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           <div className="topbar-inner">
             <Link href="/" className="brand">
               <span className="brand-mark" aria-hidden="true">AG</span>
-              Agent Guard
+              Zinloop
             </Link>
             {(demo || session) && (
               <nav className="nav" aria-label="Main">

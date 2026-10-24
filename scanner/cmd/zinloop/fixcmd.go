@@ -18,7 +18,7 @@ import (
 	"golang.org/x/term"
 )
 
-// launcherPath is the agentscan binary written into fixed configs. Tests override it.
+// launcherPath is the zinloop binary written into fixed configs. Tests override it.
 var launcherPath = func() (string, error) {
 	p, err := os.Executable()
 	if err != nil {
@@ -28,11 +28,11 @@ var launcherPath = func() (string, error) {
 }
 
 func runFix(args []string, stdout, stderr io.Writer) int {
-	fs := flag.NewFlagSet("agentscan fix-secrets", flag.ContinueOnError)
+	fs := flag.NewFlagSet("zinloop fix-secrets", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	apply := fs.Bool("apply", false, "make the changes (without this, only shows what would change)")
 	home := fs.String("home", "", "home directory to fix (default: current user's)")
-	launcher := fs.String("launcher", "", "path to agentscan to write into configs (default: this program)")
+	launcher := fs.String("launcher", "", "path to zinloop to write into configs (default: this program)")
 	asJSON := fs.Bool("json", false, "print the plan or result as JSON")
 	var projects multiFlag
 	fs.Var(&projects, "project", "project folder to also fix (repeatable)")
@@ -58,7 +58,7 @@ func runFix(args []string, stdout, stderr io.Writer) int {
 		lp := *launcher
 		if lp == "" {
 			if lp, err = launcherPath(); err != nil {
-				fmt.Fprintln(stderr, "cannot find agentscan's own path; pass --launcher:", err)
+				fmt.Fprintln(stderr, "cannot find zinloop's own path; pass --launcher:", err)
 				return 1
 			}
 		}
@@ -71,11 +71,11 @@ func runFix(args []string, stdout, stderr io.Writer) int {
 			lp = abs
 		}
 		if !discover.IsLauncherName(lp) {
-			fmt.Fprintf(stderr, "the launcher must be named agentscan (or agentscan.exe on Windows) so later scans recognize it; got %s\n", lp)
+			fmt.Fprintf(stderr, "the launcher must be named zinloop (or zinloop.exe on Windows) so later scans recognize it; got %s\n", lp)
 			return 1
 		}
 		if strings.Contains(lp, os.TempDir()) && *launcher == "" {
-			fmt.Fprintln(stderr, "agentscan is running from a temporary folder (go run?). Build it, put it somewhere permanent, and run it from there, or pass --launcher.")
+			fmt.Fprintln(stderr, "zinloop is running from a temporary folder (go run?). Build it, put it somewhere permanent, and run it from there, or pass --launcher.")
 			return 1
 		}
 		if err := checkLauncher(lp); err != nil {
@@ -173,13 +173,13 @@ func writePlan(w io.Writer, plan fix.Plan, applied, incomplete bool) {
 	case applied && plan.Keys() > 0:
 		fmt.Fprintln(w, "\nDone. Restart the AI apps so they pick up the change.")
 		fmt.Fprintln(w, "Next: the old keys were readable before, so replace each one with the provider and run")
-		fmt.Fprintln(w, "  agentscan rotate <name>")
+		fmt.Fprintln(w, "  zinloop rotate <name>")
 		fmt.Fprintln(w, "Each backup still holds the old keys. Delete it once the app works.")
 	}
 }
 
 func runRotate(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
-	fs := flag.NewFlagSet("agentscan rotate", flag.ContinueOnError)
+	fs := flag.NewFlagSet("zinloop rotate", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	home := fs.String("home", "", "home directory (default: current user's)")
 	list := fs.Bool("list", false, "list keys that still need replacing")
@@ -207,14 +207,14 @@ func runRotate(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			e := st.Entries[ref]
 			fmt.Fprintf(stdout, "  %s  (moved %s)\n", ref, e.MovedAt.Format("2006-01-02"))
 		}
-		fmt.Fprintln(stdout, "\nCreate a new key with the provider, then run: agentscan rotate <name>")
+		fmt.Fprintln(stdout, "\nCreate a new key with the provider, then run: zinloop rotate <name>")
 		return 0
 	}
 
 	ref := fs.Arg(0)
 	e, ok := st.Entries[ref]
 	if !ok {
-		fmt.Fprintf(stderr, "%q isn't a key Agent Guard moved. Run agentscan rotate --list to see them.\n", ref)
+		fmt.Fprintf(stderr, "%q isn't a key Zinloop moved. Run zinloop rotate --list to see them.\n", ref)
 		return 1
 	}
 	fmt.Fprintf(stderr, "Paste the new value for %s and press Enter: ", ref)
@@ -242,7 +242,7 @@ func runRotate(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if err := store.Set(ref, val); err != nil {
 		st.Entries[ref] = prev
 		if saveErr := st.Save(env.Home); saveErr != nil {
-			fmt.Fprintf(stderr, "couldn't save to the password store (%v), and couldn't undo the record (%v); run agentscan rotate %s again\n", err, saveErr, ref)
+			fmt.Fprintf(stderr, "couldn't save to the password store (%v), and couldn't undo the record (%v); run zinloop rotate %s again\n", err, saveErr, ref)
 			return 1
 		}
 		fmt.Fprintln(stderr, "couldn't save to the password store; nothing changed:", err)

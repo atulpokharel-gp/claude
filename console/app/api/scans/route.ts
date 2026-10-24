@@ -1,5 +1,5 @@
 // Laptops send scan reports here:
-//   POST /api/scans  Authorization: Bearer agu_...  body: agentscan JSON report
+//   POST /api/scans  Authorization: Bearer zlu_...  body: zinloop JSON report
 
 import { hasDatabase } from "@/lib/db.ts";
 import { ingestScan, MAX_REPORT_BYTES, UploadError } from "@/lib/store.ts";

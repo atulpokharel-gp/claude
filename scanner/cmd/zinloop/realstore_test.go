@@ -14,11 +14,11 @@ import (
 
 // TestRealPasswordStore runs the key fix against the operating system's own
 // password store (Windows Credential Manager, macOS Keychain). It only runs
-// when AGENTGUARD_REAL_STORE=1, which CI sets on Windows and macOS. It never
+// when ZINLOOP_REAL_STORE=1, which CI sets on Windows and macOS. It never
 // prints key values; it compares them in memory or by hash.
 func TestRealPasswordStore(t *testing.T) {
-	if os.Getenv("AGENTGUARD_REAL_STORE") != "1" {
-		t.Skip("set AGENTGUARD_REAL_STORE=1 to test the real password store")
+	if os.Getenv("ZINLOOP_REAL_STORE") != "1" {
+		t.Skip("set ZINLOOP_REAL_STORE=1 to test the real password store")
 	}
 	home := fixtureHome(t)
 	env := discover.Env{GOOS: goos, Home: home}
@@ -73,9 +73,9 @@ func TestRealPasswordStore(t *testing.T) {
 			// a stand-in server.
 			if runtime.GOOS == "windows" {
 				sum := sha256.Sum256([]byte(want))
-				t.Setenv("AGENTGUARD_HELPER", "1")
-				t.Setenv("AGENTGUARD_CHECK_VAR", p.Env)
-				t.Setenv("AGENTGUARD_EXPECT_SHA", hex.EncodeToString(sum[:]))
+				t.Setenv("ZINLOOP_HELPER", "1")
+				t.Setenv("ZINLOOP_CHECK_VAR", p.Env)
+				t.Setenv("ZINLOOP_EXPECT_SHA", hex.EncodeToString(sum[:]))
 				exe, _ := os.Executable()
 				var execErr bytes.Buffer
 				code := runExec([]string{"--secret", p.Env + "=" + p.Ref, "--", exe, "-test.run=^TestHelperEnvCheck$"}, &execErr)
@@ -94,11 +94,11 @@ func TestRealPasswordStore(t *testing.T) {
 // TestHelperEnvCheck is the stand-in server for TestRealPasswordStore. It
 // exits 0 when the expected variable holds the expected value, 3 otherwise.
 func TestHelperEnvCheck(t *testing.T) {
-	if os.Getenv("AGENTGUARD_HELPER") != "1" {
+	if os.Getenv("ZINLOOP_HELPER") != "1" {
 		return
 	}
-	sum := sha256.Sum256([]byte(os.Getenv(os.Getenv("AGENTGUARD_CHECK_VAR"))))
-	if hex.EncodeToString(sum[:]) == os.Getenv("AGENTGUARD_EXPECT_SHA") {
+	sum := sha256.Sum256([]byte(os.Getenv(os.Getenv("ZINLOOP_CHECK_VAR"))))
+	if hex.EncodeToString(sum[:]) == os.Getenv("ZINLOOP_EXPECT_SHA") {
 		os.Exit(0)
 	}
 	os.Exit(3)

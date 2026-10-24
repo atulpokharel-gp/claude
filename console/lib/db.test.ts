@@ -24,7 +24,7 @@ function withDb(url: string, db: string): string {
 }
 
 describe("database", { skip: !adminUrl && "set TEST_DATABASE_ADMIN_URL to run" }, () => {
-  const dbName = `agentguard_test_${randomBytes(4).toString("hex")}`;
+  const dbName = `zinloop_test_${randomBytes(4).toString("hex")}`;
   const appPassword = randomBytes(12).toString("hex");
   let ownerUrl = "";
   let a: { mspId: string; password: string };
@@ -36,20 +36,20 @@ describe("database", { skip: !adminUrl && "set TEST_DATABASE_ADMIN_URL to run" }
     const admin = new pg.Client({ connectionString: adminUrl });
     await admin.connect();
     await admin.query(`do $$ begin
-      if not exists (select from pg_roles where rolname = 'agentguard_test_owner') then
-        create role agentguard_test_owner login createrole;
+      if not exists (select from pg_roles where rolname = 'zinloop_test_owner') then
+        create role zinloop_test_owner login createrole;
       end if; end $$`);
-    await admin.query(`alter role agentguard_test_owner password '${appPassword}'`);
-    await admin.query(`create database ${dbName} owner agentguard_test_owner`);
+    await admin.query(`alter role zinloop_test_owner password '${appPassword}'`);
+    await admin.query(`create database ${dbName} owner zinloop_test_owner`);
     const owner = new URL(withDb(adminUrl!, dbName));
-    owner.username = "agentguard_test_owner";
+    owner.username = "zinloop_test_owner";
     owner.password = appPassword;
     ownerUrl = owner.toString();
     await migrate(ownerUrl, () => {});
-    await admin.query(`alter role agentguard_app login password '${appPassword}'`);
+    await admin.query(`alter role zinloop_app login password '${appPassword}'`);
     await admin.end();
     const app = new URL(ownerUrl);
-    app.username = "agentguard_app";
+    app.username = "zinloop_app";
     app.password = appPassword;
     process.env.DATABASE_URL = app.toString();
     a = await createMsp(ownerUrl, "MSP A", "admin@a.example", "correct horse battery");
@@ -74,7 +74,7 @@ describe("database", { skip: !adminUrl && "set TEST_DATABASE_ADMIN_URL to run" }
     assert.equal(s?.mspName, "MSP A");
     await signOut(s!, token!);
     assert.equal(await checkSession(token!), null);
-    assert.equal(await checkSession("ags_made-up"), null);
+    assert.equal(await checkSession("zls_made-up"), null);
   });
 
   test("the app role sees nothing without a tenant", async () => {
@@ -140,7 +140,7 @@ describe("database", { skip: !adminUrl && "set TEST_DATABASE_ADMIN_URL to run" }
     const id = await createClient(a.mspId, { name: "Refuse Co" });
     const token = await createUploadToken(a.mspId, id, "");
     await assert.rejects(ingestScan(undefined, sample), (e: UploadError) => e.status === 401);
-    await assert.rejects(ingestScan("agu_nope", sample), (e: UploadError) => e.status === 401);
+    await assert.rejects(ingestScan("zlu_nope", sample), (e: UploadError) => e.status === 401);
     await assert.rejects(ingestScan(token, { hello: "world" }), (e: UploadError) => e.status === 400);
     await assert.rejects(ingestScan(token, { ...sample, hostname: "" }), (e: UploadError) => e.status === 400);
 

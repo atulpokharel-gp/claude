@@ -28,7 +28,7 @@ jobs:
       - name: Cross-build for Windows, Mac and Linux
         run: |
           for target in windows/amd64 darwin/arm64 darwin/amd64 linux/amd64; do
-            GOOS=${target%/*} GOARCH=${target#*/} go build -o /dev/null ./cmd/agentscan
+            GOOS=${target%/*} GOARCH=${target#*/} go build -o /dev/null ./cmd/zinloop
           done
 
   # Runs the tests on real Windows and macOS, including moving keys into
@@ -51,13 +51,13 @@ jobs:
       - run: go vet ./...
       - name: Tests, including the real password store
         env:
-          AGENTGUARD_REAL_STORE: "1"
-        run: go test -v -run "TestRealPasswordStore" ./cmd/agentscan && go test ./...
+          ZINLOOP_REAL_STORE: "1"
+        run: go test -v -run "TestRealPasswordStore" ./cmd/zinloop && go test ./...
       - name: Build and run a read-only scan of the test configs
         shell: bash
         run: |
-          go build -o agentscan-test${{ runner.os == 'Windows' && '.exe' || '' }} ./cmd/agentscan
-          ./agentscan-test --home testdata/home --project testdata/project
+          go build -o zinloop-test${{ runner.os == 'Windows' && '.exe' || '' }} ./cmd/zinloop
+          ./zinloop-test --home testdata/home --project testdata/project
 
   console:
     runs-on: ubuntu-latest

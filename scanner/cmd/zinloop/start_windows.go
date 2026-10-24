@@ -22,7 +22,7 @@ func startProgram(path string, argv, env []string, stderr io.Writer) int {
 		return exit.ExitCode()
 	}
 	if err != nil {
-		fmt.Fprintf(stderr, "agent-guard: couldn't start %s: %v\n", path, err)
+		fmt.Fprintf(stderr, "zinloop: couldn't start %s: %v\n", path, err)
 		return 126
 	}
 	return 0

@@ -28,7 +28,7 @@ func TestCheckUploadURL(t *testing.T) {
 }
 
 func TestScanUploadsReport(t *testing.T) {
-	const token = "agu_test-token-value"
+	const token = "zlu_test-token-value"
 	var gotAuth string
 	var got map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -75,7 +75,7 @@ func TestScanUploadErrors(t *testing.T) {
 	}
 
 	tokenFile := filepath.Join(t.TempDir(), "token")
-	_ = os.WriteFile(tokenFile, []byte("agu_revoked\n"), 0o600)
+	_ = os.WriteFile(tokenFile, []byte("zlu_revoked\n"), 0o600)
 	errOut.Reset()
 	if code := run([]string{"--home", home, "--upload", srv.URL, "--token-file", tokenFile}, &out, &errOut); code != 3 || !strings.Contains(errOut.String(), "revoked") {
 		t.Errorf("refused upload: exit %d, %s", code, errOut.String())
@@ -99,7 +99,7 @@ func TestUploadRefusesRedirects(t *testing.T) {
 		http.Redirect(w, r, plain.URL, http.StatusTemporaryRedirect)
 	}))
 	defer redirector.Close()
-	err := upload(redirector.URL, "agu_x", map[string]int{"schemaVersion": 1})
+	err := upload(redirector.URL, "zlu_x", map[string]int{"schemaVersion": 1})
 	if err == nil || !strings.Contains(err.Error(), "redirect") {
 		t.Errorf("want a redirect error, got %v", err)
 	}

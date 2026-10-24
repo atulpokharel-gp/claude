@@ -18,7 +18,7 @@ export default function ImportPage() {
       setError(null);
     } catch (e) {
       setClient(null);
-      setError(e instanceof ScanImportError ? e.message : "This file isn't valid JSON. Choose the file agentscan wrote with --out.");
+      setError(e instanceof ScanImportError ? e.message : "This file isn't valid JSON. Choose the file zinloop wrote with --out.");
     }
   }
 
@@ -72,8 +72,8 @@ export default function ImportPage() {
         <div className="panel-head"><h2>How to scan a computer</h2></div>
         <div style={{ padding: 16 }}>
           <ol className="steps">
-            <li>Download <code>agentscan</code> for Windows, Mac or Linux, or build it from the <code>scanner</code> folder with <code>go build ./cmd/agentscan</code>.</li>
-            <li>Run <code>agentscan --json --out scan.json</code>. It only reads config files and sends nothing over the network.</li>
+            <li>Download <code>zinloop</code> for Windows, Mac or Linux, or build it from the <code>scanner</code> folder with <code>go build ./cmd/zinloop</code>.</li>
+            <li>Run <code>zinloop --json --out scan.json</code>. It only reads config files and sends nothing over the network.</li>
             <li>Upload <code>scan.json</code> here. Passwords and keys are never in the file; the scanner keeps only their names.</li>
           </ol>
         </div>

@@ -4,7 +4,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { checkSession, SESSION_HOURS, type Session } from "./auth.ts";
 
-export const SESSION_COOKIE = "ag_session";
+export const SESSION_COOKIE = "zl_session";
 
 export async function currentSession(): Promise<Session | null> {
   const token = (await cookies()).get(SESSION_COOKIE)?.value;
