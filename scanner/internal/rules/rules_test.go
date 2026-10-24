@@ -105,6 +105,9 @@ func TestKeyNotRotatedGivesOneCommandPerKey(t *testing.T) {
 	}
 	if !strings.Contains(fix, "agentscan rotate app/x/A_TOKEN@1; agentscan rotate app/x/B_TOKEN@1") {
 		t.Errorf("fix should list a separate command per key, got %q", fix)
+	}
+}
+
 func TestTokenInURLPathIsSecret(t *testing.T) {
 	s := discover.Server{Name: "x", Transport: "remote", URL: "https://mcp.example.com/" + fakeGitHubToken + "/sse"}
 	found := false
