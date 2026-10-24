@@ -28,6 +28,7 @@ Pass `--project <folder>` (repeatable) to also check project folders.
 | `INSECURE_TRANSPORT` | high | Remote servers over plain `http` |
 | `RISKY_CONTAINER` | high | Docker with `--privileged`, host networking, or the Docker socket mounted |
 | `UNPINNED_PACKAGE` | medium | `npx`/`uvx`/`dlx` packages with no fixed version, or `@latest` |
+| `KEY_NOT_ROTATED` | medium | A key moved by `fix-secrets` that was exposed before and hasn't been replaced yet |
 | `REMOTE_SERVER` | low | Data sent to an outside service |
 | `SHELL_LAUNCHER` | low | Server started through `bash -c` or similar |
 
@@ -41,9 +42,40 @@ go build -o agentscan ./cmd/agentscan
 ./agentscan --fail-on high        # exit code 2 if anything is high risk
 ```
 
+## Fix plain-text keys
+
+`fix-secrets` moves keys out of AI configs and into the computer's own
+password store (macOS Keychain, Windows Credential Manager, or the Linux
+Secret Service). The AI app keeps working because the server now starts
+through `agentscan exec`, which reads the key from the store and passes it to
+the server at start-up.
+
+```sh
+./agentscan fix-secrets            # preview only, changes nothing
+./agentscan fix-secrets --apply    # make the change (close the AI apps first)
+./agentscan rotate --list          # keys that were exposed and still need replacing
+./agentscan rotate <name>          # paste a new key from the provider
+```
+
+What `--apply` does, per config file:
+
+1. Saves each key to the password store and reads it back to check it.
+2. Copies the original file to `<file>.agentguard-backup-<time>` (owner-only).
+3. Rewrites the server entry, for example
+   `"command": "npx", "env": {"GITHUB_TOKEN": "ghp_..."}` becomes
+   `"command": "/path/to/agentscan", "args": ["exec", "--secret", "GITHUB_TOKEN=claude-desktop/github/GITHUB_TOKEN@3aa8de04", "--", "npx", ...]`.
+4. Records the move in `~/.agentguard/secrets.json` (names and dates only).
+
+If any step fails, that file is left exactly as it was. Keys in headers,
+command-line arguments or URLs, and servers in VS Code's `settings.json`, are
+listed for fixing by hand. Run agentscan from a permanent location, since its
+path is written into the configs. Rewritten files keep every setting, though
+key order may change.
+
 ## Privacy
 
-- Reads config files only. Never changes them and makes no network calls.
+- Scanning only reads config files and makes no network calls. Only
+  `fix-secrets --apply` and `rotate` change anything.
 - Env and header **values** are kept in memory for the checks but never written
   out; the report lists only their names.
 - Arguments that look like tokens and the user/query parts of URLs are replaced

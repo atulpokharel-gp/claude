@@ -47,6 +47,9 @@ type Finding struct {
 // Context carries facts about the computer that some rules need.
 type Context struct {
 	Home string
+	// NeedsRotation holds refs of keys that were moved into the password
+	// store but not yet replaced with new ones.
+	NeedsRotation map[string]bool
 }
 
 var (
@@ -70,6 +73,7 @@ func Check(s discover.Server, ctx Context) []Finding {
 	out = append(out, shellAccess(s)...)
 	out = append(out, riskyContainer(s)...)
 	out = append(out, remoteServer(s)...)
+	out = append(out, keyNotRotated(s, ctx)...)
 	return out
 }
 
@@ -150,23 +154,45 @@ func isLiteral(v string) bool {
 	return v != "" && !reference.MatchString(v)
 }
 
-func secretsInConfig(s discover.Server) []Finding {
-	var names []string
-	for k, v := range s.Env {
+// SecretEnvKeys returns, sorted, the env var names whose values are
+// credentials written in plain text. The fix command moves exactly these.
+func SecretEnvKeys(env map[string]string) []string {
+	var keys []string
+	for k, v := range env {
 		if !isLiteral(v) {
 			continue
 		}
 		if secretKeyName.MatchString(k) || secretValue.MatchString(v) || URLHasCredential(v) {
-			names = append(names, "env "+k)
+			keys = append(keys, k)
 		}
 	}
-	for k, v := range s.Headers {
+	sort.Strings(keys)
+	return keys
+}
+
+// SecretHeaderKeys returns, sorted, the header names whose values are
+// credentials written in plain text.
+func SecretHeaderKeys(h map[string]string) []string {
+	var keys []string
+	for k, v := range h {
 		if !isLiteral(v) {
 			continue
 		}
 		if strings.EqualFold(k, "authorization") || secretKeyName.MatchString(k) || secretValue.MatchString(v) {
-			names = append(names, "header "+k)
+			keys = append(keys, k)
 		}
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func secretsInConfig(s discover.Server) []Finding {
+	var names []string
+	for _, k := range SecretEnvKeys(s.Env) {
+		names = append(names, "env "+k)
+	}
+	for _, k := range SecretHeaderKeys(s.Headers) {
+		names = append(names, "header "+k)
 	}
 	for _, i := range SecretArgs(s.Args) {
 		names = append(names, "argument "+strconv.Itoa(i+1))
@@ -327,6 +353,32 @@ func remoteServer(s discover.Server) []Finding {
 		Title:    "Sends data to an outside service",
 		Detail:   "Whatever the agent passes to this server goes to " + u.Hostname() + ".",
 		Fix:      "Confirm the company approves this provider and that a data agreement is in place.",
+	}}
+}
+
+func keyNotRotated(s discover.Server, ctx Context) []Finding {
+	var pending, refs []string
+	for _, p := range s.Protected {
+		if ctx.NeedsRotation[p.Ref] {
+			pending = append(pending, p.Env)
+			refs = append(refs, p.Ref)
+		}
+	}
+	if len(pending) == 0 {
+		return nil
+	}
+	sort.Strings(pending)
+	sort.Strings(refs)
+	cmds := make([]string, len(refs))
+	for i, r := range refs {
+		cmds[i] = "agentscan rotate " + r
+	}
+	return []Finding{{
+		RuleID:   "KEY_NOT_ROTATED",
+		Severity: Medium,
+		Title:    "Protected now, but the old key was exposed",
+		Detail:   "Agent Guard moved " + strings.Join(pending, ", ") + " into the password store, but the same key sat in plain text before. Anyone who copied the file still has it.",
+		Fix:      "Create a new key with the provider, revoke the old one, then run one command per key: " + strings.Join(cmds, "; "),
 	}}
 }
 

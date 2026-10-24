@@ -28,6 +28,8 @@ export interface Agent {
   /** True when the console could cut off access with one click (Microsoft 365 grants). */
   revocable: boolean;
   lastSeen: string; // ISO date
+  /** Env vars Agent Guard moved into the computer's password store. */
+  protectedKeys?: string[];
 }
 
 export interface Client {

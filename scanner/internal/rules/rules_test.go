@@ -96,6 +96,23 @@ func TestFindingTextHasNoSecret(t *testing.T) {
 	}
 }
 
+func TestKeyNotRotatedGivesOneCommandPerKey(t *testing.T) {
+	s := discover.Server{Name: "x", Command: "node", Protected: []discover.ProtectedSecret{
+		{Env: "A_TOKEN", Ref: "app/x/A_TOKEN@1"},
+		{Env: "B_TOKEN", Ref: "app/x/B_TOKEN@1"},
+	}}
+	ctx := Context{NeedsRotation: map[string]bool{"app/x/A_TOKEN@1": true, "app/x/B_TOKEN@1": true}}
+	var fix string
+	for _, f := range Check(s, ctx) {
+		if f.RuleID == "KEY_NOT_ROTATED" {
+			fix = f.Fix
+		}
+	}
+	if !strings.Contains(fix, "agentscan rotate app/x/A_TOKEN@1; agentscan rotate app/x/B_TOKEN@1") {
+		t.Errorf("fix should list a separate command per key, got %q", fix)
+	}
+}
+
 func TestTokenInURLPathIsSecret(t *testing.T) {
 	s := discover.Server{Name: "x", Transport: "remote", URL: "https://mcp.example.com/" + fakeGitHubToken + "/sse"}
 	found := false

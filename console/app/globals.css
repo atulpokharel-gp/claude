@@ -112,6 +112,7 @@ tbody tr.link-row:hover { background: var(--bg); }
 .chev { color: var(--muted); transition: transform 0.15s; }
 .agent[data-open="true"] .chev { transform: rotate(90deg); }
 .agent-body { padding: 4px 16px 18px 124px; display: flex; flex-direction: column; gap: 14px; }
+.protected { color: var(--clean); margin: 0; }
 .reach { display: flex; gap: 6px; flex-wrap: wrap; }
 .reach span { font-size: 0.8rem; border: 1px solid var(--line); border-radius: 4px; padding: 1px 8px; }
 .finding { border-left: 3px solid var(--line); padding: 2px 0 2px 12px; display: flex; flex-direction: column; gap: 4px; max-width: 75ch; }
@@ -145,3 +146,17 @@ code { font-family: var(--mono); font-size: 0.88em; background: var(--bg); borde
   .msp { margin-left: 0; width: 100%; }
 }
 @media (prefers-reduced-motion: reduce) { .chev { transition: none; } }
+
+.keys-flow { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.keys-flow > div { padding: 14px 16px; display: flex; flex-direction: column; gap: 2px; border-right: 1px solid var(--line); min-width: 0; }
+.keys-flow > div:last-child { border-right: 0; }
+.keys-flow b { font-size: 1.6rem; font-variant-numeric: tabular-nums; }
+.keys-flow .bad { color: var(--high); }
+.keys-flow .warn { color: var(--medium); }
+.keys-flow .good { color: var(--clean); }
+.keys-flow small { color: var(--muted); font-size: 0.8rem; }
+@media (max-width: 760px) {
+  .keys-flow { grid-template-columns: 1fr; }
+  .keys-flow > div { border-right: 0; border-bottom: 1px solid var(--line); }
+  .keys-flow > div:last-child { border-bottom: 0; }
+}

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -46,7 +47,7 @@ func TestRunOnFixtures(t *testing.T) {
 			t.Errorf("secret %q leaked into the report", secret)
 		}
 	}
-	if info, _ := os.Stat(outFile); info.Mode().Perm() != 0o600 {
+	if info, _ := os.Stat(outFile); runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 { // Windows uses ACLs, not mode bits
 		t.Errorf("report file mode = %v, want 0600", info.Mode().Perm())
 	}
 }
@@ -72,4 +73,11 @@ func TestEmptyHome(t *testing.T) {
 	if !strings.Contains(stdout.String(), "0 MCP servers") {
 		t.Errorf("unexpected output: %s", stdout.String())
 	}
+}
+
+func TestMain(m *testing.M) {
+	// testdata/home uses the Linux folder layout; the per-OS locations are
+	// covered by the discover package's own tests.
+	goos = "linux"
+	os.Exit(m.Run())
 }

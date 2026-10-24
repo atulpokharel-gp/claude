@@ -12,19 +12,23 @@ import (
 // Env and Headers keep their values in memory so rules can check them, but
 // those values are never written to a report. Only the key names are.
 type Server struct {
-	Name       string            `json:"name"`
-	App        string            `json:"app"`
-	ConfigPath string            `json:"configPath"`
-	Scope      string            `json:"scope,omitempty"` // e.g. project path for Claude Code project servers
-	Transport  string            `json:"transport"`       // "stdio" or "remote"
-	Command    string            `json:"command,omitempty"`
-	Args       []string          `json:"args,omitempty"`
-	URL        string            `json:"url,omitempty"`
-	EnvKeys    []string          `json:"envKeys,omitempty"`
-	HeaderKeys []string          `json:"headerKeys,omitempty"`
-	Disabled   bool              `json:"disabled,omitempty"`
-	Env        map[string]string `json:"-"`
-	Headers    map[string]string `json:"-"`
+	Name       string   `json:"name"`
+	App        string   `json:"app"`
+	ConfigPath string   `json:"configPath"`
+	Scope      string   `json:"scope,omitempty"` // e.g. project path for Claude Code project servers
+	Transport  string   `json:"transport"`       // "stdio" or "remote"
+	Command    string   `json:"command,omitempty"`
+	Args       []string `json:"args,omitempty"`
+	URL        string   `json:"url,omitempty"`
+	EnvKeys    []string `json:"envKeys,omitempty"`
+	HeaderKeys []string `json:"headerKeys,omitempty"`
+	Disabled   bool     `json:"disabled,omitempty"`
+	// Protected lists env vars that Agent Guard's launcher fills from the
+	// secure password store. Command and Args then describe the real server.
+	Protected []ProtectedSecret `json:"protectedSecrets,omitempty"`
+	Format    Format            `json:"-"` // layout of the file it came from
+	Env       map[string]string `json:"-"`
+	Headers   map[string]string `json:"-"`
 }
 
 type rawServer struct {
@@ -129,6 +133,7 @@ func toServers(loc Location, scope string, raw map[string]json.RawMessage) ([]Se
 			Name:       name,
 			App:        loc.App,
 			ConfigPath: loc.Path,
+			Format:     loc.Format,
 			Scope:      scope,
 			Command:    r.Command,
 			Args:       r.Args,
@@ -139,6 +144,9 @@ func toServers(loc Location, scope string, raw map[string]json.RawMessage) ([]Se
 		}
 		if s.URL == "" {
 			s.URL = r.ServerURL
+		}
+		if sec, cmd, args, ok := ParseLauncher(s.Command, s.Args); ok {
+			s.Protected, s.Command, s.Args = sec, cmd, args
 		}
 		if s.URL != "" || r.Type == "http" || r.Type == "sse" || r.Type == "streamable-http" {
 			s.Transport = "remote"
