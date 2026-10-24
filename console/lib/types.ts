@@ -39,6 +39,8 @@ export interface Client {
   devicesScanned: number;
   lastScan: string; // ISO date-time
   agents: Agent[];
+  /** Problems that make the picture incomplete, such as config files the scanner couldn't read. */
+  warnings?: string[];
 }
 
 export interface RiskCounts {

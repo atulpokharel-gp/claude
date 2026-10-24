@@ -53,3 +53,24 @@ test("sample clients sort with riskiest agents first and scores in range", () =>
     assert.deepEqual(ranks, [...ranks].sort((a, b) => b - a));
   }
 });
+
+test("keeps config read errors and marks the scan incomplete", () => {
+  const c = importScan({
+    schemaVersion: 1,
+    hostname: "pc1",
+    servers: [],
+    configs: [
+      { app: "Cursor", path: "/home/a/.cursor/mcp.json", found: true, error: "parse failed" },
+      { app: "VS Code", path: "/home/a/x.json", found: false },
+    ],
+  });
+  assert.equal(c.warnings?.length, 1);
+  assert.match(c.warnings![0], /\.cursor\/mcp\.json.*parse failed/);
+  assert.equal(c.devicesScanned, 0);
+});
+
+test("a clean scan has no warnings and counts as scanned", () => {
+  const c = importScan(sample);
+  assert.deepEqual(c.warnings, []);
+  assert.equal(c.devicesScanned, 1);
+});

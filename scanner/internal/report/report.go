@@ -84,12 +84,17 @@ func redactArgs(args []string) []string {
 	if args == nil {
 		return nil
 	}
-	out := make([]string, len(args))
-	for i, a := range args {
-		if rules.LooksSecret(a) {
+	out := append([]string(nil), args...)
+	for _, i := range rules.SecretArgs(args) {
+		a := out[i]
+		switch {
+		case strings.Contains(a, "://") && !strings.HasPrefix(a, "-"):
+			out[i] = redactURL(a)
+		case strings.HasPrefix(a, "-") && strings.Contains(a, "="):
+			name, _, _ := strings.Cut(a, "=")
+			out[i] = name + "=" + Redacted
+		default:
 			out[i] = Redacted
-		} else {
-			out[i] = a
 		}
 	}
 	return out

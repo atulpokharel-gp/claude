@@ -84,6 +84,14 @@ export function ClientView({ client }: { client: Client }) {
         </p>
       </div>
 
+      {client.warnings && client.warnings.length > 0 && (
+        <section className="warning" role="alert">
+          <h2>This scan is incomplete</h2>
+          <p>Some config files couldn&apos;t be read, so agents in them are missing below. Fix the files or check permissions, then scan again.</p>
+          <ul>{client.warnings.map((w) => <li key={w}>{w}</li>)}</ul>
+        </section>
+      )}
+
       <section className="tiles" aria-label="Summary">
         <div className="tile"><b>{counts.total}</b><span>agents and MCP servers with access</span></div>
         <div className="tile high"><b>{counts.high}</b><span>high-risk</span></div>

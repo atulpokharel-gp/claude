@@ -73,14 +73,24 @@ export function importScan(json: unknown): Client {
       lastSeen: scannedAt.slice(0, 10),
     });
   });
+  // Config files the scanner found but couldn't read. Their servers are missing,
+  // so the result is incomplete and must say so.
+  const warnings: string[] = [];
+  for (const c of Array.isArray(json.configs) ? json.configs : []) {
+    if (isObj(c) && str(c.error)) {
+      warnings.push(`Couldn't read ${str(c.path, "a config file")} (${str(c.app, "unknown app")}): ${str(c.error)}`);
+    }
+  }
   return {
     id: "imported",
     name: `Scan of ${host}`,
     industry: `Uploaded report · ${str(json.os, "unknown OS")}`,
     staff: 1,
     devices: 1,
-    devicesScanned: 1,
+    // A device where a config failed to read counts as not fully scanned.
+    devicesScanned: warnings.length > 0 ? 0 : 1,
     lastScan: scannedAt,
     agents,
+    warnings,
   };
 }

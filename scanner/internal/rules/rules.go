@@ -84,10 +84,55 @@ func Worst(fs []Finding) Severity {
 	return worst
 }
 
-// LooksSecret reports whether a single string looks like a credential.
-// The report uses it to redact command-line arguments.
-func LooksSecret(v string) bool {
-	return secretValue.MatchString(v)
+// SecretArgs returns the positions of command-line arguments that hold a
+// credential: token-shaped values, the value given to a credential flag
+// (--password x, --api-key=x), or a URL carrying a password or secret
+// query parameter. The report uses it to redact arguments.
+func SecretArgs(args []string) []int {
+	var idx []int
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case secretValue.MatchString(a), URLHasCredential(a):
+			idx = append(idx, i)
+		case strings.HasPrefix(a, "-") && strings.Contains(a, "="):
+			name, val, _ := strings.Cut(strings.TrimLeft(a, "-"), "=")
+			if secretKeyName.MatchString(name) && isLiteral(val) {
+				idx = append(idx, i)
+			}
+		case strings.HasPrefix(a, "-") && secretKeyName.MatchString(strings.TrimLeft(a, "-")):
+			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") && isLiteral(args[i+1]) {
+				idx = append(idx, i+1)
+				i++
+			}
+		}
+	}
+	return idx
+}
+
+// URLHasCredential reports whether v is a URL with a password in it
+// (postgres://user:pw@host) or a secret-named query parameter (?api_key=...).
+func URLHasCredential(v string) bool {
+	if !strings.Contains(v, "://") {
+		return false
+	}
+	u, err := url.Parse(v)
+	if err != nil || u.Host == "" {
+		return false
+	}
+	if u.User != nil {
+		if pw, ok := u.User.Password(); ok && isLiteral(pw) {
+			return true
+		}
+	}
+	for k, vals := range u.Query() {
+		for _, val := range vals {
+			if secretKeyName.MatchString(k) && isLiteral(val) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func isLiteral(v string) bool {
@@ -101,7 +146,7 @@ func secretsInConfig(s discover.Server) []Finding {
 		if !isLiteral(v) {
 			continue
 		}
-		if secretKeyName.MatchString(k) || secretValue.MatchString(v) {
+		if secretKeyName.MatchString(k) || secretValue.MatchString(v) || URLHasCredential(v) {
 			names = append(names, "env "+k)
 		}
 	}
@@ -113,26 +158,11 @@ func secretsInConfig(s discover.Server) []Finding {
 			names = append(names, "header "+k)
 		}
 	}
-	for i, a := range s.Args {
-		if secretValue.MatchString(a) {
-			names = append(names, "argument "+strconv.Itoa(i+1))
-		}
+	for _, i := range SecretArgs(s.Args) {
+		names = append(names, "argument "+strconv.Itoa(i+1))
 	}
-	if s.URL != "" {
-		if u, err := url.Parse(s.URL); err == nil {
-			if u.User != nil {
-				if _, hasPw := u.User.Password(); hasPw {
-					names = append(names, "password in URL")
-				}
-			}
-			for k, vals := range u.Query() {
-				for _, v := range vals {
-					if secretKeyName.MatchString(k) && isLiteral(v) {
-						names = append(names, "URL parameter "+k)
-					}
-				}
-			}
-		}
+	if URLHasCredential(s.URL) {
+		names = append(names, "server URL")
 	}
 	if len(names) == 0 {
 		return nil
