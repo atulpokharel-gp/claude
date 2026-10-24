@@ -78,3 +78,26 @@ func TestFindingTextDoesNotRepeatRedactedArgs(t *testing.T) {
 		t.Errorf("expected secret and unpinned findings, got %+v", r.Servers[0].Findings)
 	}
 }
+
+func TestRedactsTokenInURLPath(t *testing.T) {
+	tok := "ghp_" + strings.Repeat("Q7w8", 9)
+	servers := []discover.Server{
+		{Name: "arg", Command: "/bin/x", Args: []string{"https://api.example.org/" + tok}},
+		{Name: "url", URL: "https://api.example.org/" + tok + "/mcp"},
+	}
+	r := Build(servers, nil, rules.Context{}, Report{})
+	var text strings.Builder
+	WriteText(&text, r)
+	if strings.Contains(text.String(), tok) {
+		t.Fatalf("token in URL path leaked:\n%s", text.String())
+	}
+	for _, s := range r.Servers {
+		all := strings.Join(s.Args, " ") + s.URL
+		for _, f := range s.Findings {
+			all += f.Title + f.Detail + f.Fix
+		}
+		if strings.Contains(all, tok) {
+			t.Errorf("%s leaks token: %q", s.Name, all)
+		}
+	}
+}

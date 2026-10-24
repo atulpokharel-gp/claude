@@ -84,6 +84,12 @@ func Worst(fs []Finding) Severity {
 	return worst
 }
 
+// RedactTokens replaces every token-shaped substring (GitHub, OpenAI,
+// Anthropic, Slack, AWS, Google, GitLab keys and bearer tokens) with repl.
+func RedactTokens(v, repl string) string {
+	return secretValue.ReplaceAllString(v, repl)
+}
+
 // SecretArgs returns the positions of command-line arguments that hold a
 // credential: token-shaped values, the value given to a credential flag
 // (--password x, --api-key=x), or a URL carrying a password or secret

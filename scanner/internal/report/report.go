@@ -98,6 +98,8 @@ func redactArgs(args []string) []string {
 		default:
 			out[i] = Redacted
 		}
+		// Tokens can sit anywhere, e.g. in a URL path, so sweep what's left.
+		out[i] = rules.RedactTokens(out[i], Redacted)
 	}
 	return out
 }
@@ -121,9 +123,9 @@ func scrubFindings(fs []rules.Finding, origArgs, redArgs []string, origURL, redU
 	rep := strings.NewReplacer(pairs...)
 	out := make([]rules.Finding, len(fs))
 	for i, f := range fs {
-		f.Title = rep.Replace(f.Title)
-		f.Detail = rep.Replace(f.Detail)
-		f.Fix = rep.Replace(f.Fix)
+		f.Title = rules.RedactTokens(rep.Replace(f.Title), Redacted)
+		f.Detail = rules.RedactTokens(rep.Replace(f.Detail), Redacted)
+		f.Fix = rules.RedactTokens(rep.Replace(f.Fix), Redacted)
 		out[i] = f
 	}
 	return out
@@ -133,6 +135,7 @@ func redactURL(u string) string {
 	if u == "" {
 		return u
 	}
+	u = rules.RedactTokens(u, Redacted)
 	// Drop user info and query strings, which is where tokens hide in URLs.
 	if i := strings.Index(u, "?"); i >= 0 {
 		u = u[:i] + "?" + Redacted
