@@ -71,6 +71,9 @@ export function importScan(json: unknown): Client {
       findings,
       revocable: false,
       lastSeen: scannedAt.slice(0, 10),
+      protectedKeys: (Array.isArray(raw.protectedSecrets) ? raw.protectedSecrets : [])
+        .map((p) => (isObj(p) ? str(p.env) : ""))
+        .filter(Boolean),
     });
   });
   // Config files the scanner found but couldn't read. Their servers are missing,

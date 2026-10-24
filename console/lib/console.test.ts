@@ -74,3 +74,11 @@ test("a clean scan has no warnings and counts as scanned", () => {
   assert.deepEqual(c.warnings, []);
   assert.equal(c.devicesScanned, 1);
 });
+
+test("reads keys protected by the fix command", () => {
+  const c = importScan({
+    schemaVersion: 1,
+    servers: [{ name: "gh", protectedSecrets: [{ env: "GITHUB_TOKEN", ref: "claude-desktop/gh/GITHUB_TOKEN" }], findings: [] }],
+  });
+  assert.deepEqual(c.agents[0].protectedKeys, ["GITHUB_TOKEN"]);
+});

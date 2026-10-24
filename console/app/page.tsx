@@ -24,6 +24,9 @@ export default function Overview() {
   const devices = clients.reduce((n, c) => n + c.devices, 0);
   const scanned = clients.reduce((n, c) => n + c.devicesScanned, 0);
   const revocable = all.filter((a) => a.revocable && a.findings.some((f) => f.severity === "high")).length;
+  const plainKeys = all.filter((a) => a.findings.some((f) => f.ruleId === "SECRET_IN_CONFIG")).length;
+  const toReplace = all.filter((a) => a.findings.some((f) => f.ruleId === "KEY_NOT_ROTATED")).length;
+  const protectedCount = all.filter((a) => (a.protectedKeys?.length ?? 0) > 0).length;
 
   return (
     <>
@@ -39,6 +42,18 @@ export default function Overview() {
         <div className="tile high"><b>{totals.high}</b><span>high-risk, need action</span></div>
         <div className="tile"><b>{revocable}</b><span>high-risk ones you can revoke in one click</span></div>
         <div className="tile"><b>{Math.round((scanned / devices) * 100)}%</b><span>of {devices.toLocaleString("en-US")} devices scanned</span></div>
+      </section>
+
+      <section className="panel">
+        <div className="panel-head">
+          <h2>Passwords and keys in AI tools</h2>
+          <span className="muted small">Keys saved in plain text in AI agent configs on laptops</span>
+        </div>
+        <div className="keys-flow">
+          <div><b className="bad">{plainKeys}</b><span>servers with keys in plain text</span><small>Run <code>agentscan fix-secrets --apply</code> on the laptop</small></div>
+          <div><b className="warn">{toReplace}</b><span>protected, old key still needs replacing</span><small>Create a new key, then <code>agentscan rotate</code></small></div>
+          <div><b className="good">{protectedCount}</b><span>servers with keys in the password store</span><small>Nothing to do</small></div>
+        </div>
       </section>
 
       <section className="panel">

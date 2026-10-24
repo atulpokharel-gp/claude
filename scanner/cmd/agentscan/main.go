@@ -16,6 +16,7 @@ import (
 	"github.com/atulpokharel-gp/claude/scanner/internal/discover"
 	"github.com/atulpokharel-gp/claude/scanner/internal/report"
 	"github.com/atulpokharel-gp/claude/scanner/internal/rules"
+	"github.com/atulpokharel-gp/claude/scanner/internal/vault"
 )
 
 // version is set at build time with -ldflags "-X main.version=..."
@@ -30,7 +31,39 @@ func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
 }
 
+// newStore opens the password store. Tests replace it with an in-memory one.
+var newStore = func() vault.Store { return vault.Keyring{} }
+
 func run(args []string, stdout, stderr io.Writer) int {
+	if len(args) > 0 {
+		switch args[0] {
+		case "fix-secrets":
+			return runFix(args[1:], stdout, stderr)
+		case discover.LauncherSubcommand:
+			return runExec(args[1:], stderr)
+		case "rotate":
+			return runRotate(args[1:], os.Stdin, stdout, stderr)
+		}
+	}
+	return runScan(args, stdout, stderr)
+}
+
+// buildEnv works out which folders to scan.
+func buildEnv(home string, projects []string) (discover.Env, error) {
+	env := discover.Env{GOOS: runtime.GOOS, Home: home, AppData: os.Getenv("APPDATA"), ProjectDirs: projects}
+	if home != "" {
+		env.AppData = "" // keep a custom home self-contained
+		return env, nil
+	}
+	h, err := os.UserHomeDir()
+	if err != nil {
+		return env, fmt.Errorf("cannot find home directory: %w", err)
+	}
+	env.Home = h
+	return env, nil
+}
+
+func runScan(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("agentscan", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	asJSON := fs.Bool("json", false, "print the report as JSON")
@@ -48,22 +81,23 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 0
 	}
 
-	env := discover.Env{GOOS: runtime.GOOS, Home: *home, AppData: os.Getenv("APPDATA"), ProjectDirs: projects}
-	if env.Home == "" {
-		h, err := os.UserHomeDir()
-		if err != nil {
-			fmt.Fprintln(stderr, "cannot find home directory:", err)
-			return 1
-		}
-		env.Home = h
+	env, err := buildEnv(*home, projects)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
 	}
-	if *home != "" {
-		env.AppData = "" // keep a custom home self-contained
+	ctx := rules.Context{Home: env.Home, NeedsRotation: map[string]bool{}}
+	if st, err := vault.LoadState(env.Home); err != nil {
+		fmt.Fprintln(stderr, "warning: couldn't read the record of protected keys:", err)
+	} else {
+		for _, ref := range st.NeedsRotation() {
+			ctx.NeedsRotation[ref] = true
+		}
 	}
 
 	host, _ := os.Hostname()
 	servers, configs := discover.Scan(env)
-	rep := report.Build(servers, configs, rules.Context{Home: env.Home}, report.Report{
+	rep := report.Build(servers, configs, ctx, report.Report{
 		ScannerVersion: version,
 		Hostname:       host,
 		OS:             runtime.GOOS,

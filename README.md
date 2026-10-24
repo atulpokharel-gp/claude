@@ -21,7 +21,11 @@ go run ./cmd/agentscan                 # readable summary
 go run ./cmd/agentscan --json --out scan.json
 ```
 
-The scanner only reads files. It changes nothing, sends nothing over the
+To fix what it finds, `go run ./cmd/agentscan fix-secrets` previews moving
+plain-text keys into the computer's password store; see the
+[scanner README](scanner/README.md#fix-plain-text-keys).
+
+The scan itself only reads files. It changes nothing, sends nothing over the
 network, and never writes key or password values into its report.
 
 **Run the console** (needs Node 22+):

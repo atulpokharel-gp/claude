@@ -49,6 +49,13 @@ const F = {
     detail: `Whatever the agent passes to this server goes to ${host}.`,
     fix: "Confirm the company approves this provider and that a data agreement is in place.",
   }),
+  notRotated: (keys: string, ref: string): Finding => ({
+    ruleId: "KEY_NOT_ROTATED",
+    severity: "medium",
+    title: "Protected now, but the old key was exposed",
+    detail: `Agent Guard moved ${keys} into the password store, but the same key sat in plain text before. Anyone who copied the file still has it.`,
+    fix: `Create a new key with the provider, revoke the old one, then run: agentscan rotate ${ref}`,
+  }),
   mailAll: (): Finding => ({
     ruleId: "M365_MAIL_ALL",
     severity: "high",
@@ -112,8 +119,9 @@ function mcp(
   reach: string[],
   findings: Finding[],
   lastSeen = "2026-10-23",
+  protectedKeys?: string[],
 ): Agent {
-  return { id: id(), name, kind: "mcp-server", source: "Laptop scan", location: device, app, reach, findings, revocable: false, lastSeen };
+  return { id: id(), name, kind: "mcp-server", source: "Laptop scan", location: device, app, reach, findings, revocable: false, lastSeen, protectedKeys };
 }
 
 function m365(
@@ -186,6 +194,7 @@ export const clients: Client[] = [
       m365("BriefMate", "oauth-app", "Added by s.novak", ["Matter files in OneDrive", "Calendar"], [F.userConsent("s.novak (Partner)"), F.unverified()]),
       m365("Clause Finder", "copilot-agent", "Owner: d.ferris", ["Precedents library"], [F.orgWide("the Precedents library, which includes sealed matters")]),
       mcp("notion", "OAK-LT-031", "Claude Desktop", ["Notion workspace"], [F.remote("mcp.notion.com")]),
+      mcp("clio", "OAK-LT-031", "Claude Desktop", ["Practice management (matters, billing)"], [], "2026-10-23", ["CLIO_API_TOKEN"]),
     ],
   },
   {
@@ -198,7 +207,7 @@ export const clients: Client[] = [
     lastScan: "2026-10-24T05:10:00Z",
     agents: [
       m365("Dispatch Copilot", "copilot-agent", "Owner: t.hughes", ["Dispatch schedules", "Driver contacts"], []),
-      mcp("stripe", "CF-FIN-03", "Claude Code", ["Payments (full)"], [F.secret("env STRIPE_SECRET_KEY")]),
+      mcp("stripe", "CF-FIN-03", "Claude Code", ["Payments (full)"], [F.notRotated("STRIPE_SECRET_KEY", "claude-code/billing/stripe/STRIPE_SECRET_KEY")], "2026-10-23", ["STRIPE_SECRET_KEY"]),
       mcp("linear", "CF-DEV-01", "Cursor", ["Issue tracker"], [F.remote("mcp.linear.app")]),
       mcp("browser-use", "CF-OPS-09", "Claude Desktop", ["Web browser"], [F.unpinned("browser-use-mcp")]),
     ],

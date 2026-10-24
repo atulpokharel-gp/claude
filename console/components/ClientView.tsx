@@ -140,6 +140,12 @@ export function ClientView({ client }: { client: Client }) {
                         <div className="reach">{a.reach.map((r) => <span key={r}>{r}</span>)}</div>
                       </div>
 
+                      {a.protectedKeys && a.protectedKeys.length > 0 && (
+                        <p className="protected small">
+                          <b>Protected:</b> {a.protectedKeys.join(", ")} {a.protectedKeys.length > 1 ? "are" : "is"} kept in the computer&apos;s password store, not in the config file.
+                        </p>
+                      )}
+
                       {a.findings.map((f) => (
                         <div key={f.ruleId} className={`finding ${f.severity}`}>
                           <h3>{f.title}</h3>
@@ -161,6 +167,9 @@ export function ClientView({ client }: { client: Client }) {
                           </>
                         )}
                         {isRevoked && <span className="small muted">Access revoked. You can add it back from Microsoft Entra if someone still needs it.</span>}
+                        {!a.revocable && a.findings.some((f) => f.ruleId === "SECRET_IN_CONFIG") && (
+                          <span className="small muted">Fix on the laptop: <code>agentscan fix-secrets --apply</code></span>
+                        )}
                         {!a.revocable && a.findings.length > 0 && (
                           <button type="button" className="btn" onClick={() => copyFix(a)}>Copy fix steps</button>
                         )}
