@@ -23,7 +23,7 @@ export default async function PortalHome() {
           {hasTrend ? <TrendChart points={data.trend} /> : <p className="empty">The chart fills in as laptops report and Microsoft 365 is checked, one point a day.</p>}
         </div>
       </section>
-      <ClientView client={data.client} reportHref="/portal/report" />
+      <ClientView client={data.client} reportHref="/portal/report" readOnly />
     </>
   );
 }
