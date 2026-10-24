@@ -28,6 +28,7 @@ Pass `--project <folder>` (repeatable) to also check project folders.
 | `INSECURE_TRANSPORT` | high | Remote servers over plain `http` |
 | `RISKY_CONTAINER` | high | Docker with `--privileged`, host networking, or the Docker socket mounted |
 | `UNPINNED_PACKAGE` | medium | `npx`/`uvx`/`dlx` packages with no fixed version, or `@latest` |
+| `KEY_NOT_ROTATED` | medium | A key moved by `fix-secrets` that was exposed before and hasn't been replaced yet |
 | `REMOTE_SERVER` | low | Data sent to an outside service |
 | `SHELL_LAUNCHER` | low | Server started through `bash -c` or similar |
 
@@ -73,7 +74,8 @@ key order may change.
 
 ## Privacy
 
-- Reads config files only. Never changes them and makes no network calls.
+- Scanning only reads config files and makes no network calls. Only
+  `fix-secrets --apply` and `rotate` change anything.
 - Env and header **values** are kept in memory for the checks but never written
   out; the report lists only their names.
 - Arguments that look like tokens and the user/query parts of URLs are replaced
