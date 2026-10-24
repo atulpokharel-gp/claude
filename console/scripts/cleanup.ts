@@ -4,6 +4,7 @@
 
 import { fileURLToPath } from "node:url";
 import pg from "pg";
+import { recordRun } from "./job-runs.ts";
 
 export async function cleanup(url: string, keepDays = 90) {
   const db = new pg.Client({ connectionString: url });
@@ -32,9 +33,13 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     process.exit(1);
   }
   cleanup(url, Number(process.env.SCAN_KEEP_DAYS) || 90)
-    .then((n) => console.log(`Deleted ${n.sessions} sessions, ${n.invites} invites, ${n.rateLimits} rate-limit records, ${n.scans} old scans.`))
-    .catch((err) => {
+    .then(async (n) => {
+      console.log(`Deleted ${n.sessions} sessions, ${n.invites} invites, ${n.rateLimits} rate-limit records, ${n.scans} old scans.`);
+      await recordRun(url, "cleanup");
+    })
+    .catch(async (err) => {
       console.error(err.message);
+      await recordRun(url, "cleanup", err);
       process.exit(1);
     });
 }

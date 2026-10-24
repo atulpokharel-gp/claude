@@ -3,6 +3,7 @@
 
 import { fileURLToPath } from "node:url";
 import pg from "pg";
+import { recordRun } from "./job-runs.ts";
 import { closePool } from "../lib/db.ts";
 import { syncM365 } from "../lib/store.ts";
 
@@ -34,9 +35,14 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     process.exit(1);
   }
   syncAll(adminUrl)
-    .then(({ ok, failed }) => console.log(`Checked ${ok} tenants, ${failed} failed.`))
-    .catch((err) => {
+    .then(async ({ ok, failed }) => {
+      console.log(`Checked ${ok} tenants, ${failed} failed.`);
+      // One tenant's error is shown on its client page; the job itself still ran.
+      await recordRun(adminUrl, "m365_sync");
+    })
+    .catch(async (err) => {
       console.error(err.message);
+      await recordRun(adminUrl, "m365_sync", err);
       process.exitCode = 1;
     })
     .finally(() => closePool());

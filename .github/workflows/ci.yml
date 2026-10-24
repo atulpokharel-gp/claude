@@ -92,11 +92,52 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Build the console image
-        run: docker build -t zinloop-console console
-      - name: Check docker-compose.yml
-        run: cp .env.example .env && docker compose config -q
+      - name: Build the console and backup images
+        run: |
+          docker build -t zinloop-console console
+          docker build -t zinloop-backup deploy/backup
+      - name: Check docker-compose.yml and the deploy scripts
+        run: |
+          cp .env.example .env && docker compose config -q
+          sh -n deploy/deploy.sh && sh -n deploy/backup/backup.sh && sh -n deploy/backup/restore.sh
+          bash -n .github/scripts/remote-deploy.sh
       - name: Check the RMM scripts
         run: |
           sh -n scanner/rmm/install-unix.sh
           pwsh -NoProfile -Command '$e=$null; [System.Management.Automation.Language.Parser]::ParseFile("scanner/rmm/install-windows.ps1",[ref]$null,[ref]$e) | Out-Null; if ($e) { $e; exit 1 }'
+
+  # Starts the real docker-compose stack (minus Caddy) and checks health, the
+  # background jobs, a backup and a restore of that backup.
+  stack:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start the stack
+        run: |
+          cp .env.example .env
+          docker compose up -d --build db console maintenance backup
+          for i in $(seq 1 60); do
+            [ "$(docker inspect -f '{{.State.Health.Status}}' "$(docker compose ps -q console)")" = healthy ] && exit 0
+            sleep 5
+          done
+          echo "console never became healthy"; exit 1
+      - name: Health check and background jobs
+        run: |
+          docker compose exec -T console wget -qO- http://127.0.0.1:3000/api/health | grep -q '"ok":true'
+          sleep 20
+          docker compose exec -T console wget -qO- 'http://127.0.0.1:3000/api/health?jobs=1' | tee /dev/stderr | grep -q '"ok":true'
+      - name: Back up and restore
+        run: |
+          docker compose exec -T backup backup.sh once
+          docker compose exec -T backup sh -c 'restore.sh --check "$(ls -t /backups/*.dump | head -1)"'
+      - name: Encrypted copies can be restored
+        run: |
+          docker compose exec -T backup sh -c '
+            set -e
+            age-keygen -o /tmp/key.txt 2>/dev/null
+            age -r "$(age-keygen -y /tmp/key.txt)" -o /tmp/latest.dump.age "$(ls -t /backups/*.dump | head -1)"
+            AGE_IDENTITY_FILE=/tmp/key.txt restore.sh --check /tmp/latest.dump.age'
+      - name: Logs
+        if: failure()
+        run: docker compose logs
+

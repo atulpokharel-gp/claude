@@ -5,6 +5,7 @@
 
 import { fileURLToPath } from "node:url";
 import pg from "pg";
+import { recordRun } from "./job-runs.ts";
 
 export interface Mail {
   from: string;
@@ -89,11 +90,14 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const nodemailer = await import("nodemailer");
   const transport = nodemailer.createTransport(smtp);
   sendPending(adminUrl, transport as unknown as Transport, from)
-    .then(({ sent, failed }) => {
+    .then(async ({ sent, failed }) => {
       if (sent || failed) console.log(`Sent ${sent} emails${failed ? `, ${failed} failed and will be retried` : ""}.`);
+      // Every send failing means the mail server is down or rejecting us.
+      await recordRun(adminUrl, "mail_send", sent === 0 && failed > 0 ? new Error(`${failed} emails failed to send`) : undefined);
     })
-    .catch((err) => {
+    .catch(async (err) => {
       console.error(err.message);
+      await recordRun(adminUrl, "mail_send", err);
       process.exitCode = 1;
     })
     .finally(() => transport.close());
