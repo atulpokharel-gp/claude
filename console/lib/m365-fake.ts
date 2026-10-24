@@ -62,6 +62,13 @@ export function fakeGraph(): FakeGraph {
         return json({ value: sps.slice(3) });
       }
       if (path.startsWith("/oauth2PermissionGrants")) return json({ value: g.grants });
+      if (path.startsWith("/users?$filter=id in (")) {
+        const ids = [...path.matchAll(/'([^']+)'/g)].map((m) => m[1]);
+        const users: Record<string, { displayName: string; userPrincipalName: string }> = {
+          u1: { displayName: "Dana Reyes", userPrincipalName: "d.reyes@contoso.example" },
+        };
+        return json({ value: ids.filter((i) => users[i]).map((i) => ({ id: i, ...users[i] })) });
+      }
       if (path.startsWith(`/servicePrincipals/${GRAPH_SP}/appRoleAssignedTo`)) return json({ value: g.assignments });
       return json({ error: { message: `unexpected ${path}` } }, 400);
     }) as Fetch,

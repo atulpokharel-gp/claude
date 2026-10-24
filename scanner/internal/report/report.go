@@ -42,6 +42,9 @@ type Summary struct {
 // ServerResult is one server with its findings and overall risk.
 type ServerResult struct {
 	discover.Server
+	// User is the profile the config belongs to (the home folder's name), so
+	// the console can show who uses each tool.
+	User     string          `json:"user,omitempty"`
 	Risk     rules.Severity  `json:"risk"`
 	Findings []rules.Finding `json:"findings"`
 }

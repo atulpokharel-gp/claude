@@ -27,11 +27,13 @@ import {
 import { codeAt, currentStep } from "./totp.ts";
 import { cleanup } from "../scripts/cleanup.ts";
 import { setPlan } from "../scripts/set-plan.ts";
+import { snapshotAll } from "../scripts/snapshot.ts";
 import {
   connectM365,
   createClient,
   createUploadToken,
   getClient,
+  getTrend,
   ingestScan,
   listClients,
   revokeM365App,
@@ -173,6 +175,36 @@ describe("database", { skip: !adminUrl && "set TEST_DATABASE_ADMIN_URL to run" }
     );
     await ingestScan(legacy, { ...sample, configs: [] });
     await assert.rejects(ingestScan("agu_nope", sample), (e: UploadError) => e.status === 401);
+  });
+
+  test("each scan saves the day's risk counts and the trend carries them forward", async () => {
+    const id = await createClient(a.mspId, { name: "Trend Co", devicesExpected: 1 });
+    const token = await createUploadToken(a.mspId, id, "");
+    await ingestScan(token, { ...sample, hostname: "T-1", scannedAt: "2026-10-20T08:00:00Z" }, new Date("2026-10-20T09:00:00Z"));
+    await ingestScan(token, { ...sample, hostname: "T-1", servers: [], scannedAt: "2026-10-23T08:00:00Z" }, new Date("2026-10-23T09:00:00Z"));
+    const trend = await getTrend(a.mspId, 5, new Date("2026-10-24T12:00:00Z"), id);
+    assert.deepEqual(trend.map((p) => p.day), ["2026-10-20", "2026-10-21", "2026-10-22", "2026-10-23", "2026-10-24"]);
+    const highOnDay1 = trend[0].high;
+    assert.ok(highOnDay1 > 0, "sample scan has high-risk tools");
+    assert.equal(trend[2].high, highOnDay1, "no scan on the 22nd: carries the 20th forward");
+    assert.equal(trend[3].tools, 0, "the empty scan on the 23rd clears it");
+    assert.equal(trend[4].tools, 0);
+    // Days before the first snapshot are left out, not shown as zero.
+    assert.deepEqual((await getTrend(a.mspId, 7, new Date("2026-10-24T12:00:00Z"), id)).map((p) => p.day)[0], "2026-10-20");
+    // Another MSP sees none of it.
+    assert.deepEqual(await getTrend(b.mspId, 5, new Date("2026-10-24T12:00:00Z")), []);
+
+    // The daily job writes a point for every client, even without new scans.
+    const n = await snapshotAll(ownerUrl, new Date("2026-10-25T01:00:00Z"));
+    assert.ok(n >= 1);
+    const after = await getTrend(a.mspId, 1, new Date("2026-10-25T12:00:00Z"), id);
+    assert.equal(after[0].day, "2026-10-25");
+
+    // It also trims old points, running as a non-superuser owner.
+    await snapshotAll(ownerUrl, new Date("2026-10-25T01:00:00Z"), 2);
+    const kept = await withTenant(a.mspId, async (db) => (await db.query<{ day: string }>("select day::text from risk_snapshots where client_id = $1 order by day", [id])).rows.map((r) => r.day));
+    assert.ok(kept.length > 0 && kept.every((d) => d >= "2026-10-23"), `older points removed: ${kept.join(", ")}`);
+    assert.ok(kept.includes("2026-10-25"));
   });
 
   test("bad tokens and bad reports are refused", async () => {

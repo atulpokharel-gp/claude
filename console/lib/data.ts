@@ -2,9 +2,9 @@
 // otherwise the made-up demo data.
 
 import { hasDatabase } from "./db.ts";
-import { clients as sampleClients, getClient as sampleClient, MSP_NAME } from "./sample-data.ts";
+import { clients as sampleClients, demoTrend, getClient as sampleClient, MSP_NAME } from "./sample-data.ts";
 import { requireSession } from "./session.ts";
-import { getClient, listClients, type M365Status, type UploadTokenInfo } from "./store.ts";
+import { getClient, getTrend, listClients, type M365Status, type TrendPoint, type UploadTokenInfo } from "./store.ts";
 import type { Client } from "./types.ts";
 
 export interface Overview {
@@ -17,6 +17,13 @@ export async function loadOverview(): Promise<Overview> {
   if (!hasDatabase()) return { demo: true, mspName: MSP_NAME, clients: sampleClients };
   const s = await requireSession();
   return { demo: false, mspName: s.mspName, clients: await listClients(s.mspId) };
+}
+
+/** Risk counts per day, summed across clients, for the overview chart. */
+export async function loadTrend(days = 90): Promise<TrendPoint[]> {
+  if (!hasDatabase()) return demoTrend(days);
+  const s = await requireSession();
+  return getTrend(s.mspId, days);
 }
 
 export interface ClientDetail {

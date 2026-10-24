@@ -12,6 +12,16 @@ export interface Finding {
 
 export type AgentKind = "mcp-server" | "copilot-agent" | "oauth-app";
 
+/** A person linked to an agent: a laptop profile or a Microsoft 365 user. */
+export interface PersonRef {
+  /** Identity within one client, lowercased: the laptop profile name, or the Microsoft 365 sign-in email (or "m365:" + its ID). */
+  key: string;
+  /** What to show: a Microsoft 365 display name, or the laptop profile name. */
+  name: string;
+  /** Sign-in email, for Microsoft 365 users. */
+  email?: string;
+}
+
 export interface Agent {
   id: string;
   name: string;
@@ -28,6 +38,8 @@ export interface Agent {
   /** True when the console could cut off access with one click (Microsoft 365 grants). */
   revocable: boolean;
   lastSeen: string; // ISO date
+  /** People who use it or gave it access. Empty for tools approved for everyone. */
+  people?: PersonRef[];
   /** Env vars Zinloop moved into the computer's password store. */
   protectedKeys?: string[];
 }

@@ -40,6 +40,38 @@ test("findings describe how the access was granted", async () => {
   const inbox = by("InboxPilot AI");
   assert.deepEqual(inbox.findings.map((f) => f.ruleId), ["M365_USER_GRANT", "M365_UNVERIFIED_PUBLISHER"]);
   assert.match(inbox.findings[0].title, /1 person/);
+  // Named people who approved it; tools approved for everyone list nobody.
+  assert.deepEqual(inbox.people, [{ key: "d.reyes@contoso.example", name: "Dana Reyes", email: "d.reyes@contoso.example" }]);
+  assert.deepEqual(chat.people, []);
+
+  // Two grants from the same person (to different APIs) are still one person.
+  const app = apps.find((a) => a.name === "InboxPilot AI")!;
+  const twice = appToAgent({ ...app, grants: [...app.grants, { ...app.grants[0], id: "g1-other-api", scopes: ["User.Read"] }] }, "Acme", "2026-10-24T09:00:00Z");
+  assert.equal(twice.people!.length, 1);
+  assert.match(twice.findings[0].title, /1 person/);
+  assert.match(twice.location, /1 user$/);
+});
+
+test("apps are still listed when Microsoft won't give out names", async () => {
+  const g = fakeGraph();
+  const base = g.fetch;
+  const noNames = (async (input: string | URL | Request, init?: RequestInit) =>
+    String(input).includes("/users?") ? new Response(JSON.stringify({ error: { message: "Insufficient privileges" } }), { status: 403 }) : base(input, init)) as typeof fetch;
+  const apps = await discover(TENANT, noNames);
+  const inbox = appToAgent(apps.find((a) => a.name === "InboxPilot AI")!, "Acme", "2026-10-24T09:00:00Z");
+  assert.deepEqual(inbox.people, []);
+  assert.equal(inbox.findings[0].ruleId, "M365_USER_GRANT");
+});
+
+test("apps are still saved when the name lookup hits a network error", async () => {
+  const g = fakeGraph();
+  const base = g.fetch;
+  const flaky = (async (input: string | URL | Request, init?: RequestInit) => {
+    if (String(input).includes("/users?")) throw new TypeError("fetch failed: connection reset");
+    return base(input, init);
+  }) as typeof fetch;
+  const apps = await discover(TENANT, flaky);
+  assert.ok(apps.find((a) => a.name === "InboxPilot AI"));
 });
 
 test("revoking removes every grant the app holds", async () => {

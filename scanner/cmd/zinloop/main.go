@@ -142,6 +142,10 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 		OS:             runtime.GOOS,
 		ScannedAt:      time.Now().UTC().Truncate(time.Second),
 	}
+	homes := make([]string, 0, len(envs))
+	for _, env := range envs {
+		homes = append(homes, env.Home)
+	}
 	parts := make([]report.Report, 0, len(envs))
 	for _, env := range envs {
 		ctx := rules.Context{Home: env.Home, NeedsRotation: map[string]bool{}}
@@ -153,7 +157,11 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 			}
 		}
 		servers, configs := discover.Scan(env)
-		parts = append(parts, report.Build(servers, configs, ctx, meta))
+		part := report.Build(servers, configs, ctx, meta)
+		for i := range part.Servers {
+			part.Servers[i].User = ownerOf(part.Servers[i].ConfigPath, homes)
+		}
+		parts = append(parts, part)
 	}
 	rep := report.Merge(meta, parts)
 
@@ -204,4 +212,30 @@ func writeJSONFile(path string, rep report.Report) error {
 	}
 	// The report has no secrets, but it does list tools in use; keep it private.
 	return os.WriteFile(path, append(data, '\n'), 0o600)
+}
+
+// ownerOf returns the profile name (home folder name) whose home holds path, or
+// "" when no scanned home does, as for a shared --project folder. It is never
+// guessed from which profile happened to scan the file.
+func ownerOf(path string, homes []string) string {
+	best := ""
+	for _, h := range homes {
+		if within(path, h) && len(h) > len(best) {
+			best = h
+		}
+	}
+	if best == "" {
+		return ""
+	}
+	return filepath.Base(best)
+}
+
+// within reports whether path is dir or inside it. On Windows the comparison
+// ignores case, as filepath.Rel does there.
+func within(path, dir string) bool {
+	rel, err := filepath.Rel(dir, path)
+	if err != nil || filepath.IsAbs(rel) {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }

@@ -25,6 +25,8 @@ export default async function ConsoleLayout({ children }: { children: React.Reac
           {(demo || session) && (
             <nav className="nav" aria-label="Main">
               <Link href="/app">Clients</Link>
+              <Link href="/app/people">People</Link>
+              <Link href="/app/tools">AI tools</Link>
               <Link href="/app/import">Open a scan file</Link>
               {session && <Link href="/app/settings">Settings</Link>}
             </nav>
