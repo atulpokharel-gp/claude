@@ -126,6 +126,10 @@ func URLHasCredential(v string) bool {
 	if err != nil || u.Host == "" {
 		return false
 	}
+	// A known token shape anywhere in the URL (path, query, user) counts.
+	if RedactTokens(v, "") != v {
+		return true
+	}
 	if u.User != nil {
 		if pw, ok := u.User.Password(); ok && isLiteral(pw) {
 			return true

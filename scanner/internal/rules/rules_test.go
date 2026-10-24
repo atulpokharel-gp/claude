@@ -90,3 +90,16 @@ func TestFindingTextHasNoSecret(t *testing.T) {
 		}
 	}
 }
+
+func TestTokenInURLPathIsSecret(t *testing.T) {
+	s := discover.Server{Name: "x", Transport: "remote", URL: "https://mcp.example.com/" + fakeGitHubToken + "/sse"}
+	found := false
+	for _, f := range Check(s, Context{}) {
+		if f.RuleID == "SECRET_IN_CONFIG" && f.Severity == High {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("a token in the URL path should be flagged as SECRET_IN_CONFIG")
+	}
+}
