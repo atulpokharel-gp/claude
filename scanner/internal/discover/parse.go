@@ -52,7 +52,8 @@ func Parse(loc Location, data []byte) ([]Server, error) {
 		if err := json.Unmarshal(clean, &doc); err != nil {
 			return nil, fmt.Errorf("parse %s: %w", loc.Path, err)
 		}
-		return toServers(loc, "", doc.MCPServers), nil
+		out, bad := toServers(loc, "", doc.MCPServers)
+		return out, badEntriesError(bad)
 
 	case FormatClaudeCode:
 		var doc struct {
@@ -64,16 +65,18 @@ func Parse(loc Location, data []byte) ([]Server, error) {
 		if err := json.Unmarshal(clean, &doc); err != nil {
 			return nil, fmt.Errorf("parse %s: %w", loc.Path, err)
 		}
-		out := toServers(loc, "", doc.MCPServers)
+		out, bad := toServers(loc, "", doc.MCPServers)
 		projects := make([]string, 0, len(doc.Projects))
 		for p := range doc.Projects {
 			projects = append(projects, p)
 		}
 		sort.Strings(projects)
 		for _, p := range projects {
-			out = append(out, toServers(loc, p, doc.Projects[p].MCPServers)...)
+			more, moreBad := toServers(loc, p, doc.Projects[p].MCPServers)
+			out = append(out, more...)
+			bad = append(bad, moreBad...)
 		}
-		return out, nil
+		return out, badEntriesError(bad)
 
 	case FormatVSCodeServers:
 		var doc struct {
@@ -82,7 +85,8 @@ func Parse(loc Location, data []byte) ([]Server, error) {
 		if err := json.Unmarshal(clean, &doc); err != nil {
 			return nil, fmt.Errorf("parse %s: %w", loc.Path, err)
 		}
-		return toServers(loc, "", doc.Servers), nil
+		out, bad := toServers(loc, "", doc.Servers)
+		return out, badEntriesError(bad)
 
 	case FormatVSCodeSettings:
 		var doc struct {
@@ -93,12 +97,16 @@ func Parse(loc Location, data []byte) ([]Server, error) {
 		if err := json.Unmarshal(clean, &doc); err != nil {
 			return nil, fmt.Errorf("parse %s: %w", loc.Path, err)
 		}
-		return toServers(loc, "", doc.MCP.Servers), nil
+		out, bad := toServers(loc, "", doc.MCP.Servers)
+		return out, badEntriesError(bad)
 	}
 	return nil, fmt.Errorf("unknown format %q", loc.Format)
 }
 
-func toServers(loc Location, scope string, raw map[string]json.RawMessage) []Server {
+// toServers decodes each server entry. Entries that can't be decoded are
+// skipped so the rest of the file is still checked, and their names are
+// returned so the scan can say it is incomplete.
+func toServers(loc Location, scope string, raw map[string]json.RawMessage) ([]Server, []string) {
 	names := make([]string, 0, len(raw))
 	for n := range raw {
 		names = append(names, n)
@@ -106,10 +114,15 @@ func toServers(loc Location, scope string, raw map[string]json.RawMessage) []Ser
 	sort.Strings(names)
 
 	var out []Server
+	var bad []string
 	for _, name := range names {
 		var r rawServer
 		if err := json.Unmarshal(raw[name], &r); err != nil {
-			// A malformed entry should not hide the rest of the file.
+			label := name
+			if scope != "" {
+				label = scope + ": " + name
+			}
+			bad = append(bad, label)
 			continue
 		}
 		s := Server{
@@ -136,7 +149,14 @@ func toServers(loc Location, scope string, raw map[string]json.RawMessage) []Ser
 		s.HeaderKeys = sortedKeys(r.Headers)
 		out = append(out, s)
 	}
-	return out
+	return out, bad
+}
+
+func badEntriesError(bad []string) error {
+	if len(bad) == 0 {
+		return nil
+	}
+	return fmt.Errorf("couldn't read %d server entr%s (%s); they were not checked", len(bad), map[bool]string{true: "y", false: "ies"}[len(bad) == 1], strings.Join(bad, ", "))
 }
 
 func sortedKeys(m map[string]string) []string {

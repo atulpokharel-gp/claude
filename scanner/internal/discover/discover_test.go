@@ -77,8 +77,16 @@ func TestScanFixtures(t *testing.T) {
 		t.Errorf("github env keys = %v", s.EnvKeys)
 	}
 
+	// The fixture's "broken" entry is skipped, but the scan must say so
+	// instead of looking clean.
 	for _, r := range results {
-		if r.Error != "" {
+		isBroken := strings.HasSuffix(filepath.ToSlash(r.Path), "project/.vscode/mcp.json")
+		switch {
+		case isBroken && !strings.Contains(r.Error, "broken"):
+			t.Errorf("%s: want error naming the broken entry, got %q", r.Path, r.Error)
+		case isBroken && r.Servers == 0:
+			t.Errorf("%s: valid entries in the same file should still be read", r.Path)
+		case !isBroken && r.Error != "":
 			t.Errorf("unexpected error for %s: %s", r.Path, r.Error)
 		}
 	}
