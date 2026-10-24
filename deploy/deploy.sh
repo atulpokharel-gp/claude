@@ -17,6 +17,15 @@ log() { echo "$(date -u +%H:%M:%S) $*"; }
 previous=""
 [ -f .deployed ] && previous=$(cat .deployed)
 
+# Records the running images in .env, so later commands on this server
+# ("docker compose run console ...", "docker compose up -d backup") use them.
+persist() {
+  tmp=$(mktemp .env.XXXXXX) || return 1
+  grep -v -E '^(CONSOLE_IMAGE|BACKUP_IMAGE)=' .env > "$tmp" || [ $? -eq 1 ] || { rm -f "$tmp"; return 1; }
+  printf 'CONSOLE_IMAGE=%s\nBACKUP_IMAGE=%s\n' "$1" "$2" >> "$tmp" || { rm -f "$tmp"; return 1; }
+  chmod 600 "$tmp" && mv "$tmp" .env
+}
+
 start() {
   CONSOLE_IMAGE="$1" BACKUP_IMAGE="$2" docker compose up -d --no-build --remove-orphans
 }
@@ -41,7 +50,13 @@ rollback() {
   if [ -n "$previous" ]; then
     log "starting the previous version again: $previous"
     # shellcheck disable=SC2086
-    start $previous && wait_healthy && log "previous version is back" || log "ROLLBACK FAILED, check the server"
+    if start $previous && wait_healthy; then
+      # shellcheck disable=SC2086
+      persist $previous
+      log "previous version is back"
+    else
+      log "ROLLBACK FAILED, check the server"
+    fi
   fi
   exit 1
 }
@@ -66,5 +81,6 @@ start "$new_console" "$new_backup" || rollback
 wait_healthy || rollback
 
 echo "$new_console $new_backup" > .deployed
+persist "$new_console" "$new_backup"
 log "deployed $new_console"
 docker image prune -f >/dev/null 2>&1 || true

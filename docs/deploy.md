@@ -98,6 +98,11 @@ unlimited clients:
 cd /opt/zinloop && docker compose run --rm console npm run db:set-plan -- you@yourcompany.com msp
 ```
 
+Each deploy records the running images as `CONSOLE_IMAGE` and `BACKUP_IMAGE`
+in the server's `.env`, so commands you run there by hand (like the one above,
+or `docker compose up -d backup`) use the deployed version. Don't edit those
+two lines; the next deploy rewrites them.
+
 **Rolling back by hand:** `cat /opt/zinloop/.deployed` shows the running images.
 To go back, run `sh deploy/deploy.sh <older console image> <older backup image>`
 with images from an earlier deploy (the image tag is the commit hash).
