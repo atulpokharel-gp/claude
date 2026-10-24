@@ -60,3 +60,21 @@ func TestRedactsCredentialFlagsAndConnectionStrings(t *testing.T) {
 		t.Error("password leaked into text output")
 	}
 }
+
+func TestFindingTextDoesNotRepeatRedactedArgs(t *testing.T) {
+	tok := "example-private-token"
+	servers := []discover.Server{{
+		Name:    "wheel",
+		Command: "uvx",
+		Args:    []string{"--from", "https://packages.example.org/server.whl?token=" + tok, "server"},
+	}}
+	r := Build(servers, nil, rules.Context{}, Report{})
+	for _, f := range r.Servers[0].Findings {
+		if strings.Contains(f.Title+f.Detail+f.Fix, tok) {
+			t.Errorf("%s finding text leaks the token: %q / %q", f.RuleID, f.Detail, f.Fix)
+		}
+	}
+	if len(r.Servers[0].Findings) < 2 {
+		t.Errorf("expected secret and unpinned findings, got %+v", r.Servers[0].Findings)
+	}
+}

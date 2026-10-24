@@ -58,8 +58,10 @@ func Build(servers []discover.Server, configs []discover.ConfigResult, ctx rules
 		if f == nil {
 			f = []rules.Finding{}
 		}
+		origArgs, origURL := s.Args, s.URL
 		s.Args = redactArgs(s.Args)
 		s.URL = redactURL(s.URL)
+		f = scrubFindings(f, origArgs, s.Args, origURL, s.URL)
 		res := ServerResult{Server: s, Risk: rules.Worst(f), Findings: f}
 		r.Servers = append(r.Servers, res)
 		switch res.Risk {
@@ -96,6 +98,33 @@ func redactArgs(args []string) []string {
 		default:
 			out[i] = Redacted
 		}
+	}
+	return out
+}
+
+// scrubFindings removes redacted values from finding text. Rules quote
+// arguments (package names, paths) in their messages, so any argument that was
+// redacted must also be replaced wherever a message repeats it.
+func scrubFindings(fs []rules.Finding, origArgs, redArgs []string, origURL, redURL string) []rules.Finding {
+	var pairs []string
+	for i := range origArgs {
+		if origArgs[i] != redArgs[i] {
+			pairs = append(pairs, origArgs[i], redArgs[i])
+		}
+	}
+	if origURL != redURL {
+		pairs = append(pairs, origURL, redURL)
+	}
+	if len(pairs) == 0 {
+		return fs
+	}
+	rep := strings.NewReplacer(pairs...)
+	out := make([]rules.Finding, len(fs))
+	for i, f := range fs {
+		f.Title = rep.Replace(f.Title)
+		f.Detail = rep.Replace(f.Detail)
+		f.Fix = rep.Replace(f.Fix)
+		out[i] = f
 	}
 	return out
 }
