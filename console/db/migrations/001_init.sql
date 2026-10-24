@@ -1,8 +1,8 @@
--- Agent Guard console: first schema.
+-- Zinloop Security console: first schema.
 --
 -- Every table that holds an MSP's data has an msp_id column and a row-level
 -- security policy, so a query can only ever see the signed-in MSP's rows. The
--- app connects as agentguard_app, which owns nothing and can't bypass RLS. It
+-- app connects as zinloop_app, which owns nothing and can't bypass RLS. It
 -- sets app.msp_id at the start of each transaction (see lib/db.ts).
 --
 -- The few lookups that must happen before we know the MSP (sign-in, session
@@ -144,11 +144,11 @@ end $$;
 -- The app role. Created without login here; the deploy sets its password.
 do $$
 begin
-  if not exists (select from pg_roles where rolname = 'agentguard_app') then
-    create role agentguard_app nologin;
+  if not exists (select from pg_roles where rolname = 'zinloop_app') then
+    create role zinloop_app nologin;
   end if;
 end $$;
-grant usage on schema public to agentguard_app;
-grant select, insert, update, delete on msps, users, sessions, clients, upload_tokens, devices, scans to agentguard_app;
+grant usage on schema public to zinloop_app;
+grant select, insert, update, delete on msps, users, sessions, clients, upload_tokens, devices, scans to zinloop_app;
 revoke all on function auth_find_user(text), auth_check_session(bytea), upload_check_token(bytea) from public;
-grant execute on function current_msp(), auth_find_user(text), auth_check_session(bytea), upload_check_token(bytea) to agentguard_app;
+grant execute on function current_msp(), auth_find_user(text), auth_check_session(bytea), upload_check_token(bytea) to zinloop_app;

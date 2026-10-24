@@ -108,7 +108,7 @@ func TestKeyNotRotatedGivesOneCommandPerKey(t *testing.T) {
 			fix = f.Fix
 		}
 	}
-	if !strings.Contains(fix, "agentscan rotate app/x/A_TOKEN@1; agentscan rotate app/x/B_TOKEN@1") {
+	if !strings.Contains(fix, "zinloop rotate app/x/A_TOKEN@1; zinloop rotate app/x/B_TOKEN@1") {
 		t.Errorf("fix should list a separate command per key, got %q", fix)
 	}
 }

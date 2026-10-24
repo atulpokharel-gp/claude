@@ -1,4 +1,4 @@
-# agentscan
+# zinloop
 
 Finds AI agent (MCP server) configurations on a computer and reports risky
 settings. One file, no install, runs on Windows, macOS and Linux, so an MSP can
@@ -35,48 +35,55 @@ Pass `--project <folder>` (repeatable) to also check project folders.
 ## Use
 
 ```sh
-go build -o agentscan ./cmd/agentscan
-./agentscan                       # readable summary
-./agentscan --json                # JSON to stdout
-./agentscan --out scan.json       # also save JSON (file mode 0600)
-./agentscan --fail-on high        # exit code 2 if anything is high risk
+go build -o zinloop ./cmd/zinloop
+./zinloop                       # readable summary
+./zinloop --json                # JSON to stdout
+./zinloop --out scan.json       # also save JSON (file mode 0600)
+./zinloop --fail-on high        # exit code 2 if anything is high risk
+./zinloop --all-users           # every user profile (run as administrator/root)
 ```
+
+RMM tools run scripts as SYSTEM or root, whose own home has no AI configs, so
+use `--all-users` there. [`rmm/`](rmm/) has ready-made install scripts for
+Windows (PowerShell) and macOS/Linux that download the scanner from your
+console, check its SHA-256, store the upload token where only administrators
+can read it, run the scan and can schedule it daily.
 
 ## Fix plain-text keys
 
 `fix-secrets` moves keys out of AI configs and into the computer's own
 password store (macOS Keychain, Windows Credential Manager, or the Linux
 Secret Service). The AI app keeps working because the server now starts
-through `agentscan exec`, which reads the key from the store and passes it to
+through `zinloop exec`, which reads the key from the store and passes it to
 the server at start-up.
 
 ```sh
-./agentscan fix-secrets            # preview only, changes nothing
-./agentscan fix-secrets --apply    # make the change (close the AI apps first)
-./agentscan rotate --list          # keys that were exposed and still need replacing
-./agentscan rotate <name>          # paste a new key from the provider
+./zinloop fix-secrets            # preview only, changes nothing
+./zinloop fix-secrets --apply    # make the change (close the AI apps first)
+./zinloop rotate --list          # keys that were exposed and still need replacing
+./zinloop rotate <name>          # paste a new key from the provider
 ```
 
 What `--apply` does, per config file:
 
 1. Saves each key to the password store and reads it back to check it.
-2. Copies the original file to `<file>.agentguard-backup-<time>` (owner-only).
+2. Copies the original file to `<file>.zinloop-backup-<time>` (owner-only).
 3. Rewrites the server entry, for example
    `"command": "npx", "env": {"GITHUB_TOKEN": "ghp_..."}` becomes
-   `"command": "/path/to/agentscan", "args": ["exec", "--secret", "GITHUB_TOKEN=claude-desktop/github/GITHUB_TOKEN@3aa8de04", "--", "npx", ...]`.
-4. Records the move in `~/.agentguard/secrets.json` (names and dates only).
+   `"command": "/path/to/zinloop", "args": ["exec", "--secret", "GITHUB_TOKEN=claude-desktop/github/GITHUB_TOKEN@3aa8de04", "--", "npx", ...]`.
+4. Records the move in `~/.zinloop/secrets.json` (names and dates only).
 
 If any step fails, that file is left exactly as it was. Keys in headers,
 command-line arguments or URLs, and servers in VS Code's `settings.json`, are
-listed for fixing by hand. Run agentscan from a permanent location, since its
+listed for fixing by hand. Run zinloop from a permanent location, since its
 path is written into the configs. Rewritten files keep every setting, though
 key order may change.
 
 ## Send scans to the console
 
 ```sh
-AGENTGUARD_TOKEN=agu_... agentscan --upload https://your-console/api/scans
-agentscan --upload https://your-console/api/scans --token-file C:\ProgramData\agentguard\token
+ZINLOOP_TOKEN=zlu_... zinloop --upload https://your-console/api/scans
+zinloop --upload https://your-console/api/scans --token-file C:\ProgramData\zinloop\token
 ```
 
 The upload token comes from the client's page in the console. It's read from
@@ -96,7 +103,7 @@ means the scan ran but the upload failed.
 ## Layout
 
 ```
-cmd/agentscan      command-line entry point
+cmd/zinloop      command-line entry point
 internal/discover  config locations per OS and parsing (handles JSON with comments)
 internal/rules     risk checks
 internal/report    report building, redaction, text output

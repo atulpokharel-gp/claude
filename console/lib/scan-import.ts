@@ -1,4 +1,4 @@
-// Turns a JSON report from the agentscan scanner into a Client the console can show.
+// Turns a JSON report from the zinloop scanner into a Client the console can show.
 // Runs in the browser; the file never leaves the viewer's computer.
 
 import type { Agent, Client, Finding, Severity } from "./types.ts";
@@ -48,7 +48,7 @@ function reachFor(s: Record<string, unknown>): string[] {
 export function importScan(json: unknown): Client {
   if (!isObj(json) || json.schemaVersion !== 1 || !Array.isArray(json.servers)) {
     throw new ScanImportError(
-      "This file isn't an agentscan report. Run `agentscan --json --out scan.json` and choose scan.json.",
+      "This file isn't an zinloop report. Run `zinloop --json --out scan.json` and choose scan.json.",
     );
   }
   const host = str(json.hostname, "this computer");
