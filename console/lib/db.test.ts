@@ -377,6 +377,28 @@ describe("database", { skip: !adminUrl && "set TEST_DATABASE_ADMIN_URL to run" }
       ),
       /client login, not the team/,
     );
+    // The old page marks the invite accepted first, then adds the user, in one transaction.
+    await assert.rejects(
+      withTenant(s.mspId, async (db) => {
+        await db.query("update invites set accepted_at = now() where msp_id = $1 and email = 'next@mine.example' and accepted_at is null", [s.mspId]);
+        await db.query("insert into users (msp_id, email, password_hash, name, role) values ($1, 'next@mine.example', 'x', 'Next', 'member')", [s.mspId]);
+      }),
+      /client login, not the team/,
+    );
+    // The old lookup keeps an active session alive, like the current one does.
+    const owner = new pg.Client({ connectionString: ownerUrl });
+    await owner.connect();
+    try {
+      await owner.query("update sessions set last_seen_at = now() - interval '3 hours' where token_hash = $1", [tokenHash(memberToken)]);
+      assert.equal((await oldLookup(memberToken)).length, 1);
+      const seen = await owner.query<{ fresh: boolean }>(
+        "select last_seen_at > now() - interval '1 minute' as fresh from sessions where token_hash = $1",
+        [tokenHash(memberToken)],
+      );
+      assert.equal(seen.rows[0].fresh, true);
+    } finally {
+      await owner.end();
+    }
     assert.deepEqual((await listClientViewers(s.mspId, mine)).viewers.map((x) => x.email), ["boss@mine.example"]);
     assert.equal((await listClientViewers(s.mspId, other)).viewers.length, 0);
 
@@ -637,8 +659,17 @@ describe("database", { skip: !adminUrl && "set TEST_DATABASE_ADMIN_URL to run" }
     const after = (await getClient(a.mspId, id))!.client.agents.map((x) => x.name).sort();
     assert.deepEqual(after, ["ChatGPT", "InboxPilot AI"]);
 
-    // A tenant that removed consent leaves a readable error on the client.
+    // Reconnecting the same tenant keeps its apps until the next sync.
+    await connectM365(a.mspId, id, TENANT);
+    assert.equal((await getClient(a.mspId, id))!.client.agents.length, 2);
+
+    // A different tenant starts empty, without the old tenant's apps or sync time.
     await connectM365(a.mspId, id, "99999999-2222-3333-4444-555555555555");
+    const switched = (await getClient(a.mspId, id))!;
+    assert.equal(switched.client.agents.length, 0);
+    assert.equal(switched.m365?.lastSync ?? null, null);
+
+    // A tenant that removed consent leaves a readable error on the client.
     const r = await syncM365(a.mspId, id, g.fetch);
     assert.ok("error" in r && /Application not found/.test(r.error));
     assert.match((await getClient(a.mspId, id))!.m365!.lastError!, /Application not found/);

@@ -81,3 +81,31 @@ func TestMain(m *testing.M) {
 	goos = "linux"
 	os.Exit(m.Run())
 }
+
+func TestUnreadableKeyRecordIsReported(t *testing.T) {
+	home := t.TempDir()
+	dir := filepath.Join(home, ".zinloop")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "secrets.json"), []byte("{not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"--home", home, "--json"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("exit code = %d; stderr: %s", code, stderr.String())
+	}
+	var rep report.Report
+	if err := json.Unmarshal(stdout.Bytes(), &rep); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, c := range rep.Configs {
+		if c.Path == filepath.Join(dir, "secrets.json") && strings.Contains(c.Error, "protected keys") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("report should list the unreadable key record as a config error, got %+v", rep.Configs)
+	}
+}

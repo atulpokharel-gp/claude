@@ -41,7 +41,11 @@ export function ClientReport({ client, mspName, m365, demo }: { client: Client; 
       <section className="report-section">
         <h2>What needs doing</h2>
         {r.actions.length === 0 ? (
-          <p>Nothing. Every AI tool found is set up safely.</p>
+          <p>
+            {r.warnings.length > 0
+              ? "Nothing in the settings we could read. Some settings couldn't be read, so see below."
+              : "Nothing. Every AI tool found is set up safely."}
+          </p>
         ) : (
           <ol className="report-actions">
             {r.actions.map((a) => (
@@ -63,6 +67,19 @@ export function ClientReport({ client, mspName, m365, demo }: { client: Client; 
           <h2>Already in good shape</h2>
           {r.keysProtected > 0 && <p>{r.keysProtected} {r.keysProtected === 1 ? "key has" : "keys have"} been moved out of plain text into the computer's secure keychain.</p>}
           {r.clean.length > 0 && <p>No problems found with: {r.clean.join(", ")}.</p>}
+        </section>
+      )}
+
+      {r.warnings.length > 0 && (
+        <section className="report-section">
+          <h2>Couldn't be checked</h2>
+          <p className="report-warning">
+            Some settings couldn't be read during the last scan, so this report may be missing problems on these laptops:
+          </p>
+          <ul>
+            {r.warnings.slice(0, 10).map((w) => <li key={w}>{w}</li>)}
+          </ul>
+          {r.warnings.length > 10 && <p>And {r.warnings.length - 10} more.</p>}
         </section>
       )}
 

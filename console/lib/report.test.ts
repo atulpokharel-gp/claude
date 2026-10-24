@@ -38,3 +38,14 @@ test("findings with different fixes stay separate actions", () => {
   const r = buildReport(c, "Harbor");
   assert.deepEqual(r.actions.map((a) => a.fix).sort(), ["zinloop rotate ref-a", "zinloop rotate ref-b"]);
 });
+
+test("the report carries scan warnings so an empty list isn't read as all clear", () => {
+  const c: Client = {
+    id: "x", name: "Partly Read", industry: "", staff: 1, devices: 1, devicesScanned: 0, lastScan: new Date().toISOString(), agents: [],
+    warnings: ["PC-1: Couldn't read /home/a/.cursor/mcp.json (Cursor): permission denied"],
+  };
+  const r = buildReport(c, "Harbor");
+  assert.equal(r.actions.length, 0);
+  assert.deepEqual(r.warnings, c.warnings);
+  assert.deepEqual(buildReport({ ...c, warnings: undefined }, "Harbor").warnings, []);
+});

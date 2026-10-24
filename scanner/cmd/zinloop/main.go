@@ -149,7 +149,9 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 	parts := make([]report.Report, 0, len(envs))
 	for _, env := range envs {
 		ctx := rules.Context{Home: env.Home, NeedsRotation: map[string]bool{}}
+		var stateErr error
 		if st, err := vault.LoadState(env.Home); err != nil {
+			stateErr = err
 			fmt.Fprintf(stderr, "warning: couldn't read the record of protected keys in %s: %v\n", env.Home, err)
 		} else {
 			for _, ref := range st.NeedsRotation() {
@@ -157,6 +159,16 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 			}
 		}
 		servers, configs := discover.Scan(env)
+		if stateErr != nil {
+			// Without the record we can't tell which protected keys still need
+			// rotating, so put the failure in the report. The console then
+			// shows a warning and won't count this scan as complete.
+			configs = append(configs, discover.ConfigResult{
+				Location: discover.Location{App: "Zinloop key record", Path: vault.StatePath(env.Home)},
+				Found:    true,
+				Error:    "couldn't read the record of protected keys: " + stateErr.Error(),
+			})
+		}
 		part := report.Build(servers, configs, ctx, meta)
 		for i := range part.Servers {
 			part.Servers[i].User = ownerOf(part.Servers[i].ConfigPath, homes)
