@@ -101,3 +101,17 @@ func TestRedactsTokenInURLPath(t *testing.T) {
 		}
 	}
 }
+
+func TestRedactURLHidesWholeUserInfo(t *testing.T) {
+	cases := map[string]string{
+		"https://alice:private@password@api.example.com/mcp": "https://[REDACTED]@api.example.com/mcp",
+		"https://alice:pw@api.example.com/a@b":               "https://[REDACTED]@api.example.com/a@b",
+		"https://api.example.com/mcp?key=x#frag":             "https://api.example.com/mcp?[REDACTED]",
+		"https://api.example.com/mcp":                        "https://api.example.com/mcp",
+	}
+	for in, want := range cases {
+		if got := redactURL(in); got != want {
+			t.Errorf("redactURL(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

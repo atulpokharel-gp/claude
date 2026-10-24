@@ -140,9 +140,19 @@ func redactURL(u string) string {
 	if i := strings.Index(u, "?"); i >= 0 {
 		u = u[:i] + "?" + Redacted
 	}
-	if at := strings.Index(u, "@"); at >= 0 {
-		if scheme := strings.Index(u, "://"); scheme >= 0 && scheme < at {
-			u = u[:scheme+3] + Redacted + u[at:]
+	if i := strings.Index(u, "#"); i >= 0 {
+		u = u[:i]
+	}
+	// User info ends at the last @ before the path: passwords can contain
+	// an unescaped @, and URL parsers accept that.
+	if scheme := strings.Index(u, "://"); scheme >= 0 {
+		start := scheme + 3
+		end := len(u)
+		if i := strings.IndexAny(u[start:], "/?"); i >= 0 {
+			end = start + i
+		}
+		if at := strings.LastIndex(u[start:end], "@"); at >= 0 {
+			u = u[:start] + Redacted + u[start+at:]
 		}
 	}
 	return u
