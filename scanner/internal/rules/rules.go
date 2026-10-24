@@ -245,12 +245,7 @@ func unpinnedPackage(s discover.Server) []Finding {
 	if pkg == "" {
 		return nil
 	}
-	if m := pkgVersion.FindStringSubmatch(pkg); m != nil {
-		v := m[2]
-		if v != "latest" && v != "next" && !strings.ContainsAny(v, "^~*x") {
-			return nil // pinned to an exact version
-		}
-	} else if runner == "uvx" && strings.Contains(pkg, "==") {
+	if isPinned(runner, pkg) {
 		return nil
 	}
 	return []Finding{{
@@ -438,6 +433,28 @@ func firstPackageArg(args []string) string {
 	}
 	return ""
 }
+
+// isPinned reports whether a package spec names one exact version.
+// npm-style runners need a full x.y.z version: tags (@beta) and ranges
+// (@1, @^1.2) float. uvx pins with name==version or name@version.
+func isPinned(runner, pkg string) bool {
+	if runner == "uvx" {
+		if name, v, ok := strings.Cut(pkg, "=="); ok && name != "" {
+			return pyExactVersion.MatchString(v)
+		}
+		if m := pkgVersion.FindStringSubmatch(pkg); m != nil {
+			return pyExactVersion.MatchString(m[2])
+		}
+		return false
+	}
+	m := pkgVersion.FindStringSubmatch(pkg)
+	return m != nil && npmExactVersion.MatchString(m[2])
+}
+
+var (
+	npmExactVersion = regexp.MustCompile(`^v?\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$`)
+	pyExactVersion  = regexp.MustCompile(`^\d+(\.\d+)*([a-zA-Z0-9.+-]*)$`)
+)
 
 func stripVersion(pkg string) string {
 	if m := pkgVersion.FindStringSubmatch(pkg); m != nil {
