@@ -180,7 +180,7 @@ export async function checkChangeAlerts(mspId: string, clientId: string, now = n
       if (client.rowCount === 0) return 0;
       const mspName = (await db.query<{ name: string }>("select name from msps")).rows[0]?.name ?? "";
       const people = (
-        await db.query<Recipient>("select id, email from users where role in ('owner', 'member') and alert_emails order by created_at")
+        await db.query<Recipient>("select id, email from users where role in ('owner', 'member', 'technician') and alert_emails order by created_at")
       ).rows;
       const base = consoleBase();
       let n = 0;
