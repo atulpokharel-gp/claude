@@ -16,7 +16,30 @@ push it through their remote-management tool.
 | Windsurf | `~/.codeium/windsurf/mcp_config.json` |
 | VS Code | user `mcp.json` and `settings.json`, project `.vscode/mcp.json` |
 
-Pass `--project <folder>` (repeatable) to also check project folders.
+Pass `--project <folder>` (repeatable) to also check project folders. For
+non-default installs — containers, CI runners, cloud VMs, custom RMM
+packaging — pass `--extra-config <path>` or `--extra-skills-dir <path>`
+(both repeatable) to point the scanner at the real location.
+
+The scanner also honours the same environment variables Claude itself does,
+so a redirected install is scanned where files actually live rather than at
+the default:
+
+| Variable | Effect |
+| --- | --- |
+| `CLAUDE_CONFIG_DIR` | Replaces `~/.claude.json` and `~/.claude/` (skills, plugins) |
+| `XDG_CONFIG_HOME` (Linux) | Replaces `~/.config/` for Claude Desktop and VS Code |
+
+Every redirect, symlink out of the user's home and world-writable config
+or skills folder is also surfaced as a **path warning** in the report, so
+operators see when "someone changed the direction" for an AI's config even
+when the configs themselves look clean.
+
+| Path-warning rule | Severity | Flags |
+| --- | --- | --- |
+| `path_redirected` | medium | An env var or `--extra-*` flag moved a config/skill location off its default |
+| `symlink_outside_home` | high | A config file or skills folder is a symlink to a target outside the user's home |
+| `world_writable` | high | A config file or skills folder has mode `o+w` — any user on this computer can rewrite or plant one |
 
 **Risk rules**
 
@@ -73,6 +96,8 @@ go build -o zinloop ./cmd/zinloop
 ./zinloop --fail-on high        # exit code 2 if anything is high risk
 ./zinloop --all-users           # every user profile (run as administrator/root)
 ./zinloop --probe-tools         # also start each stdio MCP server and scan its live tool list
+./zinloop --extra-config /opt/custom/mcp.json  # scan a non-default path too
+./zinloop --extra-skills-dir /srv/claude-skills # scan a non-default skills folder too
 ```
 
 RMM tools run scripts as SYSTEM or root, whose own home has no AI configs, so
