@@ -18,6 +18,9 @@ export const LIMITS = {
   // this catches a runaway script or a stolen session.
   createClient: { window: 60 * 60, max: 50 },
   createUploadToken: { window: 60 * 60, max: 100 },
+  // One visitor should not be able to fake a wave on the public /live
+  // counters. Generous because a shared NAT can cover many real browsers.
+  pulseIp: { window: 60 * 60, max: 600 },
 } as const;
 
 export type LimitName = keyof typeof LIMITS;
