@@ -30,6 +30,8 @@ export interface ClientReport {
   m365Apps: number;
   actions: ReportAction[];
   clean: string[];
+  /** Settings files that couldn't be read, so the report may be incomplete. */
+  warnings: string[];
 }
 
 const ORDER: Record<Severity, number> = { high: 0, medium: 1, low: 2, none: 3 };
@@ -88,5 +90,6 @@ export function buildReport(client: Client, preparedBy: string, now = new Date()
     m365Apps,
     actions,
     clean,
+    warnings: client.warnings ?? [],
   };
 }

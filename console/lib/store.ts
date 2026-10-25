@@ -248,11 +248,16 @@ export async function connectM365(mspId: string, clientId: string, tenantId: str
     const res = await db.query(
       `insert into m365_tenants (client_id, msp_id, tenant_id)
        select id, $1, $3 from clients where id = $2
-       on conflict (client_id) do update set tenant_id = excluded.tenant_id, connected_at = now(), last_error = null`,
+       on conflict (client_id) do update set
+         tenant_id = excluded.tenant_id, connected_at = now(), last_error = null,
+         -- A different tenant must not keep the old tenant's apps on show.
+         apps = case when m365_tenants.tenant_id = excluded.tenant_id then m365_tenants.apps else '[]'::jsonb end,
+         last_sync_at = case when m365_tenants.tenant_id = excluded.tenant_id then m365_tenants.last_sync_at end`,
       [mspId, clientId, tenantId.toLowerCase()],
     );
     if (res.rowCount !== 1) throw new Error("Unknown client.");
   });
+  await snapshotClient(mspId, clientId);
 }
 
 export async function disconnectM365(mspId: string, clientId: string): Promise<void> {
