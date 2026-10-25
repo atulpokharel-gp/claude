@@ -2,12 +2,20 @@ name: release
 
 # Push a tag like v0.1.0 to build the scanner for every OS and publish it as a
 # GitHub release. The console's /download route points laptops here.
+#
+# Code signing switches on by itself once its secrets exist (docs/signing.md).
+# Without them, the builds are published unsigned, as before.
 on:
   push:
     tags: ["v*"]
+  # Run by hand to test signing: builds and signs, but publishes nothing.
+  workflow_dispatch:
+  # Changes to this file get the same dry run.
+  pull_request:
+    paths: [".github/workflows/release.yml"]
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
@@ -23,18 +31,153 @@ jobs:
       - name: Test
         run: go test ./...
       - name: Build
+        env:
+          VERSION: ${{ github.ref_type == 'tag' && github.ref_name || format('dev-{0}', github.sha) }}
         run: |
           mkdir -p dist
           for target in windows/amd64 windows/arm64 darwin/amd64 darwin/arm64 linux/amd64 linux/arm64; do
             os=${target%/*}; arch=${target#*/}
             ext=""; [ "$os" = windows ] && ext=".exe"
             CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath \
-              -ldflags "-s -w -X main.version=${GITHUB_REF_NAME}" \
+              -ldflags "-s -w -X main.version=${VERSION}" \
               -o "dist/zinloop-$os-$arch$ext" ./cmd/zinloop
           done
-          cp rmm/install-windows.ps1 rmm/install-unix.sh dist/
-          cd dist && sha256sum * > checksums.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: scanner/dist/zinloop-windows-*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: darwin
+          path: scanner/dist/zinloop-darwin-*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: scanner/dist/zinloop-linux-*
+
+  sign-windows:
+    needs: build
+    runs-on: windows-latest
+    env:
+      SIGNING: ${{ secrets.AZURE_SIGNING_CLIENT_SECRET != '' }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows
+          path: dist
+      - name: Sign with Azure Artifact Signing
+        if: env.SIGNING == 'true'
+        uses: azure/artifact-signing-action@v2
+        with:
+          azure-tenant-id: ${{ secrets.AZURE_SIGNING_TENANT_ID }}
+          azure-client-id: ${{ secrets.AZURE_SIGNING_CLIENT_ID }}
+          azure-client-secret: ${{ secrets.AZURE_SIGNING_CLIENT_SECRET }}
+          endpoint: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.AZURE_SIGNING_PROFILE }}
+          files-folder: ${{ github.workspace }}\dist
+          files-folder-filter: exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+      - name: Check signatures
+        if: env.SIGNING == 'true'
+        shell: pwsh
+        run: |
+          Get-ChildItem dist\*.exe | ForEach-Object {
+            $s = Get-AuthenticodeSignature $_.FullName
+            if ($s.Status -ne 'Valid') { throw "$($_.Name) is not signed: $($s.Status)" }
+          }
+      - name: Unsigned
+        if: env.SIGNING != 'true'
+        run: echo "::warning::Windows builds are unsigned. See docs/signing.md."
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-final
+          path: dist/*
+
+  sign-macos:
+    needs: build
+    runs-on: macos-latest
+    env:
+      SIGNING: ${{ secrets.APPLE_CERT_P12 != '' }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: darwin
+          path: dist
+      - name: Sign and notarize
+        if: env.SIGNING == 'true'
+        env:
+          CERT_P12: ${{ secrets.APPLE_CERT_P12 }}
+          CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
+          IDENTITY: ${{ vars.APPLE_SIGNING_IDENTITY }}
+          API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+          API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: |
+          set -eu
+          work=$(mktemp -d)
+          keychain="$work/signing.keychain-db"
+          kc_pass=$(openssl rand -hex 16)
+          printf '%s' "$CERT_P12" | base64 --decode > "$work/cert.p12"
+          printf '%s' "$API_KEY_P8" > "$work/key.p8"
+          security create-keychain -p "$kc_pass" "$keychain"
+          security set-keychain-settings -lut 3600 "$keychain"
+          security unlock-keychain -p "$kc_pass" "$keychain"
+          security import "$work/cert.p12" -k "$keychain" -P "$CERT_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$kc_pass" "$keychain" >/dev/null
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          for f in dist/zinloop-darwin-*; do
+            chmod +x "$f"
+            codesign --force --timestamp --options runtime --keychain "$keychain" -s "$IDENTITY" "$f"
+            codesign --verify --strict "$f"
+          done
+          # Apple notarizes a zip; a bare binary can't be stapled, so Gatekeeper
+          # checks the notarization online the first time it runs.
+          ditto -c -k dist "$work/notarize.zip"
+          # notarytool exits 0 even when Apple rejects the files, so check the status.
+          result=$(xcrun notarytool submit "$work/notarize.zip" --key "$work/key.p8" --key-id "$API_KEY_ID" --issuer "$API_ISSUER" --wait --output-format json)
+          status=$(printf '%s' "$result" | plutil -extract status raw -o - -)
+          if [ "$status" != "Accepted" ]; then
+            echo "::error::Notarization status: $status"
+            id=$(printf '%s' "$result" | plutil -extract id raw -o - -)
+            xcrun notarytool log "$id" --key "$work/key.p8" --key-id "$API_KEY_ID" --issuer "$API_ISSUER" || true
+            exit 1
+          fi
+          security delete-keychain "$keychain"
+          rm -rf "$work"
+      - name: Unsigned
+        if: env.SIGNING != 'true'
+        run: echo "::warning::Mac builds are unsigned. See docs/signing.md."
+      - uses: actions/upload-artifact@v4
+        with:
+          name: darwin-final
+          path: dist/*
+
+  publish:
+    needs: [sign-windows, sign-macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Collect files
+        run: |
+          mkdir dist
+          cp artifacts/windows-final/* artifacts/darwin-final/* artifacts/linux/* dist/
+          cp scanner/rmm/install-windows.ps1 scanner/rmm/install-unix.sh dist/
+          cd dist && sha256sum * > checksums.txt && ls -l
+      - uses: actions/upload-artifact@v4
+        if: github.event_name != 'push'
+        with:
+          name: release-test
+          path: dist/*
       - name: Publish
+        if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release create "$GITHUB_REF_NAME" dist/* --title "$GITHUB_REF_NAME" --generate-notes

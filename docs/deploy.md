@@ -90,7 +90,8 @@ git tag v1.2.0 && git push origin v1.2.0
 ```
 
 The same images that ran on staging are deployed; nothing is rebuilt. The tag
-also publishes scanner builds (the `release` workflow).
+also publishes scanner builds (the `release` workflow), signed once
+[signing](signing.md) is set up.
 
 The first deploy on a new server creates the database. Then open the console,
 click **Get a free scan** and create your account. Give your own account
