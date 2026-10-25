@@ -5,7 +5,7 @@
 // no code, no file paths — only counts and labels.
 
 import { createHash, randomBytes } from "node:crypto";
-import { lookup, withTenant, type Tenant } from "./db.ts";
+import { getPool, lookup, withTenant, type Tenant } from "./db.ts";
 import { tokenHash } from "./secrets.ts";
 import { sign, verifySigned } from "./crypto.ts";
 
@@ -975,6 +975,141 @@ export function paxelDevCookieMaxAge(): number {
 /** Random token used by the scanner for a laptop. 32 bytes, base64url. */
 export function newClaimToken(): string {
   return randomBytes(32).toString("base64url");
+}
+
+// --- leaderboards ----------------------------------------------------------
+
+export interface LeaderboardRow {
+  userHash: string;
+  displayName: string;
+  publicSlug: string | null;
+  publicDims: Dimension[];
+  dimScores: Partial<Record<Dimension, number>>;
+  meanScore: number;
+  sessions: number;
+}
+
+/**
+ * Public, cross-tenant leaderboard. Lists only developers who opted into a
+ * public profile. Rankings come from the SECURITY DEFINER function
+ * paxel_public_leaderboard, which aggregates scores server-side and never
+ * returns anything outside what the dev already published on /p/{slug}.
+ */
+export async function readPublicLeaderboard(days = 30, limit = 100): Promise<LeaderboardRow[]> {
+  const rows = (
+    await getPool().query<{
+      user_hash: string;
+      display_name: string;
+      public_slug: string | null;
+      public_dims: string[];
+      dim_scores: Record<string, number> | null;
+      mean_score: number;
+      sessions_counted: number;
+    }>("select * from paxel_public_leaderboard($1, $2)", [days, limit])
+  ).rows;
+  return rows.map((r) => shapeLeaderboardRow(r));
+}
+
+/**
+ * Company leaderboard inside one tenant. Shows every developer the viewer
+ * is already allowed to see (RLS filters on current_msp / current_client).
+ * No opt-in required — this is the internal view the MSP or client pays
+ * for. Public prefs are joined in so the UI can link to a dev's public
+ * page when one exists.
+ */
+export async function readCompanyLeaderboard(
+  tenant: Tenant,
+  days = 30,
+  limit = 200,
+): Promise<LeaderboardRow[]> {
+  const since = sinceDay(days, new Date());
+  return withTenant(tenant, async (db) => {
+    const rows = (
+      await db.query<{
+        user_hash: string;
+        user_label: string;
+        dim_scores: Record<string, number> | null;
+        mean_score: number;
+        sessions_counted: number;
+        public_slug: string | null;
+        display_name: string | null;
+        public_dims: string[] | null;
+      }>(
+        `with scored as (
+           select user_hash,
+                  max(user_label) as user_label,
+                  dimension,
+                  avg(score)::numeric as score,
+                  sum(sessions)::int as sessions
+             from paxel_profile_scores
+             where bucket_day >= $1
+             group by user_hash, dimension
+         ),
+         per_user as (
+           select user_hash,
+                  max(user_label) as user_label,
+                  coalesce(jsonb_object_agg(dimension, round(score)::int), '{}'::jsonb) as dim_scores,
+                  round(avg(score))::int as mean_score,
+                  sum(sessions)::int    as sessions_counted
+             from scored
+             group by user_hash
+         )
+         select p.user_hash,
+                coalesce(pr.display_name, p.user_label, '') as user_label,
+                p.dim_scores,
+                p.mean_score,
+                p.sessions_counted,
+                pr.public_slug,
+                pr.display_name,
+                pr.public_dims
+           from per_user p
+           left join paxel_profile_prefs pr on pr.user_hash = p.user_hash
+          order by p.mean_score desc, p.sessions_counted desc, p.user_hash asc
+          limit $2`,
+        [since, limit],
+      )
+    ).rows;
+    return rows.map((r) =>
+      shapeLeaderboardRow({
+        user_hash: r.user_hash,
+        display_name: r.display_name || r.user_label || shortHash(r.user_hash),
+        public_slug: r.public_slug,
+        public_dims: r.public_dims ?? [],
+        dim_scores: r.dim_scores,
+        mean_score: r.mean_score,
+        sessions_counted: r.sessions_counted,
+      }),
+    );
+  });
+}
+
+function shapeLeaderboardRow(r: {
+  user_hash: string;
+  display_name: string;
+  public_slug: string | null;
+  public_dims: string[];
+  dim_scores: Record<string, number> | null;
+  mean_score: number;
+  sessions_counted: number;
+}): LeaderboardRow {
+  const dimScores: Partial<Record<Dimension, number>> = {};
+  for (const [k, v] of Object.entries(r.dim_scores ?? {})) {
+    if (DIMENSION_SET.has(k)) dimScores[k as Dimension] = clampScore(Number(v));
+  }
+  return {
+    userHash: r.user_hash,
+    displayName: r.display_name || shortHash(r.user_hash),
+    publicSlug: r.public_slug,
+    publicDims: (r.public_dims ?? []).filter((d): d is Dimension => DIMENSION_SET.has(d)),
+    dimScores,
+    meanScore: clampScore(Number(r.mean_score)),
+    sessions: Number(r.sessions_counted) || 0,
+  };
+}
+
+function clampScore(n: number): number {
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.min(100, Math.round(n)));
 }
 
 /** Formats cents as a USD dollar amount. */

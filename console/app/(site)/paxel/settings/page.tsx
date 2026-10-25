@@ -80,7 +80,9 @@ export default async function PaxelSettings() {
               ticked. No tokens, cost, projects or messages are shown there.
             </p>
             <p className="muted small">
-              To stop sharing, untick every dimension and save, or press "Turn off public profile".
+              You'll also appear on the <a href="/leaderboard">public leaderboard</a> once your
+              scores land. To stop sharing, untick every dimension and save, or press "Turn off
+              public profile".
             </p>
           </div>
         </section>
