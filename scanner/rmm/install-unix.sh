@@ -134,13 +134,14 @@ TMR
 else
   # Fallback: cron. Pick a random minute inside the first 15 min of the hour
   # at install time (fleet jitter), and sleep up to two hours inside the
-  # job (per-run jitter). The pipe through sh gives us $RANDOM.
+  # job (per-run jitter). cron hands the command to /bin/sh, which on
+  # Debian/Ubuntu is Dash and has no $RANDOM, so draw the per-run offset
+  # from awk's rand() instead.
   minute=$(awk 'BEGIN{srand(); print int(rand()*15)}')
   cat > /etc/cron.d/zinloop <<CRON
 # Zinloop daily scan. The sleep is per-run jitter so a fleet spreads its
-# uploads across a 2-hour window around 10:00 local. The percent is
-# escaped so cron(5) doesn't treat it as the start of stdin for the job.
-$minute 10 * * * root /bin/sh -c 'sleep \$((RANDOM \% 7200)); $bin --all-users --upload $url/api/scans --token-file $token_file' >/dev/null 2>&1
+# uploads across a 2-hour window around 10:00 local.
+$minute 10 * * * root /bin/sh -c 'sleep \$(awk "BEGIN{srand(); print int(rand()*7200)}"); $bin --all-users --upload $url/api/scans --token-file $token_file' >/dev/null 2>&1
 CRON
   chmod 644 /etc/cron.d/zinloop
   echo "Daily scan scheduled (cron, 10:$minute local +/- random up to 2h)."

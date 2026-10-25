@@ -198,10 +198,14 @@ export async function checkChangeAlerts(mspId: string, clientId: string, now = n
         });
         if (await enqueue(db, mspId, `changes:${clientId}:${day}:${p.id}`, "alert", p, mail, unsub)) n++;
       }
-      // Mark the picked rows only if the digest actually went out to at least
-      // one recipient. If every recipient was deduped (today's digest already
-      // went out), leave the rows unmarked so they appear in tomorrow's run.
-      if (n > 0) {
+      // Mark the picked rows only if the digest went out to EVERY current
+      // eligible recipient. If someone was deduped (today's digest already
+      // reached them) while another new recipient got a fresh send, we leave
+      // the rows unmarked so the deduped recipient still sees them in the
+      // next day's digest. The next day's digest may re-notify the new
+      // recipient about these rows (same content, different day key), which
+      // is the acceptable price of never silently dropping a change.
+      if (n > 0 && n === people.length) {
         const ids = rows.map((r) => r.id);
         await db.query(
           "update scan_changes set notified_at = $2 where id = any($1::uuid[]) and notified_at is null",
