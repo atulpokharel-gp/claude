@@ -88,6 +88,23 @@ Three views sit on top of these:
 - **Company** — anonymous team aggregates on `/app/paxel/team`. No
   individual rows, no names.
 
+## Developer identity claim
+
+Only the developer whose laptop reports a `user_hash` can edit the public
+profile prefs for that `user_hash`. Flow:
+
+1. First `zinloop paxel` run writes `~/.zinloop/paxel-claim-token` (0600,
+   32 random bytes, base64url).
+2. Each run uploads `{ userHash, claimToken }` under `claim:` in the
+   JSON. The console stores only the SHA-256 of the token in
+   `paxel_user_claims`.
+3. The CLI prints a one-time URL in the shape
+   `https://zinloop.com/paxel/claim?token=…`. Opening it in a browser
+   sets a signed `paxel_dev` cookie bound to that user_hash.
+4. The share form on `/portal/paxel/dev/{user}` is only shown when a
+   signed cookie's `user_hash` matches the page's. Other viewers see
+   the current URL read-only.
+
 ## Why inside Zinloop (not a separate app)
 
 Paxel reuses the Zinloop account model, upload tokens, device table, and

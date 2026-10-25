@@ -1,6 +1,19 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { allTokens, DIMENSIONS, fmtTokens, fmtUsd, newPublicSlug, parseUpload, PaxelError, rollup, type NormalBucket } from "./paxel.ts";
+import {
+  allTokens,
+  DIMENSIONS,
+  fmtTokens,
+  fmtUsd,
+  newClaimToken,
+  newPublicSlug,
+  parseUpload,
+  PaxelError,
+  readDevIdentity,
+  rollup,
+  signDevIdentity,
+  type NormalBucket,
+} from "./paxel.ts";
 
 const USER_A = "aa".repeat(16); // 32 hex
 const USER_B = "bb".repeat(16);
@@ -263,6 +276,58 @@ test("newPublicSlug returns a 14+ char lowercase alnum string", () => {
   }
   // Different slugs each call.
   assert.notEqual(newPublicSlug(), newPublicSlug());
+});
+
+test("parseUpload reads a claim block", () => {
+  const token = newClaimToken();
+  const got = parseUpload({
+    hostname: "h",
+    buckets: [],
+    claim: { userHash: USER_A, claimToken: token },
+  });
+  assert.ok(got.claim);
+  assert.equal(got.claim?.userHash, USER_A);
+  assert.equal(got.claim?.claimToken, token);
+});
+
+test("parseUpload rejects malformed claim shapes", () => {
+  const got = parseUpload({
+    hostname: "h",
+    buckets: [],
+    claim: { userHash: USER_A, claimToken: "too-short" },
+  });
+  assert.equal(got.claim, null);
+  const got2 = parseUpload({
+    hostname: "h",
+    buckets: [],
+    claim: { userHash: "not-hex", claimToken: newClaimToken() },
+  });
+  assert.equal(got2.claim, null);
+});
+
+test("sign+readDevIdentity roundtrips with a real APP_SECRET", () => {
+  // Set a secret for this test only.
+  const prev = process.env.APP_SECRET;
+  process.env.APP_SECRET = Buffer.alloc(32, "k").toString("base64");
+  try {
+    const id = { mspId: "aaaa", clientId: "bbbb", userHash: USER_A };
+    const token = signDevIdentity(id);
+    const got = readDevIdentity(token);
+    assert.deepEqual(got, id);
+    // A forged token (last char flipped) fails verification.
+    const bad = token.slice(0, -1) + (token.endsWith("A") ? "B" : "A");
+    assert.equal(readDevIdentity(bad), null);
+  } finally {
+    if (prev === undefined) delete process.env.APP_SECRET;
+    else process.env.APP_SECRET = prev;
+  }
+});
+
+test("newClaimToken produces 43+ base64url chars", () => {
+  for (let i = 0; i < 10; i++) {
+    const t = newClaimToken();
+    assert.match(t, /^[A-Za-z0-9_-]{43,}$/);
+  }
 });
 
 test("fmtUsd shows two decimals under $1000 and whole dollars above", () => {

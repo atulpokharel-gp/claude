@@ -2,10 +2,10 @@
 // device the MSP sees.
 
 import type { Metadata } from "next";
-import Link from "next/link";
 import { hasDatabase } from "@/lib/db.ts";
 import { requireSession } from "@/lib/session.ts";
-import { allTokens, companyRollup, fmtTokens, fmtUsd, type GroupTotal, type Rollup } from "@/lib/paxel.ts";
+import { allTokens, companyRollup, fmtTokens, fmtUsd, type Rollup } from "@/lib/paxel.ts";
+import { GroupTable, RangePicker } from "./_shared.tsx";
 
 export const metadata: Metadata = { title: "Paxel — AI coding habits" };
 export const dynamic = "force-dynamic";
@@ -107,62 +107,3 @@ function Tile({ label, value, sub }: { label: string; value: string; sub?: strin
   );
 }
 
-export function GroupTable({
-  rows,
-  nameHeader,
-  emptyMsg,
-  linkBase,
-}: {
-  rows: GroupTotal<string>[];
-  nameHeader: string;
-  emptyMsg: string;
-  linkBase?: string;
-}) {
-  if (rows.length === 0) {
-    return <div className="panel-body"><p className="empty">{emptyMsg}</p></div>;
-  }
-  return (
-    <div className="panel-body">
-      <table className="data">
-        <thead>
-          <tr>
-            <th>{nameHeader}</th>
-            <th className="num">Tokens</th>
-            <th className="num">Messages</th>
-            <th className="num">Est. cost</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r) => (
-            <tr key={r.key}>
-              <td>
-                {linkBase ? <Link href={`${linkBase}/${encodeURIComponent(r.key)}`}>{r.label}</Link> : r.label}
-              </td>
-              <td className="num">{fmtTokens(allTokens(r.totals))}</td>
-              <td className="num">{fmtTokens(r.totals.messages)}</td>
-              <td className="num">{fmtUsd(r.totals.costUsdCents)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-export function RangePicker({ days, base }: { days: number; base: string }) {
-  const choices = [7, 30, 90];
-  return (
-    <div className="range-picker">
-      {choices.map((d) => (
-        <Link
-          key={d}
-          href={d === 30 ? base : `${base}?days=${d}`}
-          className={d === days ? "range-on" : ""}
-          aria-current={d === days ? "page" : undefined}
-        >
-          {d} days
-        </Link>
-      ))}
-    </div>
-  );
-}

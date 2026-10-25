@@ -4,8 +4,10 @@
 // subcommand and computes personal and company-wide rollups. No prompts,
 // no code, no file paths — only counts and labels.
 
+import { createHash, randomBytes } from "node:crypto";
 import { lookup, withTenant, type Tenant } from "./db.ts";
 import { tokenHash } from "./secrets.ts";
+import { sign, verifySigned } from "./crypto.ts";
 
 export const KNOWN_TOOLS = ["claude-code", "codex", "aider", "cursor", "copilot"] as const;
 export type Tool = (typeof KNOWN_TOOLS)[number];
@@ -67,6 +69,12 @@ export interface PaxelUpload {
   scannedAt?: string;
   buckets: PaxelBucket[];
   profiles?: PaxelProfile[];
+  claim?: PaxelClaim;
+}
+
+export interface PaxelClaim {
+  userHash: string;
+  claimToken: string; // base64url, >= 32 bytes
 }
 
 export interface PaxelProfile {
@@ -128,6 +136,7 @@ export function parseUpload(raw: unknown): {
   os: string;
   buckets: NormalBucket[];
   profiles: NormalProfile[];
+  claim: NormalClaim | null;
 } {
   if (!raw || typeof raw !== "object") throw new PaxelError("Body must be a JSON object.");
   const r = raw as Record<string, unknown>;
@@ -155,7 +164,24 @@ export function parseUpload(raw: unknown): {
       if (n) profiles.push(n);
     }
   }
-  return { hostname, os, buckets, profiles };
+  const claim = normaliseClaim(r.claim);
+  return { hostname, os, buckets, profiles, claim };
+}
+
+function normaliseClaim(c: unknown): NormalClaim | null {
+  if (!c || typeof c !== "object") return null;
+  const r = c as Record<string, unknown>;
+  const userHash = trim(r.userHash, 64).toLowerCase();
+  if (!HASH_RE.test(userHash)) return null;
+  const token = trim(r.claimToken, 128);
+  // base64url, 43+ chars → >= 32 bytes.
+  if (!/^[A-Za-z0-9_-]{43,128}$/.test(token)) return null;
+  return { userHash, claimToken: token };
+}
+
+export interface NormalClaim {
+  userHash: string;
+  claimToken: string;
 }
 
 export interface NormalProfile {
@@ -286,8 +312,8 @@ export async function ingestPaxel(
     [tokenHash(token)],
   );
   if (!owner) throw new PaxelError("Upload token not recognized or revoked.", 401);
-  const { hostname, os, buckets, profiles } = parseUpload(raw);
-  if (buckets.length === 0 && profiles.length === 0) {
+  const { hostname, os, buckets, profiles, claim } = parseUpload(raw);
+  if (buckets.length === 0 && profiles.length === 0 && !claim) {
     // Nothing to store, but create/update the device so last_seen moves.
     return withTenant(owner.msp_id, async (db) => {
       const device = await upsertDevice(db, owner.msp_id, owner.client_id, hostname, os, now);
@@ -386,6 +412,23 @@ export async function ingestPaxel(
         ],
       );
       profileRows++;
+    }
+    if (claim) {
+      // Hash the claim token the same way upload tokens are hashed.
+      const h = createHash("sha256").update(claim.claimToken).digest();
+      // On conflict (user_hash primary key) refresh the hash and the
+      // (msp_id, client_id) binding so a device re-install rebinds, but
+      // only within the same tenant: a different tenant's user_hash
+      // cannot be moved because RLS filters by current_msp.
+      await db.query(
+        `insert into paxel_user_claims (user_hash, msp_id, client_id, claim_hash)
+         values ($1, $2, $3, $4)
+         on conflict (user_hash) do update set
+           msp_id     = excluded.msp_id,
+           client_id  = excluded.client_id,
+           claim_hash = excluded.claim_hash`,
+        [claim.userHash, owner.msp_id, owner.client_id, h],
+      );
     }
     return { deviceId, inserted, updated, profileRows };
   });
@@ -882,6 +925,56 @@ export function fmtTokens(n: number): string {
   if (n < 1_000_000) return `${(n / 1_000).toFixed(n < 10_000 ? 1 : 0)}K`;
   if (n < 1_000_000_000) return `${(n / 1_000_000).toFixed(n < 10_000_000 ? 1 : 0)}M`;
   return `${(n / 1_000_000_000).toFixed(1)}B`;
+}
+
+// --- claim flow ------------------------------------------------------------
+
+/** Cookie name for a developer identity gained via /paxel/claim. */
+export const PAXEL_DEV_COOKIE = "paxel_dev";
+const CLAIM_TTL_DAYS = 180;
+
+export interface DevIdentity {
+  mspId: string;
+  clientId: string;
+  userHash: string;
+}
+
+/** Resolve a raw claim token to the dev it binds. Returns null for unknown. */
+export async function resolveClaim(token: string): Promise<DevIdentity | null> {
+  if (!/^[A-Za-z0-9_-]{43,128}$/.test(token)) return null;
+  const h = createHash("sha256").update(token).digest();
+  const row = await lookup<{ msp_id: string; client_id: string; user_hash: string }>(
+    "select * from paxel_resolve_claim($1)",
+    [h],
+  );
+  if (!row) return null;
+  // Stamp claimed_at on first claim; doesn't block repeat visits (handy
+  // after a wipe), just records when the dev first bound the token.
+  await withTenant(row.msp_id, (db) =>
+    db.query("update paxel_user_claims set claimed_at = now() where user_hash = $1 and claimed_at is null", [
+      row.user_hash,
+    ]),
+  );
+  return { mspId: row.msp_id, clientId: row.client_id, userHash: row.user_hash };
+}
+
+/** Signed value stored in the paxel_dev cookie. */
+export function signDevIdentity(id: DevIdentity, now = Date.now()): string {
+  return sign("paxel_dev", id, CLAIM_TTL_DAYS * 24 * 3600, now);
+}
+
+/** Read + verify the signed cookie. Null on anything that doesn't match. */
+export function readDevIdentity(token: string | undefined, now = Date.now()): DevIdentity | null {
+  return verifySigned<DevIdentity>("paxel_dev", token, now);
+}
+
+export function paxelDevCookieMaxAge(): number {
+  return CLAIM_TTL_DAYS * 24 * 3600;
+}
+
+/** Random token used by the scanner for a laptop. 32 bytes, base64url. */
+export function newClaimToken(): string {
+  return randomBytes(32).toString("base64url");
 }
 
 /** Formats cents as a USD dollar amount. */

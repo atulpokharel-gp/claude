@@ -7,6 +7,7 @@
 // viewer sees the public URL once the slug is set.
 
 import type { Metadata } from "next";
+import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 import { requireViewer } from "@/lib/session.ts";
 import {
@@ -17,7 +18,9 @@ import {
   fmtUsd,
   getPrefs,
   type GroupTotal,
+  PAXEL_DEV_COOKIE,
   type ProfilePrefs,
+  readDevIdentity,
   userProfile,
   userRollup,
 } from "@/lib/paxel.ts";
@@ -41,11 +44,14 @@ export default async function PortalDev({
   const userHash = decodeURIComponent(user).toLowerCase();
   if (!/^[0-9a-f]{16,64}$/.test(userHash)) return notFound();
   const tenant = { mspId: s.mspId, clientId: s.clientId };
-  const [data, profile, prefs] = await Promise.all([
+  const [data, profile, prefs, jar] = await Promise.all([
     userRollup(tenant, userHash, days),
     userProfile(tenant, userHash, days),
     getPrefs(tenant, userHash),
+    cookies(),
   ]);
+  const dev = readDevIdentity(jar.get(PAXEL_DEV_COOKIE)?.value);
+  const isOwner = Boolean(dev && dev.mspId === s.mspId && dev.userHash === userHash);
   const label = data.byUser[0]?.label ?? profile?.userLabel ?? userHash.slice(0, 10);
   return (
     <>
@@ -73,7 +79,11 @@ export default async function PortalDev({
         />
       </section>
 
-      <ShareForm userHash={userHash} initial={prefs} displayName={label} />
+      {isOwner ? (
+        <ShareForm userHash={userHash} initial={prefs} displayName={label} />
+      ) : (
+        <ReadOnlyShareNotice slug={prefs?.publicSlug ?? null} dims={prefs?.publicDims ?? []} />
+      )}
 
       <section className="panel">
         <div className="panel-head"><h2>Tools</h2></div>
@@ -138,6 +148,30 @@ function ShareForm({
           </p>
         ) : (
           <p className="muted small">No public URL yet. Tick at least one dimension and save to publish.</p>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function ReadOnlyShareNotice({ slug, dims }: { slug: string | null; dims: string[] }) {
+  return (
+    <section className="panel">
+      <div className="panel-head"><h2>Share a public profile</h2></div>
+      <div className="panel-body">
+        <p className="muted small">
+          Only the developer this profile belongs to can edit the share settings. On your own laptop,
+          run <code>zinloop paxel</code> once — the CLI prints a one-time URL in the shape{" "}
+          <code>https://zinloop.com/paxel/claim?token=…</code>. Visit that URL in this browser, then
+          this page will show the form.
+        </p>
+        {slug ? (
+          <p className="muted small">
+            Current public URL: <a href={`/p/${slug}`}>/p/{slug}</a> — showing {dims.length} dimension
+            {dims.length === 1 ? "" : "s"}.
+          </p>
+        ) : (
+          <p className="muted small">No public profile set yet.</p>
         )}
       </div>
     </section>
