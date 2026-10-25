@@ -173,3 +173,27 @@
 /* "Sign in with Microsoft" under the password form. */
 .auth .sso { margin-top: 12px; }
 .auth .sso .zbtn { width: 100%; }
+
+/* Free AI connector check (/check) */
+.checker textarea { font-family: var(--z-mono); width: 100%; min-height: 240px; padding: 14px; border: 2px solid var(--z-ink); border-radius: 8px; background: var(--z-card); color: var(--z-ink); font-size: 14px; line-height: 1.5; resize: vertical; }
+.checker details summary { cursor: pointer; }
+.checker .where { display: grid; gap: 8px; margin: 12px 0 0; }
+.checker .where dt { font-weight: 600; color: var(--z-ink); }
+.checker .where dd { margin: 0; overflow-wrap: anywhere; }
+.result { gap: 20px; }
+.grade-row { display: flex; gap: 24px; align-items: center; flex-wrap: wrap; }
+.grade { display: inline-flex; align-items: center; justify-content: center; width: 96px; height: 96px; border-radius: 16px; color: #fff; font-family: var(--z-display); font-weight: 900; font-size: 64px; flex: none; }
+.grade-A { background: #2f7d4f; }
+.grade-B { background: #5b8a2f; }
+.grade-C { background: #b7791f; }
+.grade-D { background: #c05621; }
+.grade-F { background: #b42318; }
+.result .servers { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 18px; }
+.result .servers li { border-top: 1px solid var(--z-line); padding-top: 14px; display: flex; flex-direction: column; gap: 10px; }
+.result .item { display: flex; gap: 12px; align-items: flex-start; }
+.result .item b, .result .item .body, .result .item .fix { display: block; }
+.result .item .fix { font-size: 14px; color: var(--z-muted); margin-top: 4px; }
+.sev.low { background: var(--z-code); color: var(--z-body); }
+.sev.ok { background: #dcefe3; color: #1f5c38; }
+@media (prefers-color-scheme: dark) { .site .sev.ok { background: #173a26; color: #9ad9b1; } }
+.checker .zfield > span { font-weight: 600; }
