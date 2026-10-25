@@ -53,8 +53,17 @@ in `vercel.json`).
 | `SMTP_URL`, `MAIL_FROM` | Your mail service, as in deploy.md |
 | `M365_*`, `SSO_*`, `SCAN_KEEP_DAYS`, `DOWNLOAD_BASE_URL` | Same as deploy.md |
 
-3. Under **Settings → Domains**, add `app.zinloop.com` and create the DNS
-   record Vercel shows (a CNAME to Vercel) wherever the domain's DNS lives.
+3. Under **Settings → Domains**, add every domain the console answers on
+   (e.g. both `zinloop.com` and `app.zinloop.com` if you use the subdomain),
+   and create the DNS record Vercel shows (a CNAME to Vercel) wherever the
+   domain's DNS lives. `CONSOLE_URL` must match a domain actually attached
+   here, or the RMM install script's `/download/...` links will 404.
+4. If the DNS sits behind **Cloudflare** with the orange-cloud proxy on,
+   set **SSL/TLS → Overview → Encryption mode** to **Full (strict)**. The
+   default **Flexible** mode talks HTTP to Vercel, Vercel 308-redirects to
+   HTTPS, and the browser sees an infinite `308 → same URL` loop. If you'd
+   rather not use the Cloudflare proxy, flip the DNS record to grey-cloud
+   (DNS-only) so requests hit Vercel directly.
 
 Every push to `main` now deploys to production. The `vercel-build` script
 migrates the database first and sets the `zinloop_app` password, so a deploy
