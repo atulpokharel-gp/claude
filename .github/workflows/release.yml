@@ -136,7 +136,15 @@ jobs:
           # Apple notarizes a zip; a bare binary can't be stapled, so Gatekeeper
           # checks the notarization online the first time it runs.
           ditto -c -k dist "$work/notarize.zip"
-          xcrun notarytool submit "$work/notarize.zip" --key "$work/key.p8" --key-id "$API_KEY_ID" --issuer "$API_ISSUER" --wait
+          # notarytool exits 0 even when Apple rejects the files, so check the status.
+          result=$(xcrun notarytool submit "$work/notarize.zip" --key "$work/key.p8" --key-id "$API_KEY_ID" --issuer "$API_ISSUER" --wait --output-format json)
+          status=$(printf '%s' "$result" | plutil -extract status raw -o - -)
+          if [ "$status" != "Accepted" ]; then
+            echo "::error::Notarization status: $status"
+            id=$(printf '%s' "$result" | plutil -extract id raw -o - -)
+            xcrun notarytool log "$id" --key "$work/key.p8" --key-id "$API_KEY_ID" --issuer "$API_ISSUER" || true
+            exit 1
+          fi
           security delete-keychain "$keychain"
           rm -rf "$work"
       - name: Unsigned
