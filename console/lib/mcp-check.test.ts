@@ -131,3 +131,8 @@ test("rejects tampered share links", () => {
   assert.equal(parseShare({ g: "A", h: ["1", "2"], m: "0", l: "0", n: "1" }), null);
   assert.equal(parseShare({ g: "A<script>", h: "0", m: "0", l: "0", n: "1" }), null);
 });
+
+test("a password with a stray % is still flagged, not a crash", () => {
+  assert.equal(ids(srv({ command: "/bin/x", env: { DATABASE_URL: "postgres://app:pass%word@db.example.com/app" } })), "SECRET_IN_CONFIG");
+  assert.equal(ids(srv({ command: "/bin/x", args: ["postgres://app:pass%FF@db.example.com/app"] })), "SECRET_IN_CONFIG");
+});

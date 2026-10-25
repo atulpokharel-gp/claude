@@ -91,17 +91,24 @@ async function main() {
   const outDir = outIdx > 0 ? process.argv[outIdx + 1] : "research-out";
   const seen = new Set<string>(); // file blob SHAs, kept in memory only, to skip copies
   const files: FileStats[] = [];
+  let skippedFetches = 0; // single files that could not be downloaded
   for (const q of queries) {
     for (let page = 1; page <= 10; page++) {
       const res = await gh(`https://api.github.com/search/code?q=${encodeURIComponent(q)}&per_page=100&page=${page}`, token);
-      if (!res.ok) break;
+      // Code search returns 422 past its last page; anything else is a failure,
+      // and a partial sample must never be published as a full one.
+      if (res.status === 422) break;
+      if (!res.ok) throw new Error(`GitHub search failed (${res.status}) for "${q}" page ${page}; no report written`);
       const body = (await res.json()) as { items: { sha: string; url: string }[] };
       if (!body.items?.length) break;
       for (const item of body.items) {
         if (seen.has(item.sha)) continue;
         seen.add(item.sha);
         const raw = await gh(item.url, token, "application/vnd.github.raw+json");
-        if (!raw.ok) continue;
+        if (!raw.ok) {
+          skippedFetches++;
+          continue;
+        }
         const s = statsFor(await raw.text());
         if (s) files.push(s);
       }
@@ -109,7 +116,7 @@ async function main() {
       await new Promise((r) => setTimeout(r, 6500)); // stay under the search limit
     }
   }
-  const summary = { ...summarize(files), queries, collected: new Date().toISOString() };
+  const summary = { ...summarize(files), skippedFetches, queries, collected: new Date().toISOString() };
   mkdirSync(outDir, { recursive: true });
   writeFileSync(join(outDir, "summary.json"), JSON.stringify(summary, null, 2));
   console.log(JSON.stringify(summary, null, 2));

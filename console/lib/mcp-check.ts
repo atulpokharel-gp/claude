@@ -219,7 +219,15 @@ export function urlHasCredential(v: string): boolean {
   const u = parseUrl(v);
   if (!u || !u.host) return false;
   if (v.replace(secretValueAll, "") !== v) return true;
-  if (u.password && isLiteral(decodeURIComponent(u.password))) return true;
+  if (u.password) {
+    let pw = u.password;
+    try {
+      pw = decodeURIComponent(pw);
+    } catch {
+      // Malformed escapes (pass%word): still a literal password.
+    }
+    if (isLiteral(pw)) return true;
+  }
   for (const [k, val] of u.searchParams) {
     if (secretKeyName.test(k) && isLiteral(val)) return true;
   }
