@@ -64,7 +64,8 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
-    # Every 5 minutes: send queued emails. Once a day: delete expired sessions
+    # Every 5 minutes: send queued emails. Every hour: fire scheduled client
+    # reports whose next_run_at has passed. Once a day: delete expired sessions
     # and old scans, re-check Microsoft 365, save each client's risk counts for
     # the trend chart, and queue the weekly summary (one per person per week).
     command: >
@@ -72,6 +73,9 @@ services:
                if [ $$((i % 288)) -eq 0 ]; then
                  npm run --silent db:cleanup; npm run --silent m365:sync;
                  npm run --silent db:snapshot; npm run --silent mail:weekly;
+               fi;
+               if [ $$((i % 12)) -eq 0 ]; then
+                 npm run --silent mail:schedules;
                fi;
                npm run --silent mail:send; i=$$((i + 1)); sleep 300;
              done'

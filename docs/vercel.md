@@ -8,7 +8,7 @@ console; everything Vercel can't run lives elsewhere:
 | Console (website + app) | `console` container | Vercel project, root directory `console` |
 | Postgres | `db` container | **Neon** (managed Postgres; Supabase works too) |
 | Migrations | `migrate` container | Vercel's production build runs them first ([vercel-migrate.ts](../console/scripts/vercel-migrate.ts)); a failed migration stops the deploy |
-| Email every 5 min, daily jobs | `maintenance` container | **Vercel Cron** calling `/api/cron/mail` and `/api/cron/daily?job=…` (one schedule per daily job) ([vercel.json](../console/vercel.json)) |
+| Email every 5 min, daily jobs | `maintenance` container | **Vercel Cron** calling `/api/cron/mail`, `/api/cron/schedules` (hourly), and `/api/cron/daily?job=…` (one schedule per daily job) ([vercel.json](../console/vercel.json)) |
 | Nightly backups | `backup` container | Neon's point-in-time restore, plus a nightly encrypted copy from GitHub Actions ([vercel-backup.yml](../.github/workflows/vercel-backup.yml)) |
 | HTTPS | Caddy | Vercel |
 

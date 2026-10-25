@@ -57,6 +57,19 @@ import {
   UploadError,
 } from "./store.ts";
 import { fakeGraph, TENANT } from "./m365-fake.ts";
+import { getPolicy, setPolicy } from "./policies.ts";
+import {
+  approveRemediation, cancelRemediation, listRemediations, markApplied, markFailed,
+  proposeRemediation, rejectRemediation,
+} from "./remediation.ts";
+import { listSchedules, nextRunAt, removeSchedule, setSchedule } from "./schedules.ts";
+import { fireDueSchedules } from "../scripts/schedules.ts";
+import {
+  createPsaIntegration, getPsaIntegration, listPsaIntegrations, openTicketForFinding, removePsaIntegration,
+} from "./psa.ts";
+import {
+  createRmmIntegration, getRmmIntegration, listDeviceLinks, listRmmIntegrations, removeRmmIntegration, syncClientDevices,
+} from "./rmm.ts";
 
 const adminUrl = process.env.TEST_DATABASE_ADMIN_URL;
 process.env.APP_SECRET ??= randomBytes(32).toString("base64");
@@ -711,5 +724,254 @@ describe("database", { skip: !adminUrl && "set TEST_DATABASE_ADMIN_URL to run" }
     const r = await syncM365(a.mspId, id, g.fetch);
     assert.ok("error" in r && /Application not found/.test(r.error));
     assert.match((await getClient(a.mspId, id))!.m365!.lastError!, /Application not found/);
+  });
+
+  test("per-client policies default sensibly, are tenant-isolated, and reject bad input", async () => {
+    const mine = await createClient(a.mspId, { name: "Policy Co" });
+    const theirs = await createClient(b.mspId, { name: "Theirs" });
+    const def = await getPolicy(a.mspId, mine);
+    assert.equal(def.autoApplyApproved, true);
+    assert.equal(def.ticketThreshold, "high");
+    assert.deepEqual(def.allowedPublishers, []);
+
+    const saved = await setPolicy(a.mspId, mine, {
+      ticketThreshold: "medium",
+      autoApplyApproved: false,
+      blockedPublishers: ["Evil.AI", "evil.ai", "x"],
+      reportRecipients: ["sales@customer.example", "duplicate@x.example", "duplicate@x.example"],
+    });
+    assert.equal(saved.ticketThreshold, "medium");
+    assert.deepEqual(saved.blockedPublishers, ["evil.ai", "x"]);
+    assert.equal(saved.reportRecipients.length, 2);
+    assert.equal(saved.autoApplyApproved, false);
+
+    // Merge semantics: a later update that only changes threshold keeps the lists.
+    const merged = await setPolicy(a.mspId, mine, { ticketThreshold: "low" });
+    assert.deepEqual(merged.blockedPublishers, ["evil.ai", "x"]);
+    assert.equal(merged.ticketThreshold, "low");
+
+    // Another MSP's row is invisible and refuses writes.
+    await assert.rejects(setPolicy(a.mspId, theirs, { ticketThreshold: "high" }), /wasn't found/);
+    const theirsPolicy = await getPolicy(b.mspId, theirs);
+    assert.equal(theirsPolicy.ticketThreshold, "high");
+  });
+
+  test("remediations: technician proposes, owner approves, apply + reject + cancel transitions", async () => {
+    const mine = await createClient(a.mspId, { name: "Fix Co" });
+    const ownerSession = (await checkSession(await signIn("admin@a.example", "correct horse battery").then((r) => r.kind === "session" ? r.token : "")))!;
+
+    // Add a technician.
+    const techLink = await createInvite(a.mspId, ownerSession.userId, "tech+r@a.example", null, "technician");
+    const techToken = await acceptInvite(techLink, "Tech", "another long password");
+    const tech = (await checkSession(techToken))!;
+    assert.equal(tech.role, "technician");
+
+    // Policy with auto-apply off, so a propose stays pending.
+    await setPolicy(a.mspId, mine, { autoApplyApproved: false });
+
+    const r = await proposeRemediation(tech, {
+      clientId: mine, action: "revoke_m365_app",
+      payload: { agentId: "m365-x", appName: "Risky AI" },
+      summary: "Revoke Risky AI from Fix Co",
+      findingKey: "M365_ORG_WIDE_GRANT|m365-x",
+    });
+    assert.equal(r.status, "pending");
+    assert.equal(r.requestedByEmail, "tech+r@a.example");
+
+    // Technician can't approve or apply.
+    await assert.rejects(approveRemediation(tech, r.id), /owner or member/);
+    await assert.rejects(markApplied(a.mspId, r.id, { userId: tech.userId, email: tech.email }), /isn't approved/);
+
+    // A duplicate pending remediation is refused.
+    await assert.rejects(proposeRemediation(tech, { clientId: mine, action: "revoke_m365_app", payload: {}, summary: "dup", findingKey: "M365_ORG_WIDE_GRANT|m365-x" }), /already exists/);
+
+    // Owner approves.
+    const approved = await approveRemediation(ownerSession, r.id);
+    assert.equal(approved.status, "approved");
+    assert.equal(approved.decidedByEmail, "admin@a.example");
+
+    // Approved can be applied; applied is terminal.
+    const applied = await markApplied(a.mspId, r.id, { userId: ownerSession.userId, email: ownerSession.email });
+    assert.equal(applied.status, "applied");
+    await assert.rejects(markApplied(a.mspId, r.id, { userId: ownerSession.userId, email: ownerSession.email }), /isn't approved/);
+
+    // Reject path.
+    const r2 = await proposeRemediation(tech, { clientId: mine, action: "rotate_secret", payload: {}, summary: "Rotate", findingKey: "SECRET_IN_CONFIG|k" });
+    const rejected = await rejectRemediation(ownerSession, r2.id);
+    assert.equal(rejected.status, "rejected");
+
+    // Cancel path: a technician can cancel their own pending.
+    const r3 = await proposeRemediation(tech, { clientId: mine, action: "custom", payload: {}, summary: "Custom", findingKey: "custom-1" });
+    await assert.rejects(cancelRemediation(tech, r.id), /pending/); // not pending any more
+    const cancelled = await cancelRemediation(tech, r3.id);
+    assert.equal(cancelled.status, "cancelled");
+
+    // Auto-apply policy skips 'pending'.
+    await setPolicy(a.mspId, mine, { autoApplyApproved: true });
+    const r4 = await proposeRemediation(ownerSession, { clientId: mine, action: "custom", payload: {}, summary: "Auto", findingKey: "custom-2" });
+    assert.equal(r4.status, "approved");
+
+    // Mark failed also logs.
+    const r5 = await proposeRemediation(ownerSession, { clientId: mine, action: "custom", payload: {}, summary: "Fail", findingKey: "custom-3" });
+    await markFailed(a.mspId, r5.id, "boom", { userId: ownerSession.userId, email: ownerSession.email });
+    assert.equal((await listRemediations(a.mspId, { status: "failed" })).length, 1);
+
+    // The audit log sees every transition.
+    const actions = (await listAudit(a.mspId)).map((e) => e.action);
+    for (const a of ["remediation_proposed", "remediation_approved", "remediation_applied",
+                     "remediation_rejected", "remediation_cancelled", "remediation_failed"]) {
+      assert.ok(actions.includes(a as never), a);
+    }
+
+    // Other MSP sees nothing.
+    assert.deepEqual(await listRemediations(b.mspId), []);
+  });
+
+  test("report schedules: setSchedule picks next_run_at and the cron queues emails", async () => {
+    process.env.CONSOLE_URL = "https://app.example";
+    const owner = (await checkSession(await signUp({ name: "Sched", mspName: "Sched IT", email: "sched@sched.example", password: "long enough password" })))!;
+    await setPlan(ownerUrl, "sched@sched.example", "partner");
+    const client = await createClient(owner.mspId, { name: "Scheduled Co" });
+    const token = await createUploadToken(owner.mspId, client, "");
+    await ingestScan(token, sample);
+
+    const now = new Date("2026-10-26T05:00:00Z"); // Monday 05:00 UTC
+    const sched = await setSchedule(owner, {
+      clientId: client, frequency: "weekly", dayOfPeriod: 1, hourUtc: 6,
+      recipients: ["ciso@customer.example"],
+    }, null, now);
+    assert.equal(new Date(sched.nextRunAt).toISOString(), "2026-10-26T06:00:00.000Z");
+
+    // Nothing fires before due.
+    assert.deepEqual(await fireDueSchedules(ownerUrl, new Date("2026-10-26T05:30:00Z")), { ran: 0, queued: 0 });
+
+    // At due time, exactly one email is queued per listed recipient.
+    const r1 = await fireDueSchedules(ownerUrl, new Date("2026-10-26T06:30:00Z"));
+    assert.equal(r1.ran, 1);
+    assert.equal(r1.queued, 1);
+    const inbox = await withTenant(owner.mspId, async (db) =>
+      (await db.query<{ to_email: string; subject: string }>("select to_email, subject from outbox where to_email = 'ciso@customer.example'")).rows,
+    );
+    assert.equal(inbox.length, 1);
+    assert.match(inbox[0].subject, /Weekly AI security report/);
+
+    // next_run_at rolls forward.
+    const after = (await listSchedules(owner.mspId))[0];
+    assert.equal(new Date(after.nextRunAt).toISOString(), "2026-11-02T06:00:00.000Z");
+
+    // Default recipients: team members with weekly_email on, plus the client policy's external contacts.
+    await setPolicy(owner.mspId, client, { reportRecipients: ["board@customer.example"] });
+    await setSchedule(owner, { clientId: client, frequency: "weekly", dayOfPeriod: 1, hourUtc: 6, recipients: [] }, null, now);
+    const r2 = await fireDueSchedules(ownerUrl, new Date("2026-10-26T06:30:00Z"));
+    assert.equal(r2.ran, 1);
+    const recipients = await withTenant(owner.mspId, async (db) =>
+      (await db.query<{ to_email: string }>("select distinct to_email from outbox where to_email like '%@%' order by to_email")).rows.map((r) => r.to_email),
+    );
+    assert.ok(recipients.includes("board@customer.example"));
+    assert.ok(recipients.includes("sched@sched.example"));
+
+    // Removal.
+    const schedId = (await listSchedules(owner.mspId))[0].id;
+    await removeSchedule(owner, schedId);
+    assert.deepEqual(await listSchedules(owner.mspId), []);
+
+    // Only owner/member can touch schedules.
+    const techToken = await acceptInvite(await createInvite(owner.mspId, owner.userId, "tech+s@sched.example", null, "technician"), "T", "another long password");
+    const tech = (await checkSession(techToken))!;
+    await assert.rejects(setSchedule(tech, { clientId: client, frequency: "monthly", dayOfPeriod: 1 }), /owner or member/);
+
+    // Smoke-check the pure helper too.
+    assert.equal(nextRunAt("monthly", 15, 0, new Date("2026-10-15T01:00:00Z")).toISOString(), "2026-11-15T00:00:00.000Z");
+
+    delete process.env.CONSOLE_URL;
+  });
+
+  test("PSA integrations: owner-only, encrypted at rest, deduped ticket per finding, test mode works offline", async () => {
+    const ownerS = (await checkSession(await signIn("admin@a.example", "correct horse battery").then((r) => r.kind === "session" ? r.token : "")))!;
+    const client = await createClient(a.mspId, { name: "Ticket Co" });
+
+    // Technician can't add integrations.
+    const techToken = await acceptInvite(await createInvite(a.mspId, ownerS.userId, "tech+p@a.example", null, "technician"), "T", "another long password");
+    const tech = (await checkSession(techToken))!;
+    await assert.rejects(createPsaIntegration(tech, { name: "x", mode: "test", config: { kind: "connectwise", site: "a.myconnectwise.net", companyId: "a", publicKey: "a", privateKey: "a", clientId: "a" } }), /account owner/);
+
+    const integ = await createPsaIntegration(ownerS, {
+      name: "ConnectWise test",
+      mode: "test",
+      config: { kind: "connectwise", site: "a.myconnectwise.net", companyId: "zinloop", publicKey: "pub", privateKey: "priv", clientId: "cid" },
+    });
+    assert.equal(integ.mode, "test");
+
+    // Config roundtrips through decrypt.
+    const back = await getPsaIntegration(a.mspId, integ.id);
+    assert.equal(back?.config.kind, "connectwise");
+    if (back?.config.kind === "connectwise") assert.equal(back.config.privateKey, "priv");
+
+    // Listing shows the integration without the config body.
+    const listed = await listPsaIntegrations(a.mspId);
+    assert.ok(listed.some((x) => x.id === integ.id));
+
+    // Opening a ticket in test mode works and dedupes by (client, finding_key).
+    const t1 = await openTicketForFinding({
+      mspId: a.mspId, clientId: client, integrationId: integ.id,
+      finding: { summary: "Plain key in Claude Desktop", description: "...", companyId: "42", severity: "high", findingKey: "SECRET_IN_CONFIG|d1|claude" },
+    });
+    assert.equal(t1.status, "open");
+    assert.match(t1.externalId, /^connectwise-/);
+    const t2 = await openTicketForFinding({
+      mspId: a.mspId, clientId: client, integrationId: integ.id,
+      finding: { summary: "same", description: "...", companyId: "42", severity: "high", findingKey: "SECRET_IN_CONFIG|d1|claude" },
+    });
+    assert.equal(t1.id, t2.id); // dedupe
+
+    // Another MSP can't use this integration.
+    const otherClient = await createClient(b.mspId, { name: "Other" });
+    await assert.rejects(openTicketForFinding({
+      mspId: b.mspId, clientId: otherClient, integrationId: integ.id,
+      finding: { summary: "x", description: "...", companyId: "9", severity: "low", findingKey: "x" },
+    }), /wasn't found/);
+
+    // Removal (owner-only).
+    await assert.rejects(removePsaIntegration(tech, integ.id), /account owner/);
+    await removePsaIntegration(ownerS, integ.id);
+    assert.equal(await getPsaIntegration(a.mspId, integ.id), null);
+    // Removing the integration deletes its tickets (ON DELETE CASCADE).
+    const left = await withTenant(a.mspId, (db) => db.query("select count(*)::int as n from psa_tickets"));
+    assert.equal((left.rows[0] as { n: number }).n, 0);
+  });
+
+  test("RMM integrations: owner-only, device sync links by hostname, test mode works offline", async () => {
+    const ownerS = (await checkSession(await signIn("admin@a.example", "correct horse battery").then((r) => r.kind === "session" ? r.token : "")))!;
+    const client = await createClient(a.mspId, { name: "RMM Co" });
+
+    const integ = await createRmmIntegration(ownerS, {
+      name: "NinjaOne test",
+      mode: "test",
+      config: { kind: "ninjaone", host: "us.ninjarmm.com", clientId: "cid", clientSecret: "sec" },
+    });
+    assert.equal(integ.mode, "test");
+
+    const back = await getRmmIntegration(a.mspId, integ.id);
+    assert.equal(back?.config.kind, "ninjaone");
+
+    const listed = await listRmmIntegrations(a.mspId);
+    assert.ok(listed.some((x) => x.id === integ.id));
+
+    // Test mode sync adds device links; a repeat sync doesn't duplicate rows.
+    const r1 = await syncClientDevices(a.mspId, client, integ.id, "org-123");
+    assert.ok(r1.added >= 2);
+    assert.equal(r1.added + r1.updated, r1.total);
+    const r2 = await syncClientDevices(a.mspId, client, integ.id, "org-123");
+    assert.equal(r2.added, 0);
+    assert.equal(r2.updated, r1.total);
+
+    // Links are visible under the tenant, invisible to the other MSP.
+    const links = await listDeviceLinks(a.mspId, client);
+    assert.equal(links.length, r1.total);
+    assert.deepEqual(await listDeviceLinks(b.mspId, client), []);
+
+    // Deleting the integration cascades to its links.
+    await removeRmmIntegration(ownerS, integ.id);
+    assert.deepEqual(await listDeviceLinks(a.mspId, client), []);
   });
 });

@@ -86,7 +86,7 @@ export async function checkAlerts(mspId: string, clientId: string, now = new Dat
       const batch = createHash("sha256").update(inserted.join("\n")).digest("hex").slice(0, 16);
       const mspName = (await db.query<{ name: string }>("select name from msps")).rows[0]?.name ?? "";
       const people = (
-        await db.query<Recipient>("select id, email from users where role in ('owner', 'member') and alert_emails order by created_at")
+        await db.query<Recipient>("select id, email from users where role in ('owner', 'member', 'technician') and alert_emails order by created_at")
       ).rows;
       const base = consoleBase();
       let n = 0;

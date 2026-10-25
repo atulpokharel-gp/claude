@@ -92,11 +92,13 @@ export async function signUp(input: SignUp, ip: string | null = null): Promise<s
   return createSession(userId, mspId, { ip });
 }
 
+export type TeamRole = "owner" | "member" | "technician";
+
 export interface Member {
   id: string;
   name: string;
   email: string;
-  role: "owner" | "member";
+  role: TeamRole;
   mfa: boolean;
   createdAt: string;
 }
@@ -119,13 +121,13 @@ export async function getTeam(mspId: string): Promise<Team> {
     const msp = (await db.query<{ plan: Plan; require_mfa: boolean }>("select plan, require_mfa from msps")).rows[0];
     const plan = msp?.plan ?? "free";
     const members = (
-      await db.query<{ id: string; name: string; email: string; role: "owner" | "member"; mfa: boolean; created_at: Date }>(
-        "select id, name, email, role, totp_enabled_at is not null as mfa, created_at from users where role <> 'viewer' order by created_at",
+      await db.query<{ id: string; name: string; email: string; role: TeamRole; mfa: boolean; created_at: Date }>(
+        "select id, name, email, role, totp_enabled_at is not null as mfa, created_at from users where role in ('owner', 'member', 'technician') order by created_at",
       )
     ).rows.map((u) => ({ id: u.id, name: u.name, email: u.email, role: u.role, mfa: u.mfa, createdAt: u.created_at.toISOString() }));
     const invites = (
       await db.query<{ id: string; email: string; expires_at: Date }>(
-        "select id, email, expires_at from invites where role = 'member' and accepted_at is null and expires_at > now() order by created_at",
+        "select id, email, expires_at from invites where role in ('member', 'technician') and accepted_at is null and expires_at > now() order by created_at",
       )
     ).rows.map((i) => ({ id: i.id, email: i.email, expiresAt: i.expires_at.toISOString() }));
     return { plan, requireMfa: Boolean(msp?.require_mfa), members, invites };
@@ -133,8 +135,9 @@ export async function getTeam(mspId: string): Promise<Team> {
 }
 
 /** Creates a team invite and returns the token for the link. Only the hash is kept. Owner only. */
-export async function createInvite(mspId: string, invitedBy: string, email: string, ip: string | null = null): Promise<string> {
-  return makeInvite(mspId, invitedBy, email, ip, null);
+export async function createInvite(mspId: string, invitedBy: string, email: string, ip: string | null = null, role: "member" | "technician" = "member"): Promise<string> {
+  if (role !== "member" && role !== "technician") throw new AccountError("Pick member or technician for the role.");
+  return makeInvite(mspId, invitedBy, email, ip, null, role);
 }
 
 /**
@@ -143,10 +146,10 @@ export async function createInvite(mspId: string, invitedBy: string, email: stri
  */
 export async function createClientViewerInvite(mspId: string, invitedBy: string, clientId: string, email: string, ip: string | null = null): Promise<string> {
   if (!isUuid(clientId)) throw new AccountError("That client wasn't found.");
-  return makeInvite(mspId, invitedBy, email, ip, clientId);
+  return makeInvite(mspId, invitedBy, email, ip, clientId, "viewer");
 }
 
-async function makeInvite(mspId: string, invitedBy: string, email: string, ip: string | null, clientId: string | null): Promise<string> {
+async function makeInvite(mspId: string, invitedBy: string, email: string, ip: string | null, clientId: string | null, inviteRole: "member" | "technician" | "viewer"): Promise<string> {
   const addr = checkEmail(email);
   await withTenant(mspId, (db) => actor(db, invitedBy, true));
   if (!(await allow("invite", mspId))) throw new AccountError("Too many invites in the last hour. Try again later.");
@@ -164,10 +167,10 @@ async function makeInvite(mspId: string, invitedBy: string, email: string, ip: s
     await db.query(
       `insert into invites (msp_id, email, token_hash, invited_by, expires_at, role, client_id)
        values ($1, $2, $3, $4, now() + make_interval(days => $5), $6, $7)`,
-      [mspId, addr, tokenHash(token), invitedBy, INVITE_DAYS, clientId ? "viewer" : "member", clientId],
+      [mspId, addr, tokenHash(token), invitedBy, INVITE_DAYS, inviteRole, clientId],
     );
     if (clientId) await audit(mspId, { ...who, ip }, "client_login_created", addr, { clientId, client: clientName }, db);
-    else await audit(mspId, { ...who, ip }, "invite_created", addr, {}, db);
+    else await audit(mspId, { ...who, ip }, "invite_created", addr, { role: inviteRole }, db);
   });
   return token;
 }
@@ -186,7 +189,7 @@ export interface InviteInfo {
   mspId: string;
   email: string;
   mspName: string;
-  role: "member" | "viewer";
+  role: "member" | "technician" | "viewer";
   /** For a client viewer invite: the client they'll see. */
   clientId: string | null;
   clientName: string | null;
@@ -194,7 +197,7 @@ export interface InviteInfo {
 
 export async function checkInvite(token: string | undefined): Promise<InviteInfo | null> {
   if (!token || !token.startsWith("zli_")) return null;
-  const row = await lookup<{ invite_id: string; msp_id: string; email: string; msp_name: string; role: "member" | "viewer"; client_id: string | null; client_name: string | null }>(
+  const row = await lookup<{ invite_id: string; msp_id: string; email: string; msp_name: string; role: InviteInfo["role"]; client_id: string | null; client_name: string | null }>(
     "select * from invite_check($1)",
     [tokenHash(token)],
   );
@@ -235,13 +238,13 @@ export async function acceptInvite(token: string, name: string, password: string
   return createSession(userId, inv.mspId);
 }
 
-/** Removes a team member. The owner can't be removed, and nobody removes themselves here. */
+/** Removes a team member or technician. The owner can't be removed, and nobody removes themselves here. */
 export async function removeMember(mspId: string, byUserId: string, userId: string): Promise<void> {
   if (!isUuid(userId)) return;
   if (userId === byUserId) throw new AccountError("You can't remove yourself.");
   await withTenant(mspId, async (db) => {
     const who = await actor(db, byUserId, true);
-    const res = await db.query<{ email: string }>("delete from users where id = $1 and role = 'member' returning email", [userId]);
+    const res = await db.query<{ email: string }>("delete from users where id = $1 and role in ('member', 'technician') returning email", [userId]);
     if (res.rowCount !== 1) throw new AccountError("The account owner can't be removed.");
     await audit(mspId, who, "member_removed", res.rows[0].email, {}, db);
   });

@@ -28,6 +28,21 @@ export const AUDIT_ACTIONS = {
   client_viewer_joined: "Client viewer joined",
   microsoft_linked: "Linked a Microsoft account",
   microsoft_unlinked: "Unlinked a Microsoft account",
+  remediation_proposed: "Proposed a remediation",
+  remediation_approved: "Approved a remediation",
+  remediation_rejected: "Rejected a remediation",
+  remediation_cancelled: "Cancelled a remediation",
+  remediation_applied: "Applied a remediation",
+  remediation_failed: "A remediation failed",
+  client_policy_changed: "Changed a client policy",
+  report_schedule_set: "Set a report schedule",
+  report_schedule_removed: "Removed a report schedule",
+  psa_integration_added: "Added a PSA integration",
+  psa_integration_removed: "Removed a PSA integration",
+  psa_ticket_opened: "Opened a PSA ticket",
+  rmm_integration_added: "Added an RMM integration",
+  rmm_integration_removed: "Removed an RMM integration",
+  rmm_devices_synced: "Synced RMM device inventory",
 } as const;
 
 export type AuditAction = keyof typeof AUDIT_ACTIONS;
