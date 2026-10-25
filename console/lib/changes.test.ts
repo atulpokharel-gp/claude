@@ -81,6 +81,21 @@ test("env/args/url changes are detected as a server change even when findings do
   assert.equal(d.counts.changed, 1);
 });
 
+test("envKeys/headerKeys arrays (what the scanner emits) are compared like env/headers maps", () => {
+  // Scanner reports only the names of env variables, not the values, as an
+  // array. Adding or removing a name must count as a change.
+  const prev = { ...base, servers: [{ name: "a", app: "Cursor", envKeys: ["API_KEY"], findings: [findShell] }] };
+  const now = { ...base, servers: [{ name: "a", app: "Cursor", envKeys: ["API_KEY", "EXTRA"], findings: [findShell] }] };
+  const d = diffScans(prev, now);
+  assert.equal(d.counts.changed, 1);
+  // Same keys in a different order is not a change.
+  const same = diffScans(
+    { ...base, servers: [{ name: "a", app: "Cursor", envKeys: ["API_KEY", "EXTRA"], findings: [findShell] }] },
+    { ...base, servers: [{ name: "a", app: "Cursor", envKeys: ["EXTRA", "API_KEY"], findings: [findShell] }] },
+  );
+  assert.equal(same.counts.changed, 0);
+});
+
 test("trimDelta caps huge lists but keeps count totals", () => {
   const servers = new Array(500).fill(null).map((_, i) => ({ name: `s${i}`, app: "Cursor" }));
   const d = diffScans(null, { ...base, servers });

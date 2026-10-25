@@ -192,7 +192,7 @@ export class UploadError extends Error {
 /** Stores a scan sent by a laptop. Throws UploadError with an HTTP status on bad input. */
 export async function ingestScan(token: string | undefined, report: unknown, now = new Date()) {
   const saved = await saveScan(token, report, now);
-  await recordScanChange(saved.mspId, saved.clientId, saved.deviceId, saved.scanId, report);
+  await recordScanChange(saved.mspId, saved.clientId, saved.deviceId, saved.scanId, saved.scannedAt, report);
   await snapshotClient(saved.mspId, saved.clientId, now);
   await checkAlerts(saved.mspId, saved.clientId, now);
   await checkChangeAlerts(saved.mspId, saved.clientId, now);
@@ -210,17 +210,19 @@ async function recordScanChange(
   clientId: string,
   deviceId: string,
   scanId: string,
+  scannedAt: Date,
   report: unknown,
 ): Promise<void> {
   try {
     await withTenant(mspId, async (db) => {
-      // The two previous scans on this device, newest first. Three in all
-      // (the one we just stored plus the two before) covers both the diff
-      // target and the "returned" lookup.
+      // The two scans older than this one on this device, newest first. Three
+      // in all (the one we just stored plus the two before) covers both the
+      // diff target and the "returned" lookup. Filtering by scanned_at means
+      // a late upload picks the right predecessor instead of a newer scan.
       const rows = (
         await db.query<{ id: string; report: RawReport }>(
-          "select id, report from scans where device_id = $1 and id <> $2 order by scanned_at desc, received_at desc limit 2",
-          [deviceId, scanId],
+          "select id, report from scans where device_id = $1 and id <> $2 and scanned_at <= $3 order by scanned_at desc, received_at desc limit 2",
+          [deviceId, scanId, scannedAt],
         )
       ).rows;
       const prev = rows[0] ?? null;
@@ -308,7 +310,7 @@ async function saveScan(token: string | undefined, report: unknown, now: Date) {
       "insert into scans (msp_id, client_id, device_id, scanned_at, report) values ($1, $2, $3, $4, $5) returning id",
       [owner.msp_id, owner.client_id, deviceId, scannedAt, JSON.stringify(report)],
     );
-    return { mspId: owner.msp_id, clientId: owner.client_id, deviceId, scanId: scan.rows[0].id };
+    return { mspId: owner.msp_id, clientId: owner.client_id, deviceId, scanId: scan.rows[0].id, scannedAt };
   });
 }
 

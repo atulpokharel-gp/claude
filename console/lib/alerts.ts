@@ -167,13 +167,11 @@ export async function checkChangeAlerts(mspId: string, clientId: string, now = n
       }
       if (added.length + changed.length + returned.length === 0) return 0;
 
-      // One digest per client per day: the dedupe key is day-grained, so a
-      // second scan on the same day quietly updates nothing.
+      // One digest per client per day: the dedupe key is (client, day, user)
+      // so a later scan the same day doesn't send a second email with the
+      // same findings repeated. New findings that land after the digest is
+      // queued fall into tomorrow's digest.
       const day = now.toISOString().slice(0, 10);
-      const batch = createHash("sha256")
-        .update(`${added.map((x) => x.what).sort().join("\n")}\n${changed.map((x) => x.what).sort().join("\n")}\n${returned.map((x) => x.what).sort().join("\n")}`)
-        .digest("hex")
-        .slice(0, 16);
 
       const client = await db.query<{ name: string }>("select name from clients where id = $1", [clientId]);
       if (client.rowCount === 0) return 0;
@@ -195,7 +193,7 @@ export async function checkChangeAlerts(mspId: string, clientId: string, now = n
           unsubscribeUrl: unsub,
           settingsUrl: base && `${base}/app/settings`,
         });
-        if (await enqueue(db, mspId, `changes:${clientId}:${day}:${batch}:${p.id}`, "alert", p, mail, unsub)) n++;
+        if (await enqueue(db, mspId, `changes:${clientId}:${day}:${p.id}`, "alert", p, mail, unsub)) n++;
       }
       return n;
     });

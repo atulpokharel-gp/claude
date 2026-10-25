@@ -7,7 +7,13 @@ import { createHash } from "node:crypto";
 export const SEVERITY_RANK = { high: 4, medium: 3, low: 2, none: 1 } as const;
 export type Severity = keyof typeof SEVERITY_RANK;
 
-/** One server in a report, as the scanner emits it. We only pick the parts the diff cares about. */
+/**
+ * One server in a report, as the scanner emits it. We only pick the parts
+ * the diff cares about. The scanner serializes only the *names* of env
+ * variables and headers (`envKeys` / `headerKeys`), not their values; raw
+ * `env` / `headers` are accepted too so a hand-crafted report (tests, the
+ * marketing /check uploader) can still drive a diff.
+ */
 export interface RawServer {
   name?: string;
   app?: string;
@@ -15,6 +21,8 @@ export interface RawServer {
   command?: string;
   args?: string[];
   url?: string;
+  envKeys?: string[];
+  headerKeys?: string[];
   env?: Record<string, unknown>;
   headers?: Record<string, unknown>;
   findings?: Array<{ ruleId?: string; severity?: Severity; title?: string }>;
@@ -117,8 +125,17 @@ function serverContentHash(s: RawServer): string {
     .map((f) => `${severityOrNone(f?.severity)}:${typeof f?.ruleId === "string" ? f.ruleId : ""}:${typeof f?.title === "string" ? f.title : ""}`)
     .sort()
     .join("|");
-  const env = Object.keys(s.env ?? {}).sort().join(",");
-  const headers = Object.keys(s.headers ?? {}).sort().join(",");
+  // The scanner emits envKeys/headerKeys arrays (names only). A hand-crafted
+  // report may use env/headers maps instead; accept both so adding or
+  // removing a variable registers as a change either way.
+  const envKeys = [...new Set([
+    ...(Array.isArray(s.envKeys) ? s.envKeys.filter((x): x is string => typeof x === "string") : []),
+    ...Object.keys(s.env ?? {}),
+  ])].sort().join(",");
+  const headerKeys = [...new Set([
+    ...(Array.isArray(s.headerKeys) ? s.headerKeys.filter((x): x is string => typeof x === "string") : []),
+    ...Object.keys(s.headers ?? {}),
+  ])].sort().join(",");
   const h = createHash("sha256");
   h.update(JSON.stringify({
     name: s.name ?? "",
@@ -126,8 +143,8 @@ function serverContentHash(s: RawServer): string {
     command: s.command ?? "",
     args: Array.isArray(s.args) ? s.args : [],
     url: s.url ?? "",
-    envKeys: env,
-    headerKeys: headers,
+    envKeys,
+    headerKeys,
     findings,
   }));
   return h.digest("hex").slice(0, 24);

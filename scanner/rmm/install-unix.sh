@@ -138,8 +138,9 @@ else
   minute=$(awk 'BEGIN{srand(); print int(rand()*15)}')
   cat > /etc/cron.d/zinloop <<CRON
 # Zinloop daily scan. The sleep is per-run jitter so a fleet spreads its
-# uploads across a 2-hour window around 10:00 local.
-$minute 10 * * * root /bin/sh -c 'sleep \$((RANDOM % 7200)); $bin --all-users --upload $url/api/scans --token-file $token_file' >/dev/null 2>&1
+# uploads across a 2-hour window around 10:00 local. The percent is
+# escaped so cron(5) doesn't treat it as the start of stdin for the job.
+$minute 10 * * * root /bin/sh -c 'sleep \$((RANDOM \% 7200)); $bin --all-users --upload $url/api/scans --token-file $token_file' >/dev/null 2>&1
 CRON
   chmod 644 /etc/cron.d/zinloop
   echo "Daily scan scheduled (cron, 10:$minute local +/- random up to 2h)."
