@@ -158,7 +158,7 @@ func writePlan(w io.Writer, plan fix.Plan, applied, incomplete bool) {
 			fmt.Fprintf(w, "  Not changed: %s\n", f.Error)
 		}
 		if f.Backup != "" {
-			fmt.Fprintf(w, "  Backup of the original: %s\n", f.Backup)
+			fmt.Fprintf(w, "  Original kept at: %s\n", f.Backup)
 		}
 	}
 	if len(plan.Manual) > 0 {
@@ -174,7 +174,9 @@ func writePlan(w io.Writer, plan fix.Plan, applied, incomplete bool) {
 		fmt.Fprintln(w, "\nDone. Restart the AI apps so they pick up the change.")
 		fmt.Fprintln(w, "Next: the old keys were readable before, so replace each one with the provider and run")
 		fmt.Fprintln(w, "  zinloop rotate <name>")
-		fmt.Fprintln(w, "Each backup still holds the old keys. Delete it once the app works.")
+		fmt.Fprintln(w, "If something breaks, run `zinloop revert --list` and `zinloop revert <id>` to put the")
+		fmt.Fprintln(w, "original configs back and drop the stored keys. Revert refuses once a key has been")
+		fmt.Fprintln(w, "rotated, since the restored config would point at a value the provider revoked.")
 	}
 }
 
