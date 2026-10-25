@@ -53,11 +53,40 @@ so you can run both from one install.
 
 - `/app/paxel` — MSP company-wide view: totals, by tool, by developer, by
   project. Links through to each developer.
-- `/app/paxel/dev/{user_hash}` — one developer's usage from the MSP side.
+- `/app/paxel/dev/{user_hash}` — one developer's usage and builder-profile
+  scores from the MSP side.
+- `/app/paxel/team` — anonymous team-wide builder profile. Averages only,
+  no names, requires 3+ developers to render.
 - `/portal/paxel` — client-portal view, scoped by RLS to one client.
 - `/portal/paxel/dev/{user_hash}` — one developer, from the client's view.
+  Also carries the "share a public profile" form.
+- `/p/{slug}` — unauthenticated public profile. Shows only the dimensions
+  the developer opts into. Off by default.
 
 Each dashboard supports 7-, 30- and 90-day ranges.
+
+## Builder profile (five dimensions)
+
+Each Claude Code session is scored on the laptop on five dimensions:
+
+| Dimension | Signal |
+| --- | --- |
+| Steering | user-turn specificity, correction density, prompt-to-tool ratio |
+| Execution | tool-use density, writes over reads, session length |
+| Engineering | tests edited, lint/typecheck/test Bash runs, refactor-shape edits |
+| Product instinct | docs / UI / API edits over internals-only work |
+| Planning | long first user turn, TODO/outline shapes, `TodoWrite` use |
+
+Scores are integers 0–100. Only the final scores and small integer
+metric counters leave the laptop; prompts and code never upload.
+
+Three views sit on top of these:
+
+- **Private** — the signed-in console or portal page for one developer.
+- **Public** — unauthenticated `/p/{slug}`. Off by default; the dev picks
+  a slug and toggles which dimensions appear.
+- **Company** — anonymous team aggregates on `/app/paxel/team`. No
+  individual rows, no names.
 
 ## Why inside Zinloop (not a separate app)
 

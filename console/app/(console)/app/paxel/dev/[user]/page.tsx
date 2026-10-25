@@ -5,8 +5,9 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { hasDatabase } from "@/lib/db.ts";
 import { requireSession } from "@/lib/session.ts";
-import { allTokens, fmtTokens, fmtUsd, userRollup } from "@/lib/paxel.ts";
+import { allTokens, fmtTokens, fmtUsd, userProfile, userRollup } from "@/lib/paxel.ts";
 import { GroupTable, RangePicker } from "../../page.tsx";
+import { ProfilePanel } from "@/components/ProfilePanel.tsx";
 
 export const metadata: Metadata = { title: "Paxel — Developer" };
 export const dynamic = "force-dynamic";
@@ -25,8 +26,11 @@ export default async function PaxelDev({
   const days = pickDays(q.days);
   const userHash = decodeURIComponent(user).toLowerCase();
   if (!/^[0-9a-f]{16,64}$/.test(userHash)) return notFound();
-  const data = await userRollup(session.mspId, userHash, days);
-  const label = data.byUser[0]?.label ?? userHash.slice(0, 10);
+  const [data, profile] = await Promise.all([
+    userRollup(session.mspId, userHash, days),
+    userProfile(session.mspId, userHash, days),
+  ]);
+  const label = data.byUser[0]?.label ?? profile?.userLabel ?? userHash.slice(0, 10);
   return (
     <>
       <div className="page-head">
@@ -45,6 +49,14 @@ export default async function PaxelDev({
           <b>{fmtTokens(data.totals.messages)}</b>
         </div>
       </section>
+      <section className="panel">
+        <div className="panel-head"><h2>Builder profile</h2></div>
+        <ProfilePanel
+          dims={profile?.dims ?? []}
+          caption="Scored on the laptop from local Claude Code sessions. 0 means no signal yet; 100 is the top of the heuristic."
+        />
+      </section>
+
       <section className="panel">
         <div className="panel-head"><h2>Tools used</h2></div>
         <GroupTable rows={data.byTool} nameHeader="Tool" emptyMsg="Nothing yet." />
