@@ -314,8 +314,13 @@ test("sign+readDevIdentity roundtrips with a real APP_SECRET", () => {
     const token = signDevIdentity(id);
     const got = readDevIdentity(token);
     assert.deepEqual(got, id);
-    // A forged token (last char flipped) fails verification.
-    const bad = token.slice(0, -1) + (token.endsWith("A") ? "B" : "A");
+    // A forged token fails verification. Flip the FIRST MAC char: that
+    // position encodes 6 real bits, so the decoded HMAC bytes always
+    // differ. (The last base64url char of a 32-byte digest has 2 padding
+    // bits that decode to the same bytes — flipping it is unreliable.)
+    const dot = token.indexOf(".");
+    const macStart = dot + 1;
+    const bad = token.slice(0, macStart) + (token[macStart] === "A" ? "B" : "A") + token.slice(macStart + 1);
     assert.equal(readDevIdentity(bad), null);
   } finally {
     if (prev === undefined) delete process.env.APP_SECRET;
