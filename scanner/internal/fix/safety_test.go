@@ -288,8 +288,15 @@ func TestBackupPermissionsAndContents(t *testing.T) {
 	if err := json.Unmarshal(meta, &m); err != nil {
 		t.Fatal(err)
 	}
-	if m.OriginalPath != cfg {
-		t.Errorf("meta.OriginalPath = %q, want %q", m.OriginalPath, cfg)
+	// OriginalPath is the symlink-resolved config path (fix.go). On macOS
+	// t.TempDir() returns a /var/folders/... path that resolves to
+	// /private/var/folders/..., so compare against the resolved form.
+	wantPath, err := filepath.EvalSymlinks(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.OriginalPath != wantPath {
+		t.Errorf("meta.OriginalPath = %q, want %q", m.OriginalPath, wantPath)
 	}
 	if len(m.Refs) != 1 {
 		t.Errorf("meta.Refs = %v, want 1 entry", m.Refs)
