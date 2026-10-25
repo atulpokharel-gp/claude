@@ -54,8 +54,9 @@ func TestClaudeConfigDirRedirect(t *testing.T) {
 			break
 		}
 	}
-	if cc.Path != "/opt/claude/.claude.json" {
-		t.Errorf("Claude Code path = %q", cc.Path)
+	wantCCPath := filepath.Join("/opt/claude", ".claude.json")
+	if cc.Path != wantCCPath {
+		t.Errorf("Claude Code path = %q, want %q", cc.Path, wantCCPath)
 	}
 	if cc.Override != "env:CLAUDE_CONFIG_DIR" {
 		t.Errorf("Claude Code override = %q", cc.Override)
@@ -80,6 +81,7 @@ func TestExtraConfigAppended(t *testing.T) {
 	if extra == nil {
 		t.Fatal("--extra-config location not emitted")
 	}
+	// Extra paths are passed verbatim; no filepath.Join on them.
 	if extra.Path != "/opt/pushed/mcp.json" {
 		t.Errorf("extra path = %q", extra.Path)
 	}
