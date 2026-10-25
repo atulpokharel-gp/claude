@@ -1,0 +1,10 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "crons": [
+    { "path": "/api/cron/mail", "schedule": "*/5 * * * *" },
+    { "path": "/api/cron/daily?job=cleanup", "schedule": "0 3 * * *" },
+    { "path": "/api/cron/daily?job=m365_sync", "schedule": "10 3 * * *" },
+    { "path": "/api/cron/daily?job=snapshot", "schedule": "30 3 * * *" },
+    { "path": "/api/cron/daily?job=mail_weekly", "schedule": "40 3 * * *" }
+  ]
+}

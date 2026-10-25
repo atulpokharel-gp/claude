@@ -4,6 +4,8 @@ Zinloop runs on ordinary Linux servers with Docker. One server runs everything:
 Postgres, the console, background jobs (email, Microsoft 365 checks, cleanup),
 nightly backups and Caddy for HTTPS. A 2 vCPU / 4 GB server is plenty to start.
 
+Prefer not to run servers? See [vercel.md](vercel.md) for Vercel + Neon.
+
 Run two of them:
 
 - **Staging** (e.g. `staging.zinloop.com`): every commit on `main` that passes
