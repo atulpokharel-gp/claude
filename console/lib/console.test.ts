@@ -91,6 +91,37 @@ test("reads keys protected by the fix command", () => {
   assert.deepEqual(c.agents[0].protectedKeys, ["GITHUB_TOKEN"]);
 });
 
+test("refuses a report with far too many servers", () => {
+  const many = { schemaVersion: 1, hostname: "pc", servers: new Array(1000).fill({ name: "x", findings: [] }) };
+  assert.throws(() => importScan(many), /Too many servers/);
+});
+
+test("caps findings per server so a hostile report can't explode memory", () => {
+  const flood = {
+    schemaVersion: 1,
+    hostname: "pc",
+    servers: [
+      {
+        name: "x",
+        findings: new Array(500).fill({ severity: "low", ruleId: "R", title: "t", detail: "d", fix: "f" }),
+      },
+    ],
+  };
+  const c = importScan(flood);
+  assert.ok(c.agents[0].findings.length <= 100);
+});
+
+test("caps extremely long strings in a report", () => {
+  const long = "x".repeat(10_000);
+  const c = importScan({
+    schemaVersion: 1,
+    hostname: "pc",
+    servers: [{ name: long, app: long, findings: [{ severity: "low", title: long, detail: long, fix: long, ruleId: "R" }] }],
+  });
+  assert.ok(c.agents[0].name.length <= 2000);
+  assert.ok(c.agents[0].findings[0].detail.length <= 2000);
+});
+
 test("a protected server still awaiting rotation is not counted as done", () => {
   const base = { id: "x", kind: "mcp-server" as const, source: "Laptop scan" as const, location: "pc", app: "Cursor", reach: [] as string[], revocable: false, lastSeen: "2026-10-23" };
   const f = (ruleId: string) => ({ ruleId, severity: "medium" as const, title: "", detail: "", fix: "" });

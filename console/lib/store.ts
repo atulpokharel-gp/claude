@@ -168,9 +168,16 @@ export async function createUploadToken(mspId: string, clientId: string, label: 
   return token;
 }
 
-export async function revokeUploadToken(mspId: string, tokenId: string): Promise<void> {
-  if (!isUuid(tokenId)) return;
-  await withTenant(mspId, (db) => db.query("update upload_tokens set revoked_at = now() where id = $1", [tokenId]));
+/** Revokes a token. Returns the token's client_id, or null when nothing was changed. */
+export async function revokeUploadToken(mspId: string, tokenId: string): Promise<string | null> {
+  if (!isUuid(tokenId)) return null;
+  return withTenant(mspId, async (db) => {
+    const res = await db.query<{ client_id: string }>(
+      "update upload_tokens set revoked_at = now() where id = $1 and revoked_at is null returning client_id",
+      [tokenId],
+    );
+    return res.rows[0]?.client_id ?? null;
+  });
 }
 
 export class UploadError extends Error {
@@ -189,9 +196,14 @@ export async function ingestScan(token: string | undefined, report: unknown, now
   return { clientId: saved.clientId, deviceId: saved.deviceId };
 }
 
+// A token is a prefix plus 32 bytes of base64url. The route hands us a
+// well-formed string, but keep this guard here too so the function is
+// safe to call from anywhere else (tests, scripts).
+const TOKEN_RE = /^(zlu|agu)_[A-Za-z0-9_-]{32,64}$/;
+
 async function saveScan(token: string | undefined, report: unknown, now: Date) {
   // agu_ tokens were issued before the rename and are still valid.
-  if (!token || !(token.startsWith("zlu_") || token.startsWith("agu_"))) throw new UploadError("Missing or malformed upload token.", 401);
+  if (!token || !TOKEN_RE.test(token)) throw new UploadError("Missing or malformed upload token.", 401);
   const owner = await lookup<{ client_id: string; msp_id: string }>("select * from upload_check_token($1)", [
     tokenHash(token),
   ]);
