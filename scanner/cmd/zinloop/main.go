@@ -49,6 +49,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 			return runRotate(args[1:], os.Stdin, stdout, stderr)
 		case "revert":
 			return runRevert(args[1:], stdout, stderr)
+		case "paxel":
+			return runPaxel(args[1:], stdout, stderr)
 		}
 	}
 	return runScan(args, stdout, stderr)

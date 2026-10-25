@@ -1,0 +1,197 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { allTokens, fmtTokens, fmtUsd, parseUpload, PaxelError, rollup, type NormalBucket } from "./paxel.ts";
+
+const USER_A = "aa".repeat(16); // 32 hex
+const USER_B = "bb".repeat(16);
+const PROJ_X = "cc".repeat(16);
+const PROJ_Y = "dd".repeat(16);
+
+function row(over: Partial<NormalBucket>): {
+  tool: string;
+  user_hash: string;
+  user_label: string;
+  project_hash: string;
+  project_label: string;
+  model: string;
+  bucket_day: string;
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+  cache_write_tokens: number;
+  cost_usd_cents: number;
+  messages: number;
+} {
+  return {
+    tool: over.tool ?? "claude-code",
+    user_hash: over.userHash ?? USER_A,
+    user_label: over.userLabel ?? "alice",
+    project_hash: over.projectHash ?? PROJ_X,
+    project_label: over.projectLabel ?? "foo",
+    model: over.model ?? "claude-sonnet-4-5",
+    bucket_day: over.day ?? "2026-10-20",
+    input_tokens: over.inputTokens ?? 100,
+    output_tokens: over.outputTokens ?? 50,
+    cache_read_tokens: over.cacheReadTokens ?? 0,
+    cache_write_tokens: over.cacheWriteTokens ?? 0,
+    cost_usd_cents: over.costUsdCents ?? 30,
+    messages: over.messages ?? 1,
+  };
+}
+
+test("parseUpload accepts a well-formed upload", () => {
+  const got = parseUpload({
+    hostname: "laptop1",
+    os: "linux",
+    buckets: [
+      {
+        tool: "claude-code",
+        userHash: USER_A,
+        userLabel: "alice",
+        projectHash: PROJ_X,
+        projectLabel: "foo",
+        model: "claude-sonnet-4-5",
+        sessionId: "sess-1",
+        day: "2026-10-20",
+        inputTokens: 100,
+        outputTokens: 50,
+      },
+    ],
+  });
+  assert.equal(got.hostname, "laptop1");
+  assert.equal(got.os, "linux");
+  assert.equal(got.buckets.length, 1);
+  assert.equal(got.buckets[0].inputTokens, 100);
+});
+
+test("parseUpload drops zero-usage buckets", () => {
+  const got = parseUpload({
+    hostname: "h",
+    buckets: [
+      { tool: "codex", userHash: USER_A, projectHash: PROJ_X, day: "2026-10-20", inputTokens: 0, outputTokens: 0 },
+    ],
+  });
+  assert.equal(got.buckets.length, 0);
+});
+
+test("parseUpload rejects malformed hash", () => {
+  const got = parseUpload({
+    hostname: "h",
+    buckets: [
+      { tool: "codex", userHash: "not-hex", projectHash: PROJ_X, day: "2026-10-20", inputTokens: 100, outputTokens: 10 },
+    ],
+  });
+  assert.equal(got.buckets.length, 0);
+});
+
+test("parseUpload rejects bad day format", () => {
+  const got = parseUpload({
+    hostname: "h",
+    buckets: [
+      { tool: "codex", userHash: USER_A, projectHash: PROJ_X, day: "last tuesday", inputTokens: 100, outputTokens: 10 },
+    ],
+  });
+  assert.equal(got.buckets.length, 0);
+});
+
+test("parseUpload requires a hostname", () => {
+  assert.throws(() => parseUpload({ buckets: [] }), (e: unknown) => e instanceof PaxelError);
+});
+
+test("parseUpload caps the bucket array", () => {
+  const buckets = Array.from({ length: 10_000 }, (_, i) => ({
+    tool: "codex",
+    userHash: USER_A,
+    projectHash: PROJ_X,
+    day: "2026-10-20",
+    sessionId: String(i),
+    inputTokens: 1,
+    outputTokens: 1,
+  }));
+  assert.throws(() => parseUpload({ hostname: "h", buckets }), (e: unknown) => e instanceof PaxelError);
+});
+
+test("parseUpload trims and lowercases hashes and strings", () => {
+  const got = parseUpload({
+    hostname: "  laptop1  ",
+    buckets: [
+      {
+        tool: "  CLAUDE-CODE  ",
+        userHash: " " + USER_A.toUpperCase() + " ",
+        projectHash: PROJ_X,
+        day: "2026-10-20",
+        inputTokens: 10,
+        outputTokens: 5,
+      },
+    ],
+  });
+  assert.equal(got.hostname, "laptop1");
+  assert.equal(got.buckets[0].tool, "claude-code");
+  assert.equal(got.buckets[0].userHash, USER_A);
+});
+
+test("rollup totals every row", () => {
+  const rows = [
+    row({}),
+    row({ userHash: USER_B, userLabel: "bob", inputTokens: 200, outputTokens: 100, costUsdCents: 60 }),
+    row({ projectHash: PROJ_Y, projectLabel: "bar", inputTokens: 50, outputTokens: 25, costUsdCents: 15 }),
+  ];
+  const r = rollup(rows);
+  assert.equal(r.totals.inputTokens, 350);
+  assert.equal(r.totals.outputTokens, 175);
+  assert.equal(r.totals.messages, 3);
+  assert.equal(r.totals.costUsdCents, 105);
+});
+
+test("rollup groups by tool, project, user, day", () => {
+  const rows = [
+    row({ tool: "claude-code", day: "2026-10-20" }),
+    row({ tool: "codex", day: "2026-10-20", inputTokens: 500, outputTokens: 100 }),
+    row({ tool: "claude-code", day: "2026-10-21", inputTokens: 25, outputTokens: 10 }),
+  ];
+  const r = rollup(rows);
+  assert.equal(r.byTool.length, 2);
+  const claude = r.byTool.find((t) => t.key === "claude-code")!;
+  const codex = r.byTool.find((t) => t.key === "codex")!;
+  assert.equal(allTokens(claude.totals), 100 + 50 + 25 + 10);
+  assert.equal(allTokens(codex.totals), 600);
+  // byTool is sorted desc by total tokens.
+  assert.equal(r.byTool[0].key, "codex");
+  assert.equal(r.byDay.length, 2);
+  // byDay is sorted ascending.
+  assert.equal(r.byDay[0].day, "2026-10-20");
+});
+
+test("rollup picks the first non-empty label for a project/user", () => {
+  const rows = [
+    row({ projectLabel: "" }),
+    row({ projectLabel: "foo" }),
+  ];
+  const r = rollup(rows);
+  assert.equal(r.byProject[0].label, "foo");
+});
+
+test("rollup limits byUser and byProject", () => {
+  const rows: ReturnType<typeof row>[] = [];
+  for (let i = 0; i < 100; i++) {
+    const hash = String(i).padStart(32, "0");
+    rows.push(row({ userHash: hash, projectHash: hash }));
+  }
+  const r = rollup(rows, 10);
+  assert.equal(r.byUser.length, 10);
+  assert.equal(r.byProject.length, 10);
+});
+
+test("fmtTokens is human-friendly", () => {
+  assert.equal(fmtTokens(42), "42");
+  assert.equal(fmtTokens(1_500), "1.5K");
+  assert.equal(fmtTokens(1_500_000), "1.5M");
+  assert.equal(fmtTokens(2_500_000_000), "2.5B");
+});
+
+test("fmtUsd shows two decimals under $1000 and whole dollars above", () => {
+  assert.equal(fmtUsd(50), "$0.50");
+  assert.equal(fmtUsd(1_234), "$12.34");
+  assert.equal(fmtUsd(10_050), "$100.50");
+  assert.equal(fmtUsd(250_000), "$2500");
+});
