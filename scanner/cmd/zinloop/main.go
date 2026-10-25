@@ -49,6 +49,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 			return runRotate(args[1:], os.Stdin, stdout, stderr)
 		case "revert":
 			return runRevert(args[1:], stdout, stderr)
+		case "install", "uninstall", "status", "logs", "service":
+			return runService(args[0], args[1:], stdout, stderr)
 		}
 	}
 	return runScan(args, stdout, stderr)
