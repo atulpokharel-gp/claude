@@ -288,8 +288,15 @@ func TestBackupPermissionsAndContents(t *testing.T) {
 	if err := json.Unmarshal(meta, &m); err != nil {
 		t.Fatal(err)
 	}
-	if m.OriginalPath != cfg {
-		t.Errorf("meta.OriginalPath = %q, want %q", m.OriginalPath, cfg)
+	// OriginalPath is the config path after symlinks were resolved. macOS
+	// temp dirs sit behind /var -> /private/var, so compare against the
+	// resolved form rather than whatever path t.TempDir happened to return.
+	wantOriginal, _ := filepath.EvalSymlinks(cfg)
+	if wantOriginal == "" {
+		wantOriginal = cfg
+	}
+	if m.OriginalPath != wantOriginal {
+		t.Errorf("meta.OriginalPath = %q, want %q", m.OriginalPath, wantOriginal)
 	}
 	if len(m.Refs) != 1 {
 		t.Errorf("meta.Refs = %v, want 1 entry", m.Refs)
