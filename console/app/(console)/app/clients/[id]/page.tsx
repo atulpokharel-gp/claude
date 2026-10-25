@@ -32,7 +32,15 @@ export default async function ClientPage({
   if (!detail) notFound();
   return (
     <>
-      <p className="small"><Link href="/app">← All clients</Link></p>
+      <p className="small">
+        <Link href="/app">← All clients</Link>
+        {!detail.demo && (
+          <>
+            {" "}·{" "}
+            <Link href={`/app/clients/${detail.client.id}/changes`}>What's changed</Link>
+          </>
+        )}
+      </p>
       <ClientView
         client={detail.client}
         reportHref={`/app/clients/${detail.client.id}/report`}

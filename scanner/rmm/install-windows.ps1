@@ -5,14 +5,18 @@
 #   ZINLOOP_CONSOLE_URL  e.g. https://zinloop.com
 #   ZINLOOP_TOKEN        the client's upload token from the console (zlu_...)
 #
+# A daily scheduled task is added by default; pass -NoSchedule to skip it.
+# The task fires at 10:00 local with up to two hours of random delay, so a
+# fleet of laptops doesn't all hit the console at exactly 10:00.
+#
 # What it does: downloads the scanner to C:\ProgramData\Zinloop, checks its
 # SHA-256 against the published checksums, saves the token where only SYSTEM
 # and administrators can read it, scans every user profile (read-only) and
-# sends the report. With -Schedule it also adds a daily scheduled task.
+# sends the report.
 param(
   [string]$ConsoleUrl = $env:ZINLOOP_CONSOLE_URL,
   [string]$Token = $env:ZINLOOP_TOKEN,
-  [switch]$Schedule
+  [switch]$NoSchedule
 )
 $ErrorActionPreference = 'Stop'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
@@ -50,11 +54,19 @@ if (-not (Test-Path $tokenFile)) { Write-Error 'Set ZINLOOP_TOKEN to the upload 
 & $exe --all-users --upload "$ConsoleUrl/api/scans" --token-file $tokenFile
 $code = $LASTEXITCODE
 
-if ($Schedule) {
+if (-not $NoSchedule) {
+  # -RandomDelay spreads the start of a fleet's uploads across the window
+  # instead of a sharp spike at 10:00. Two hours is enough for several
+  # thousand laptops in one tenant to stop looking like a flood.
   $action = New-ScheduledTaskAction -Execute $exe -Argument "--all-users --upload `"$ConsoleUrl/api/scans`" --token-file `"$tokenFile`""
-  $trigger = New-ScheduledTaskTrigger -Daily -At 10am
+  # Pass -RandomDelay to the cmdlet rather than assigning afterwards:
+  # $trigger.RandomDelay is a string on the MSFT_TaskTrigger CIM class, so
+  # assigning a TimeSpan to it serializes as "System.TimeSpan" and the
+  # registration fails. The parameter form handles the ISO 8601 encoding.
+  $trigger = New-ScheduledTaskTrigger -Daily -At 10am -RandomDelay (New-TimeSpan -Hours 2)
   $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -RunLevel Highest
-  Register-ScheduledTask -Force -TaskName 'Zinloop daily scan' -Action $action -Trigger $trigger -Principal $principal | Out-Null
-  Write-Output 'Daily scan scheduled.'
+  $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -DontStopIfGoingOnBatteries -AllowStartIfOnBatteries
+  Register-ScheduledTask -Force -TaskName 'Zinloop daily scan' -Action $action -Trigger $trigger -Principal $principal -Settings $settings | Out-Null
+  Write-Output 'Daily scan scheduled (10:00 local +/- random up to 2h).'
 }
 exit $code
