@@ -166,6 +166,60 @@ ${o.consoleUrl ? button(o.consoleUrl, "Open the console") : ""}`;
   return { subject, text: text.replace(/\n{3,}/g, "\n\n"), html: page("Your weekly AI security summary", body, f.html) };
 }
 
+export interface ChangeRow {
+  device: string;
+  what: string; // e.g. "New AI tool: GitHub (Cursor)", "Risky config returned: shell access"
+}
+
+/** Short email: an AI tool appeared, permissions changed, or a risk returned. */
+export function changesEmail(o: {
+  mspName: string;
+  clientName: string;
+  added: ChangeRow[];
+  changed: ChangeRow[];
+  returned: ChangeRow[];
+  clientUrl: string | null;
+  unsubscribeUrl: string | null;
+  settingsUrl: string | null;
+}): Email {
+  const client = oneLine(o.clientName);
+  const total = o.added.length + o.changed.length + o.returned.length;
+  const headline =
+    o.returned.length > 0 && o.added.length === 0 && o.changed.length === 0
+      ? `A risky AI config came back at ${client}`
+      : o.added.length > 0 && o.changed.length === 0 && o.returned.length === 0
+        ? `${plural(o.added.length, "new AI tool")} at ${client}`
+        : `${plural(total, "change")} to AI tools at ${client}`;
+  const subject = oneLine(headline);
+  const section = (title: string, rows: ChangeRow[]): { text: string; html: string } => {
+    if (rows.length === 0) return { text: "", html: "" };
+    const shown = rows.slice(0, 10);
+    const more = rows.length - shown.length;
+    return {
+      text: [`${title}:`, ...shown.map((r) => `- ${oneLine(r.device, 100)}: ${oneLine(r.what, 240)}`), ...(more > 0 ? [`- and ${more} more`] : []), ""].join("\n"),
+      html: `<h2 style="font-size:15px;margin:16px 0 6px">${esc(title)}</h2><ul style="margin:0;padding-left:20px;line-height:1.6">${shown
+        .map((r) => `<li><b>${esc(oneLine(r.device, 100))}</b>: ${esc(oneLine(r.what, 240))}</li>`)
+        .join("")}${more > 0 ? `<li>and ${more} more</li>` : ""}</ul>`,
+    };
+  };
+  const sNew = section("New AI tools", o.added);
+  const sChanged = section("Changed permissions", o.changed);
+  const sReturned = section("Risky configs that came back", o.returned);
+  const f = footer(`You get this because you're on the ${o.mspName} team and alerts are on.`, o.unsubscribeUrl, o.settingsUrl);
+  const text = [
+    headline,
+    "",
+    sNew.text,
+    sChanged.text,
+    sReturned.text,
+    o.clientUrl ? `See the details: ${o.clientUrl}` : "",
+    "--",
+    f.text,
+  ].join("\n");
+  const body = `<p style="margin:0 0 12px;line-height:1.5;font-size:16px">${esc(headline)}</p>${sNew.html}${sChanged.html}${sReturned.html}${o.clientUrl ? button(o.clientUrl, "See the details") : ""}`;
+  return { subject, text: text.replace(/\n{3,}/g, "\n\n"), html: page(subject, body, f.html) };
+}
+
 export function clientWeeklyEmail(o: {
   mspName: string;
   clientName: string;

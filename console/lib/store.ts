@@ -1,10 +1,11 @@
 // Reading and writing an MSP's clients, upload tokens and scans.
 
 import { checkClientLimit, PLAN_LIMITS, type Plan } from "./accounts.ts";
+import { diffScans, hasAnyChange, trimDelta, type RawReport } from "./changes.ts";
 import { lookup, withTenant, type Tenant } from "./db.ts";
 import { appToAgent, discover, GraphError, revokeApp, TENANT_ID, type Fetch, type M365App } from "./m365.ts";
 import { snapshotOf } from "./insights.ts";
-import { checkAlerts } from "./alerts.ts";
+import { checkAlerts, checkChangeAlerts } from "./alerts.ts";
 import { importScan, ScanImportError } from "./scan-import.ts";
 import { newToken, tokenHash } from "./secrets.ts";
 import type { Agent, Client } from "./types.ts";
@@ -191,9 +192,67 @@ export class UploadError extends Error {
 /** Stores a scan sent by a laptop. Throws UploadError with an HTTP status on bad input. */
 export async function ingestScan(token: string | undefined, report: unknown, now = new Date()) {
   const saved = await saveScan(token, report, now);
+  await recordScanChange(saved.mspId, saved.clientId, saved.deviceId, saved.scanId, report);
   await snapshotClient(saved.mspId, saved.clientId, now);
   await checkAlerts(saved.mspId, saved.clientId, now);
+  await checkChangeAlerts(saved.mspId, saved.clientId, now);
   return { clientId: saved.clientId, deviceId: saved.deviceId };
+}
+
+/**
+ * Computes the diff between this scan and the previous one on the same device
+ * and stores it. Never throws: a failed diff must not fail the upload. The
+ * row makes "what's new today" view fast and gives change alerts a durable
+ * dedupe anchor.
+ */
+async function recordScanChange(
+  mspId: string,
+  clientId: string,
+  deviceId: string,
+  scanId: string,
+  report: unknown,
+): Promise<void> {
+  try {
+    await withTenant(mspId, async (db) => {
+      // The two previous scans on this device, newest first. Three in all
+      // (the one we just stored plus the two before) covers both the diff
+      // target and the "returned" lookup.
+      const rows = (
+        await db.query<{ id: string; report: RawReport }>(
+          "select id, report from scans where device_id = $1 and id <> $2 order by scanned_at desc, received_at desc limit 2",
+          [deviceId, scanId],
+        )
+      ).rows;
+      const prev = rows[0] ?? null;
+      const prevPrev = rows[1] ?? null;
+      const delta = diffScans(prev?.report ?? null, report as RawReport, prevPrev?.report ?? null);
+      // Even an empty delta is stored, so a client can tell "no changes
+      // today" apart from "scan hasn't happened yet".
+      const trimmed = trimDelta(delta);
+      await db.query(
+        `insert into scan_changes (msp_id, client_id, device_id, scan_id, prev_scan_id, added, removed, changed, risk_up, risk_down, returned, delta)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+         on conflict (scan_id) do nothing`,
+        [
+          mspId,
+          clientId,
+          deviceId,
+          scanId,
+          prev?.id ?? null,
+          delta.counts.added,
+          delta.counts.removed,
+          delta.counts.changed,
+          delta.counts.riskUp,
+          delta.counts.riskDown,
+          delta.counts.returned,
+          JSON.stringify(trimmed),
+        ],
+      );
+    });
+    void hasAnyChange; // keep the symbol in the bundle for later UI use
+  } catch (err) {
+    console.error(`scan diff for device ${deviceId} failed: ${(err as Error).message}`);
+  }
 }
 
 // A token is a prefix plus 32 bytes of base64url. The route hands us a
@@ -245,11 +304,11 @@ async function saveScan(token: string | undefined, report: unknown, now: Date) {
       [owner.msp_id, owner.client_id, hostname, os, scannedAt],
     );
     const deviceId = device.rows[0].id;
-    await db.query(
-      "insert into scans (msp_id, client_id, device_id, scanned_at, report) values ($1, $2, $3, $4, $5)",
+    const scan = await db.query<{ id: string }>(
+      "insert into scans (msp_id, client_id, device_id, scanned_at, report) values ($1, $2, $3, $4, $5) returning id",
       [owner.msp_id, owner.client_id, deviceId, scannedAt, JSON.stringify(report)],
     );
-    return { mspId: owner.msp_id, clientId: owner.client_id, deviceId };
+    return { mspId: owner.msp_id, clientId: owner.client_id, deviceId, scanId: scan.rows[0].id };
   });
 }
 

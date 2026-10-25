@@ -5,7 +5,7 @@
 import { createHash } from "node:crypto";
 import { hasAppSecret, sign } from "./crypto.ts";
 import { withTenant, type Db } from "./db.ts";
-import { alertEmail, clientWeeklyEmail, weeklyEmail, type AlertFinding, type Email } from "./email.ts";
+import { alertEmail, changesEmail, clientWeeklyEmail, weeklyEmail, type AlertFinding, type ChangeRow, type Email } from "./email.ts";
 import { attention, snapshotOf, toolKey } from "./insights.ts";
 import { getClient, getTrend, listClients } from "./store.ts";
 import type { Client } from "./types.ts";
@@ -109,6 +109,103 @@ export async function checkAlerts(mspId: string, clientId: string, now = new Dat
     return 0;
   }
 }
+
+/**
+ * Emails the MSP team about changes to a client's agents since the last scan:
+ * new tools, changed permissions, and risky configs that came back after
+ * being remediated. One digest per client per day; follow-up scans on the
+ * same day don't re-notify. Never throws.
+ */
+export async function checkChangeAlerts(mspId: string, clientId: string, now = new Date()): Promise<number> {
+  try {
+    return await withTenant(mspId, async (db) => {
+      // Changes written for this client in the last 24 hours. New tools,
+      // permission changes and "returned" findings each become one row.
+      const since = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+      const rows = (
+        await db.query<{
+          device: string;
+          added: number;
+          changed: number;
+          returned: number;
+          risk_up: number;
+          delta: {
+            added?: Array<{ name?: string; app?: string }>;
+            changed?: Array<{ name?: string; app?: string; before?: { worstRisk?: string }; after?: { worstRisk?: string } }>;
+            returned?: Array<{ name?: string; app?: string; title?: string; ruleId?: string }>;
+          };
+        }>(
+          `select d.hostname as device, c.added, c.changed, c.returned, c.risk_up, c.delta
+           from scan_changes c join devices d on d.id = c.device_id
+           where c.client_id = $1 and c.at >= $2
+             and (c.added > 0 or c.risk_up > 0 or c.returned > 0)
+           order by c.at`,
+          [clientId, since],
+        )
+      ).rows;
+      if (rows.length === 0) return 0;
+      const added: ChangeRow[] = [];
+      const changed: ChangeRow[] = [];
+      const returned: ChangeRow[] = [];
+      for (const r of rows) {
+        const device = r.device.slice(0, 100);
+        for (const s of r.delta.added ?? []) added.push({ device, what: `New AI tool: ${s.name ?? "unknown"}${s.app ? ` (${s.app})` : ""}` });
+        for (const s of r.delta.changed ?? []) {
+          const up = (s.after?.worstRisk ?? "") !== (s.before?.worstRisk ?? "") && SEV_RANK[(s.after?.worstRisk ?? "none") as keyof typeof SEV_RANK] > SEV_RANK[(s.before?.worstRisk ?? "none") as keyof typeof SEV_RANK];
+          if (!up) continue;
+          changed.push({
+            device,
+            what: `Permissions changed on ${s.name ?? "unknown"}${s.app ? ` (${s.app})` : ""}: risk ${s.before?.worstRisk ?? "none"} → ${s.after?.worstRisk ?? "none"}`,
+          });
+        }
+        for (const s of r.delta.returned ?? []) {
+          returned.push({
+            device,
+            what: `${s.title || s.ruleId || "a fixed risk"} is back on ${s.name ?? "unknown"}${s.app ? ` (${s.app})` : ""}`,
+          });
+        }
+      }
+      if (added.length + changed.length + returned.length === 0) return 0;
+
+      // One digest per client per day: the dedupe key is day-grained, so a
+      // second scan on the same day quietly updates nothing.
+      const day = now.toISOString().slice(0, 10);
+      const batch = createHash("sha256")
+        .update(`${added.map((x) => x.what).sort().join("\n")}\n${changed.map((x) => x.what).sort().join("\n")}\n${returned.map((x) => x.what).sort().join("\n")}`)
+        .digest("hex")
+        .slice(0, 16);
+
+      const client = await db.query<{ name: string }>("select name from clients where id = $1", [clientId]);
+      if (client.rowCount === 0) return 0;
+      const mspName = (await db.query<{ name: string }>("select name from msps")).rows[0]?.name ?? "";
+      const people = (
+        await db.query<Recipient>("select id, email from users where role in ('owner', 'member') and alert_emails order by created_at")
+      ).rows;
+      const base = consoleBase();
+      let n = 0;
+      for (const p of people) {
+        const unsub = unsubscribeUrl(p.id, "alert");
+        const mail = changesEmail({
+          mspName,
+          clientName: client.rows[0].name,
+          added,
+          changed,
+          returned,
+          clientUrl: base && `${base}/app/clients/${clientId}/changes`,
+          unsubscribeUrl: unsub,
+          settingsUrl: base && `${base}/app/settings`,
+        });
+        if (await enqueue(db, mspId, `changes:${clientId}:${day}:${batch}:${p.id}`, "alert", p, mail, unsub)) n++;
+      }
+      return n;
+    });
+  } catch (err) {
+    console.error(`change alert check for client ${clientId} failed: ${(err as Error).message}`);
+    return 0;
+  }
+}
+
+const SEV_RANK = { high: 4, medium: 3, low: 2, none: 1 } as const;
 
 /** Monday of the week `now` is in, as YYYY-MM-DD (UTC). */
 export function weekOf(now: Date): string {

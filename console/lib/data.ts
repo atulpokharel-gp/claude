@@ -49,6 +49,66 @@ export async function loadClient(id: string): Promise<ClientDetail | undefined> 
   return { demo: false, mspName: s.mspName, ...got, logins: await listClientViewers(s.mspId, id), isOwner: s.role === "owner" };
 }
 
+export interface ChangeListRow {
+  id: string;
+  at: string;
+  deviceId: string;
+  deviceHostname: string;
+  scanId: string;
+  prevScanId: string | null;
+  added: number;
+  removed: number;
+  changed: number;
+  riskUp: number;
+  riskDown: number;
+  returned: number;
+}
+
+export async function loadClientChanges(clientId: string, limit = 100): Promise<ChangeListRow[]> {
+  if (!hasDatabase()) return [];
+  const s = await requireSession();
+  const { withTenant } = await import("./db.ts");
+  return withTenant(s.mspId, async (db) => {
+    const rows = (
+      await db.query<{
+        id: string;
+        at: Date;
+        device_id: string;
+        hostname: string;
+        scan_id: string;
+        prev_scan_id: string | null;
+        added: number;
+        removed: number;
+        changed: number;
+        risk_up: number;
+        risk_down: number;
+        returned: number;
+      }>(
+        `select sc.id, sc.at, sc.device_id, d.hostname, sc.scan_id, sc.prev_scan_id,
+                sc.added, sc.removed, sc.changed, sc.risk_up, sc.risk_down, sc.returned
+         from scan_changes sc join devices d on d.id = sc.device_id
+         where sc.client_id = $1
+         order by sc.at desc limit $2`,
+        [clientId, Math.min(Math.max(limit, 1), 500)],
+      )
+    ).rows;
+    return rows.map((r) => ({
+      id: r.id,
+      at: r.at.toISOString(),
+      deviceId: r.device_id,
+      deviceHostname: r.hostname,
+      scanId: r.scan_id,
+      prevScanId: r.prev_scan_id,
+      added: r.added,
+      removed: r.removed,
+      changed: r.changed,
+      riskUp: r.risk_up,
+      riskDown: r.risk_down,
+      returned: r.returned,
+    }));
+  });
+}
+
 export interface PortalData {
   mspName: string;
   client: Client;
