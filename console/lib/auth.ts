@@ -17,7 +17,7 @@ export interface Session {
   mspId: string;
   email: string;
   mspName: string;
-  role: "owner" | "member" | "viewer";
+  role: "owner" | "member" | "technician" | "viewer";
   /** For a client viewer: the one client they can see. */
   clientId: string | null;
   clientName: string | null;

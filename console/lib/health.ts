@@ -11,6 +11,7 @@ export const JOB_MAX_AGE_MINUTES: Record<string, number> = {
   m365_sync: 26 * 60,
   snapshot: 26 * 60,
   mail_weekly: 26 * 60,
+  schedules: 90,
   backup: 26 * 60,
   mail_send: 20,
 };

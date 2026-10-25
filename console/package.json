@@ -17,6 +17,7 @@
     "db:snapshot": "node --experimental-strip-types scripts/snapshot.ts",
     "mail:weekly": "node --experimental-strip-types scripts/weekly.ts",
     "mail:send": "node --experimental-strip-types scripts/send-mail.ts",
+    "mail:schedules": "node --experimental-strip-types scripts/schedules.ts",
     "research:configs": "node --experimental-strip-types scripts/research-public-configs.ts"
   },
   "dependencies": {
