@@ -356,21 +356,16 @@ func TestApplyKeepsSymlinkAndRewritesTarget(t *testing.T) {
 	if len(stray) != 0 {
 		t.Errorf("backup leaked next to the link target: %v", stray)
 	}
-	// The meta.json records enough to put the file back where it was. Parse
-	// it rather than substring-matching: on Windows a path has backslashes
-	// that json.Marshal escapes to "\\", so a raw strings.Contains of the
-	// resolved path would never match the file's text.
-	meta, err := os.ReadFile(filepath.Join(filepath.Dir(plan.Files[0].Backup), "meta.json"))
+	// The meta.json records enough to put the file back where it was.
+	metaBytes, err := os.ReadFile(filepath.Join(filepath.Dir(plan.Files[0].Backup), "meta.json"))
 	if err != nil {
 		t.Fatalf("meta.json missing: %v", err)
 	}
-	var m struct {
-		OriginalPath string `json:"originalPath"`
+	var meta BackupMeta
+	if err := json.Unmarshal(metaBytes, &meta); err != nil {
+		t.Fatalf("meta.json not valid JSON: %v", err)
 	}
-	if err := json.Unmarshal(meta, &m); err != nil {
-		t.Fatalf("meta.json didn't parse: %v\n%s", err, meta)
-	}
-	if m.OriginalPath != realDotfiles {
-		t.Errorf("meta.OriginalPath = %q, want %q", m.OriginalPath, realDotfiles)
+	if meta.OriginalPath != realDotfiles {
+		t.Errorf("meta.OriginalPath = %q, want %q", meta.OriginalPath, realDotfiles)
 	}
 }
