@@ -148,6 +148,47 @@ listed for fixing by hand. Run zinloop from a permanent location, since its
 path is written into the configs. Rewritten files keep every setting, though
 key order may change.
 
+## Install as a long-running service
+
+For a laptop that should keep itself scanned without an RMM, install the
+scanner as a system service. The service scans on an interval (24h with up to
+2h of jitter by default), uploads to the console, and restarts itself if it
+crashes.
+
+```sh
+sudo zinloop install --url https://zinloop.com --token zlu_...
+zinloop status                 # last scan, OS service state
+zinloop logs --follow          # journal / launchd log / schtasks log
+sudo zinloop uninstall --purge # remove service + config + token
+```
+
+| OS | What `install` sets up | Status / logs come from |
+| --- | --- | --- |
+| Linux (systemd) | `/etc/systemd/system/zinloop.service` running `zinloop service run` as root, `Restart=on-failure` | `systemctl status zinloop` / `journalctl -u zinloop` |
+| macOS | `/Library/LaunchDaemons/com.zinloop.service.plist` with `KeepAlive=true` | `launchctl print system/com.zinloop.service` / `/etc/zinloop/zinloop.log` |
+| Windows | Scheduled Task `Zinloop` running as SYSTEM at boot (`schtasks /SC ONSTART`) | `schtasks /Query /TN Zinloop /V` / `%ProgramData%\Zinloop\zinloop.log` |
+
+Install removes the old oneshot daily-scan units from the RMM installer
+(`zinloop-scan.timer`, `com.zinloop.scan`, `ZinloopDailyScan`, cron entry) so
+the service doesn't double-scan with them.
+
+Config lives at `/etc/zinloop/config.json` (or `%ProgramData%\Zinloop\config.json`
+on Windows). The upload token is stored next to it at mode 0600. State the
+daemon writes between runs — last scan, counters, last error — lands in
+`state.json` beside the config, which is what `zinloop status` reads.
+
+Flags:
+
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `--url` | *required* | Console URL, e.g. `https://zinloop.com` |
+| `--token` / `--token-file` | *required* | Upload token or a file holding it (prefer the file; args can leak via `/proc`) |
+| `--interval-hours` | `24` | Hours between scans |
+| `--jitter-seconds` | `7200` | Random extra delay added to each scan |
+| `--all-users` | `true` | Scan every user profile (needs root/Administrator) |
+| `--no-start` | — | Install but don't start; let the next reboot pick it up |
+| `--force` | — | Overwrite an existing install |
+
 ## Send scans to the console
 
 ```sh
