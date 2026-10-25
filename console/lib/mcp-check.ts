@@ -58,6 +58,15 @@ const shellServer = /(desktop-commander|mcp-shell|shell-server|server-shell|mcp-
 const fsServer = /filesystem/i;
 const npmExactVersion = /^v?\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$/;
 const pyExactVersion = /^\d+(\.\d+)*([a-zA-Z0-9.+-]*)$/;
+// Zero-width and bidi-override characters. See rules.go for background.
+const hiddenChars = /[​-‏‪-‮⁠-⁤⁦-⁩﻿]/;
+const injectionPhrase =
+  /(ignore\s+(all\s+|the\s+|any\s+)?(previous|prior|above|earlier)\s+(instructions|rules|prompts?)|disregard\s+(the\s+|all\s+)?(above|previous|system|prior)\s+(instructions|prompts?)|forget\s+(all\s+|your\s+|the\s+)?(previous|prior|earlier)\s+(instructions|prompts?|rules)|override\s+(your|the|all)\s+(instructions|rules|prompts?)|reveal\s+(your|the)\s+(system\s+)?(prompt|instructions)|print\s+(your|the)\s+(system\s+)?prompt|you\s+are\s+(now\s+)?dan\b|do\s+anything\s+now)/i;
+const broadOAuthScope =
+  /(^|[,\s])(\*|admin(:[^,\s]+)?|admin[._-](all|org|user|repo)|write:all|write[._-]all|write:org|full[_-]?access|full[_-]?control|offline_access|read:all|read[._-]all|read:org|user:all|repo$|repo:[^,\s]+|workspace:all|all:all|owner|superuser|root|dangerously[_-]skip[_-]permissions)(?=$|[,\s])/i;
+const trustedNpmHost = /^(registry\.npmjs\.org|npm\.pkg\.github\.com)$/;
+const trustedPyHost = /^(pypi\.org|files\.pythonhosted\.org)$/;
+const untrustedSourcePrefix = /^(git\+|git:\/\/|git@|https?:\/\/|file:|\.\/|\.\\|\/|~|[A-Za-z]:[\\/])/;
 
 // ---------- parsing ----------
 
@@ -366,23 +375,32 @@ function stripVersion(pkg: string): string {
   return m ? pkg.slice(0, pkg.length - m[2].length - 1) : pkg;
 }
 
-function unpinnedPackage(s: CheckServer): CheckFinding[] {
+function packageRunner(s: CheckServer): { runner: string; args: string[] } | null {
   const runner = baseName(s.command.toLowerCase()).replace(/\.cmd$/, "").replace(/\.exe$/, "");
   let args = s.args;
   if (["pnpm", "yarn", "bun"].includes(runner)) {
-    if (args.length === 0 || (args[0] !== "dlx" && args[0] !== "x")) return [];
+    if (args.length === 0 || (args[0] !== "dlx" && args[0] !== "x")) return null;
     args = args.slice(1);
   } else if (!["npx", "bunx", "uvx"].includes(runner)) {
-    return [];
+    return null;
   }
-  const pkg = firstPackageArg(runner, args);
-  if (!pkg || isPinned(runner, pkg)) return [];
+  return { runner, args };
+}
+
+function unpinnedPackage(s: CheckServer): CheckFinding[] {
+  const pr = packageRunner(s);
+  if (!pr) return [];
+  const pkg = firstPackageArg(pr.runner, pr.args);
+  if (!pkg) return [];
+  // UNTRUSTED_SOURCE already covers git URLs, direct URLs and local paths.
+  if (untrustedSourcePrefix.test(pkg)) return [];
+  if (isPinned(pr.runner, pkg)) return [];
   return [
     {
       ruleId: "UNPINNED_PACKAGE",
       severity: "medium",
       title: "Downloads the newest code on every start",
-      detail: `This server runs ${pkg} through ${runner} without a fixed version. If the package is taken over or a bad update is published, it runs on this computer automatically.`,
+      detail: `This server runs ${pkg} through ${pr.runner} without a fixed version. If the package is taken over or a bad update is published, it runs on this computer automatically.`,
       fix: `Pin an exact, reviewed version (for example ${stripVersion(pkg)}@1.2.3) and update it on purpose.`,
     },
   ];
@@ -507,15 +525,157 @@ function baseName(p: string): string {
   return i >= 0 ? p.slice(i + 1) : p;
 }
 
+function hiddenInstructions(s: CheckServer): CheckFinding[] {
+  const where: string[] = [];
+  const check = (label: string, v: string) => {
+    if (!v) return;
+    if (hiddenChars.test(v)) where.push(label + " (hidden characters)");
+    else if (injectionPhrase.test(v)) where.push(label + " (injection phrase)");
+  };
+  check("server name", s.name);
+  check("command", s.command);
+  s.args.forEach((a, i) => check("argument " + (i + 1), a));
+  for (const k of Object.keys(s.env).sort()) check("env " + k, s.env[k]);
+  for (const k of Object.keys(s.headers).sort()) check("header " + k, s.headers[k]);
+  check("server URL", s.url);
+  if (where.length === 0) return [];
+  where.sort();
+  return [
+    {
+      ruleId: "HIDDEN_INSTRUCTIONS",
+      severity: "high",
+      title: "Hidden text or injection phrases in the config",
+      detail: `This server has text that an agent will read but a human reviewer may miss (${where.join(", ")}). That is how tool-poisoning and prompt-injection attacks on MCP servers hide payloads.`,
+      fix: "Remove the hidden characters or override phrases, and only trust tool descriptions from servers you fully control.",
+    },
+  ];
+}
+
+function untrustedSource(s: CheckServer): CheckFinding[] {
+  const pr = packageRunner(s);
+  if (!pr) return [];
+  const pkg = firstPackageArg(pr.runner, pr.args);
+  if (!pkg || !untrustedSourcePrefix.test(pkg)) return [];
+  let kind = "a URL or local path";
+  if (/^git\+/.test(pkg) || /^git:\/\//.test(pkg) || /^git@/.test(pkg)) kind = "a git source";
+  else if (/^https?:\/\//.test(pkg)) kind = "a direct URL";
+  else if (/^file:/.test(pkg) || /^\.\//.test(pkg) || /^\.\\/.test(pkg) || pkg.startsWith("/") || pkg.startsWith("~")) kind = "a local path";
+  return [
+    {
+      ruleId: "UNTRUSTED_SOURCE",
+      severity: "high",
+      title: "Installed from outside the package registry",
+      detail: `This server is pulled from ${kind} (${pkg}) instead of npm or PyPI. It skips registry provenance and can change silently between runs.`,
+      fix: "Publish the server to a registry and pin an exact version, or vendor the code and run it from a reviewed, read-only location.",
+    },
+  ];
+}
+
+function untrustedRegistry(s: CheckServer): CheckFinding[] {
+  const pr = packageRunner(s);
+  if (!pr) return [];
+  const hosts: string[] = [];
+  const flags = new Set(["--registry", "--index", "--index-url", "-i", "--extra-index-url", "--default-index"]);
+  for (let i = 0; i < pr.args.length; i++) {
+    const a = pr.args[i];
+    const eq = a.indexOf("=");
+    const name = eq >= 0 ? a.slice(0, eq) : a;
+    if (!flags.has(name)) continue;
+    let raw = "";
+    if (eq >= 0) raw = a.slice(eq + 1);
+    else if (i + 1 < pr.args.length) {
+      raw = pr.args[i + 1];
+      i++;
+    }
+    if (!raw) continue;
+    const u = parseUrl(raw);
+    if (!u || !u.host) continue;
+    const host = hostnameOf(u).toLowerCase();
+    const trusted = pr.runner === "uvx" ? trustedPyHost.test(host) : trustedNpmHost.test(host);
+    if (trusted) continue;
+    hosts.push(name + " " + host);
+  }
+  if (hosts.length === 0) return [];
+  hosts.sort();
+  return [
+    {
+      ruleId: "UNTRUSTED_REGISTRY",
+      severity: "medium",
+      title: "Package comes from a non-standard registry",
+      detail: `This server fetches its code through ${hosts.join(", ")} instead of the default registry. If that registry is taken over or replaced, every start installs code it serves.`,
+      fix: "Remove the registry override, or confirm the host is on the company's approved list and pin the exact version.",
+    },
+  ];
+}
+
+function hasBroadScope(v: string): boolean {
+  const t = v.trim();
+  if (!t || !isLiteral(t)) return false;
+  return broadOAuthScope.test(" " + t.replace(/,/g, " ") + " ");
+}
+
+function oauthBroadScope(s: CheckServer): CheckFinding[] {
+  const isScopeKey = (k: string) => {
+    const lk = k.toLowerCase();
+    return lk.includes("scope") || lk.includes("scopes") || lk.includes("permission");
+  };
+  const where: string[] = [];
+  for (const k of Object.keys(s.env).sort()) {
+    if (isScopeKey(k) && hasBroadScope(s.env[k])) where.push("env " + k);
+  }
+  for (const k of Object.keys(s.headers).sort()) {
+    if (isScopeKey(k) && hasBroadScope(s.headers[k])) where.push("header " + k);
+  }
+  for (let i = 0; i < s.args.length; i++) {
+    const a = s.args[i];
+    const eq = a.indexOf("=");
+    const name = eq >= 0 ? a.slice(0, eq) : a;
+    const flagName = name.replace(/^-+/, "");
+    if (!name.startsWith("-") || !isScopeKey(flagName)) continue;
+    if (eq >= 0) {
+      if (hasBroadScope(a.slice(eq + 1))) where.push("argument " + (i + 1));
+    } else if (i + 1 < s.args.length && hasBroadScope(s.args[i + 1])) {
+      where.push("argument " + (i + 2));
+      i++;
+    }
+  }
+  if (s.url) {
+    const u = parseUrl(s.url);
+    if (u) {
+      for (const [k, v] of u.searchParams) {
+        if (isScopeKey(k) && hasBroadScope(v)) {
+          where.push("URL query " + k);
+          break;
+        }
+      }
+    }
+  }
+  if (where.length === 0) return [];
+  where.sort();
+  return [
+    {
+      ruleId: "OAUTH_BROAD_SCOPE",
+      severity: "medium",
+      title: "OAuth scope is wider than the server needs",
+      detail: `This server asks for admin-level or write-all OAuth scopes (${where.join(", ")}). If the token leaks, the attacker gets the same wide access.`,
+      fix: "Issue a token with only the scopes the server actually calls, and prefer read-only or resource-scoped tokens.",
+    },
+  ];
+}
+
 /** Runs every rule against one server, in the same order as the Go scanner. */
 export function checkServer(s: CheckServer): CheckFinding[] {
   return [
     ...secretsInConfig(s),
+    ...hiddenInstructions(s),
     ...insecureTransport(s),
     ...unpinnedPackage(s),
+    ...untrustedSource(s),
+    ...untrustedRegistry(s),
     ...broadFilesystem(s),
     ...shellAccess(s),
     ...riskyContainer(s),
+    ...oauthBroadScope(s),
     ...remoteServer(s),
   ];
 }
