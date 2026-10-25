@@ -48,9 +48,20 @@ the `skills` section of the report.
 | `SKILL_HIDDEN_INSTRUCTIONS` | high | Zero-width or bidi-override characters, or prompt-injection phrases, in a skill's name, description or body |
 | `SKILL_BROAD_TOOL_ACCESS` | medium | A skill grants itself shell-equivalent tools (`Bash`, `Bash(*)`, `Bash(sudo…)`, `Write`, `Edit`, `*`, …) |
 
-Runtime tool-description scanning (fetching the live tool list from a
-server and checking each description for poisoning) is tracked as the
-next follow-up in this thread.
+**Runtime tool-poisoning rule**
+
+Pass `--probe-tools` to start each stdio MCP server, speak the MCP
+`initialize` + `tools/list` handshake, and check every tool it returns
+for hidden characters or prompt-injection phrases that configuration
+alone cannot see. The rule is off by default because, unlike the rest
+of the scan, it executes the configured servers; servers started
+through `bash -c "..."` wrappers are refused outright. Pair with
+`--probe-timeout <duration>` to tune the per-server timeout
+(default `5s`).
+
+| Rule | Severity | Flags |
+| --- | --- | --- |
+| `TOOL_POISONING` | high | A live tool's name or description carries zero-width/bidi characters or an injection phrase (`ignore previous`, `<system>`, …) that an agent reads on every call |
 
 ## Use
 
@@ -61,6 +72,7 @@ go build -o zinloop ./cmd/zinloop
 ./zinloop --out scan.json       # also save JSON (file mode 0600)
 ./zinloop --fail-on high        # exit code 2 if anything is high risk
 ./zinloop --all-users           # every user profile (run as administrator/root)
+./zinloop --probe-tools         # also start each stdio MCP server and scan its live tool list
 ```
 
 RMM tools run scripts as SYSTEM or root, whose own home has no AI configs, so

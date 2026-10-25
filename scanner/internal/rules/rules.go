@@ -97,6 +97,70 @@ func Check(s discover.Server, ctx Context) []Finding {
 	return out
 }
 
+// Tool is one tool entry returned by an MCP server's tools/list reply.
+// Only the fields the rules read are kept; the probe is responsible for
+// not storing anything else.
+type Tool struct {
+	Server      string // config name of the server the tool came from
+	Name        string
+	Description string
+}
+
+// CheckTool runs the runtime tool-poisoning rule against one tool. Returns
+// at most one finding so a server with many hostile tools lists each one.
+func CheckTool(t Tool) []Finding {
+	hits := scanForHidden(t.Name, "name")
+	hits = append(hits, scanForHidden(t.Description, "description")...)
+	if len(hits) == 0 {
+		return nil
+	}
+	if len(hits) > 10 {
+		hits = append(hits[:10], "and "+strconv.Itoa(len(hits)-10)+" more")
+	}
+	return []Finding{{
+		RuleID:   "TOOL_POISONING",
+		Severity: High,
+		Title:    "Live tool description carries hidden text or override phrases",
+		Detail:   "Tool \"" + t.Name + "\" on server \"" + t.Server + "\" returned text an agent will read but a human reviewer may miss (" + strings.Join(hits, ", ") + "). An MCP server can hide instructions in a tool description that take effect every time the tool is used.",
+		Fix:      "Treat this server as compromised: stop the agent that uses it, review the published tool list, and only re-enable servers from authors the company trusts.",
+	}}
+}
+
+// scanForHidden looks for zero-width/bidi characters or injection phrases
+// in a value and returns a short list of where they occur. For a long body
+// it tags the hit by line so the report is specific.
+func scanForHidden(v, label string) []string {
+	v = strings.TrimRight(v, "\n")
+	if v == "" {
+		return nil
+	}
+	lines := strings.Split(v, "\n")
+	if len(lines) == 1 {
+		if hiddenChars.MatchString(v) {
+			return []string{label + " (hidden characters)"}
+		}
+		if injectionPhrase.MatchString(v) {
+			return []string{label + " (injection phrase)"}
+		}
+		return nil
+	}
+	var out []string
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		if hiddenChars.MatchString(trimmed) {
+			out = append(out, label+" line "+strconv.Itoa(i+1)+" (hidden characters)")
+			continue
+		}
+		if injectionPhrase.MatchString(trimmed) {
+			out = append(out, label+" line "+strconv.Itoa(i+1)+" (injection phrase)")
+		}
+	}
+	return out
+}
+
 // CheckSkill runs the skill-specific rules against one on-disk skill.
 // Skill findings use the same Finding shape as MCP findings so the report
 // can list them side by side.
