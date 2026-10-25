@@ -16,7 +16,30 @@ push it through their remote-management tool.
 | Windsurf | `~/.codeium/windsurf/mcp_config.json` |
 | VS Code | user `mcp.json` and `settings.json`, project `.vscode/mcp.json` |
 
-Pass `--project <folder>` (repeatable) to also check project folders.
+Pass `--project <folder>` (repeatable) to also check project folders. For
+non-default installs — containers, CI runners, cloud VMs, custom RMM
+packaging — pass `--extra-config <path>` or `--extra-skills-dir <path>`
+(both repeatable) to point the scanner at the real location.
+
+The scanner also honours the same environment variables Claude itself does,
+so a redirected install is scanned where files actually live rather than at
+the default:
+
+| Variable | Effect |
+| --- | --- |
+| `CLAUDE_CONFIG_DIR` | Replaces `~/.claude.json` and `~/.claude/` (skills, plugins) |
+| `XDG_CONFIG_HOME` (Linux) | Replaces `~/.config/` for Claude Desktop and VS Code |
+
+Every redirect, symlink out of the user's home and world-writable config
+or skills folder is also surfaced as a **path warning** in the report, so
+operators see when "someone changed the direction" for an AI's config even
+when the configs themselves look clean.
+
+| Path-warning rule | Severity | Flags |
+| --- | --- | --- |
+| `path_redirected` | medium | An env var or `--extra-*` flag moved a config/skill location off its default |
+| `symlink_outside_home` | high | A config file or skills folder is a symlink to a target outside the user's home |
+| `world_writable` | high | A config file or skills folder has mode `o+w` — any user on this computer can rewrite or plant one |
 
 **Risk rules**
 
@@ -73,6 +96,8 @@ go build -o zinloop ./cmd/zinloop
 ./zinloop --fail-on high        # exit code 2 if anything is high risk
 ./zinloop --all-users           # every user profile (run as administrator/root)
 ./zinloop --probe-tools         # also start each stdio MCP server and scan its live tool list
+./zinloop --extra-config /opt/custom/mcp.json  # scan a non-default path too
+./zinloop --extra-skills-dir /srv/claude-skills # scan a non-default skills folder too
 ```
 
 RMM tools run scripts as SYSTEM or root, whose own home has no AI configs, so
@@ -122,6 +147,47 @@ command-line arguments or URLs, and servers in VS Code's `settings.json`, are
 listed for fixing by hand. Run zinloop from a permanent location, since its
 path is written into the configs. Rewritten files keep every setting, though
 key order may change.
+
+## Install as a long-running service
+
+For a laptop that should keep itself scanned without an RMM, install the
+scanner as a system service. The service scans on an interval (24h with up to
+2h of jitter by default), uploads to the console, and restarts itself if it
+crashes.
+
+```sh
+sudo zinloop install --url https://zinloop.com --token zlu_...
+zinloop status                 # last scan, OS service state
+zinloop logs --follow          # journal / launchd log / schtasks log
+sudo zinloop uninstall --purge # remove service + config + token
+```
+
+| OS | What `install` sets up | Status / logs come from |
+| --- | --- | --- |
+| Linux (systemd) | `/etc/systemd/system/zinloop.service` running `zinloop service run` as root, `Restart=on-failure` | `systemctl status zinloop` / `journalctl -u zinloop` |
+| macOS | `/Library/LaunchDaemons/com.zinloop.service.plist` with `KeepAlive=true` | `launchctl print system/com.zinloop.service` / `/etc/zinloop/zinloop.log` |
+| Windows | Scheduled Task `Zinloop` running as SYSTEM at boot (`schtasks /SC ONSTART`) | `schtasks /Query /TN Zinloop /V` / `%ProgramData%\Zinloop\zinloop.log` |
+
+Install removes the old oneshot daily-scan units from the RMM installer
+(`zinloop-scan.timer`, `com.zinloop.scan`, `ZinloopDailyScan`, cron entry) so
+the service doesn't double-scan with them.
+
+Config lives at `/etc/zinloop/config.json` (or `%ProgramData%\Zinloop\config.json`
+on Windows). The upload token is stored next to it at mode 0600. State the
+daemon writes between runs — last scan, counters, last error — lands in
+`state.json` beside the config, which is what `zinloop status` reads.
+
+Flags:
+
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `--url` | *required* | Console URL, e.g. `https://zinloop.com` |
+| `--token` / `--token-file` | *required* | Upload token or a file holding it (prefer the file; args can leak via `/proc`) |
+| `--interval-hours` | `24` | Hours between scans |
+| `--jitter-seconds` | `7200` | Random extra delay added to each scan |
+| `--all-users` | `true` | Scan every user profile (needs root/Administrator) |
+| `--no-start` | — | Install but don't start; let the next reboot pick it up |
+| `--force` | — | Overwrite an existing install |
 
 ## Send scans to the console
 
