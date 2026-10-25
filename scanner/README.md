@@ -56,7 +56,19 @@ RMM tools run scripts as SYSTEM or root, whose own home has no AI configs, so
 use `--all-users` there. [`rmm/`](rmm/) has ready-made install scripts for
 Windows (PowerShell) and macOS/Linux that download the scanner from your
 console, check its SHA-256, store the upload token where only administrators
-can read it, run the scan and can schedule it daily.
+can read it, run the scan, and schedule it to run every day.
+
+A daily scheduled scan is set up by default:
+
+| OS | Mechanism | Window |
+| --- | --- | --- |
+| Windows | Scheduled task running as SYSTEM | 10:00 local, random delay up to 2h |
+| macOS | launchd daemon in `/Library/LaunchDaemons/` | 10:00 local, random delay up to 2h |
+| Linux (systemd) | `zinloop-scan.timer` with `RandomizedDelaySec=2h` | 10:00 local, random delay up to 2h |
+| Linux (other) | cron file in `/etc/cron.d/zinloop` | 10:xx local, random delay up to 2h |
+
+Set `ZINLOOP_NO_SCHEDULE=1` (Unix) or pass `-NoSchedule` (Windows) to skip
+scheduling, for example if the RMM tool runs the scan itself on a schedule.
 
 ## Fix plain-text keys
 
