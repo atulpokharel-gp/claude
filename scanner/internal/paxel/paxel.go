@@ -328,10 +328,10 @@ func parseCodexJSONL(path string, maxBytes int64) ([]Bucket, error) {
 		return nil, errors.New("file too large to read")
 	}
 	type usage struct {
-		Input         int64 `json:"input_tokens"`
-		Output        int64 `json:"output_tokens"`
-		CacheRead     int64 `json:"input_cached_tokens"`
-		ReasoningOut  int64 `json:"reasoning_output_tokens"`
+		Input        int64 `json:"input_tokens"`
+		Output       int64 `json:"output_tokens"`
+		CacheRead    int64 `json:"input_cached_tokens"`
+		ReasoningOut int64 `json:"reasoning_output_tokens"`
 	}
 	type payload struct {
 		Model string `json:"model"`
