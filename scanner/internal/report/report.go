@@ -10,6 +10,7 @@ import (
 
 	"github.com/atulpokharel-gp/claude/scanner/internal/discover"
 	"github.com/atulpokharel-gp/claude/scanner/internal/rules"
+	"github.com/atulpokharel-gp/claude/scanner/internal/skillscan"
 )
 
 // SchemaVersion changes when the JSON shape changes in a breaking way.
@@ -20,23 +21,32 @@ const Redacted = "[REDACTED]"
 
 // Report is the full result of one scan of one computer.
 type Report struct {
-	SchemaVersion  int                     `json:"schemaVersion"`
-	ScannerVersion string                  `json:"scannerVersion"`
-	Hostname       string                  `json:"hostname"`
-	OS             string                  `json:"os"`
-	ScannedAt      time.Time               `json:"scannedAt"`
-	Summary        Summary                 `json:"summary"`
-	Servers        []ServerResult          `json:"servers"`
-	Configs        []discover.ConfigResult `json:"configs"`
+	SchemaVersion  int                        `json:"schemaVersion"`
+	ScannerVersion string                     `json:"scannerVersion"`
+	Hostname       string                     `json:"hostname"`
+	OS             string                     `json:"os"`
+	ScannedAt      time.Time                  `json:"scannedAt"`
+	Summary        Summary                    `json:"summary"`
+	Servers        []ServerResult             `json:"servers"`
+	Configs        []discover.ConfigResult    `json:"configs"`
+	Skills         []SkillResult              `json:"skills,omitempty"`
+	SkillDirs      []skillscan.LocationResult `json:"skillDirs,omitempty"`
 }
 
-// Summary counts servers by their worst finding.
+// Summary counts servers and skills by their worst finding. Server and skill
+// counts stay separate so a dashboard can show them side by side without
+// double-counting.
 type Summary struct {
-	Servers int `json:"servers"`
-	High    int `json:"high"`
-	Medium  int `json:"medium"`
-	Low     int `json:"low"`
-	Clean   int `json:"clean"`
+	Servers     int `json:"servers"`
+	High        int `json:"high"`
+	Medium      int `json:"medium"`
+	Low         int `json:"low"`
+	Clean       int `json:"clean"`
+	Skills      int `json:"skills,omitempty"`
+	SkillHigh   int `json:"skillHigh,omitempty"`
+	SkillMedium int `json:"skillMedium,omitempty"`
+	SkillLow    int `json:"skillLow,omitempty"`
+	SkillClean  int `json:"skillClean,omitempty"`
 }
 
 // ServerResult is one server with its findings and overall risk.
@@ -49,12 +59,22 @@ type ServerResult struct {
 	Findings []rules.Finding `json:"findings"`
 }
 
+// SkillResult is one skill with its findings and overall risk. The SKILL.md
+// body is not serialised; the console only ever needs the rule output.
+type SkillResult struct {
+	skillscan.Skill
+	User     string          `json:"user,omitempty"`
+	Risk     rules.Severity  `json:"risk"`
+	Findings []rules.Finding `json:"findings"`
+}
+
 // Build checks every server and assembles the report.
 // Secret-looking arguments are redacted here so nothing downstream sees them.
-func Build(servers []discover.Server, configs []discover.ConfigResult, ctx rules.Context, meta Report) Report {
+func Build(servers []discover.Server, configs []discover.ConfigResult, skills []skillscan.Skill, skillDirs []skillscan.LocationResult, ctx rules.Context, meta Report) Report {
 	r := meta
 	r.SchemaVersion = SchemaVersion
 	r.Configs = configs
+	r.SkillDirs = skillDirs
 	r.Servers = make([]ServerResult, 0, len(servers))
 	for _, s := range servers {
 		f := rules.Check(s, ctx)
@@ -82,6 +102,31 @@ func Build(servers []discover.Server, configs []discover.ConfigResult, ctx rules
 	sort.SliceStable(r.Servers, func(i, j int) bool {
 		return r.Servers[i].Risk.Rank() > r.Servers[j].Risk.Rank()
 	})
+	r.Skills = make([]SkillResult, 0, len(skills))
+	for _, s := range skills {
+		f := rules.CheckSkill(s)
+		if f == nil {
+			f = []rules.Finding{}
+		}
+		// The body is checked but not shipped; drop it before serialising.
+		s.Body = ""
+		res := SkillResult{Skill: s, Risk: rules.Worst(f), Findings: f}
+		r.Skills = append(r.Skills, res)
+		switch res.Risk {
+		case rules.High:
+			r.Summary.SkillHigh++
+		case rules.Medium:
+			r.Summary.SkillMedium++
+		case rules.Low:
+			r.Summary.SkillLow++
+		default:
+			r.Summary.SkillClean++
+		}
+	}
+	r.Summary.Skills = len(r.Skills)
+	sort.SliceStable(r.Skills, func(i, j int) bool {
+		return r.Skills[i].Risk.Rank() > r.Skills[j].Risk.Rank()
+	})
 	return r
 }
 
@@ -95,17 +140,29 @@ func Merge(meta Report, parts []Report) Report {
 	r.SchemaVersion = SchemaVersion
 	r.Servers = []ServerResult{}
 	r.Configs = []discover.ConfigResult{}
+	r.Skills = []SkillResult{}
+	r.SkillDirs = []skillscan.LocationResult{}
 	for _, p := range parts {
 		r.Servers = append(r.Servers, p.Servers...)
 		r.Configs = append(r.Configs, p.Configs...)
+		r.Skills = append(r.Skills, p.Skills...)
+		r.SkillDirs = append(r.SkillDirs, p.SkillDirs...)
 		r.Summary.Servers += p.Summary.Servers
 		r.Summary.High += p.Summary.High
 		r.Summary.Medium += p.Summary.Medium
 		r.Summary.Low += p.Summary.Low
 		r.Summary.Clean += p.Summary.Clean
+		r.Summary.Skills += p.Summary.Skills
+		r.Summary.SkillHigh += p.Summary.SkillHigh
+		r.Summary.SkillMedium += p.Summary.SkillMedium
+		r.Summary.SkillLow += p.Summary.SkillLow
+		r.Summary.SkillClean += p.Summary.SkillClean
 	}
 	sort.SliceStable(r.Servers, func(i, j int) bool {
 		return r.Servers[i].Risk.Rank() > r.Servers[j].Risk.Rank()
+	})
+	sort.SliceStable(r.Skills, func(i, j int) bool {
+		return r.Skills[i].Risk.Rank() > r.Skills[j].Risk.Rank()
 	})
 	return r
 }
@@ -197,6 +254,16 @@ func WriteText(w io.Writer, r Report) {
 	}
 	fmt.Fprintf(w, "Checked %d config locations, found %d config files and %d MCP servers.\n", len(r.Configs), found, r.Summary.Servers)
 	fmt.Fprintf(w, "Risk: %d high, %d medium, %d low, %d clean.\n", r.Summary.High, r.Summary.Medium, r.Summary.Low, r.Summary.Clean)
+	if r.Summary.Skills > 0 || len(r.SkillDirs) > 0 {
+		skillDirs := 0
+		for _, s := range r.SkillDirs {
+			if s.Found {
+				skillDirs++
+			}
+		}
+		fmt.Fprintf(w, "Checked %d skill directories, found %d skills.\n", skillDirs, r.Summary.Skills)
+		fmt.Fprintf(w, "Skill risk: %d high, %d medium, %d low, %d clean.\n", r.Summary.SkillHigh, r.Summary.SkillMedium, r.Summary.SkillLow, r.Summary.SkillClean)
+	}
 
 	for _, s := range r.Servers {
 		fmt.Fprintf(w, "\n[%s] %s  (%s)\n", strings.ToUpper(string(s.Risk)), s.Name, s.App)
@@ -215,9 +282,26 @@ func WriteText(w io.Writer, r Report) {
 			fmt.Fprintf(w, "      Fix: %s\n", f.Fix)
 		}
 	}
+	for _, s := range r.Skills {
+		if s.Risk == rules.None {
+			continue
+		}
+		fmt.Fprintf(w, "\n[%s] skill: %s  (%s)\n", strings.ToUpper(string(s.Risk)), s.Name, s.Source)
+		fmt.Fprintf(w, "  file:    %s\n", s.Path)
+		for _, f := range s.Findings {
+			fmt.Fprintf(w, "  - %s: %s\n", strings.ToUpper(string(f.Severity)), f.Title)
+			fmt.Fprintf(w, "      %s\n", f.Detail)
+			fmt.Fprintf(w, "      Fix: %s\n", f.Fix)
+		}
+	}
 	for _, c := range r.Configs {
 		if c.Error != "" {
 			fmt.Fprintf(w, "\nCould not read %s: %s\n", c.Path, c.Error)
+		}
+	}
+	for _, s := range r.SkillDirs {
+		if s.Error != "" {
+			fmt.Fprintf(w, "\nCould not read skills from %s: %s\n", s.Path, s.Error)
 		}
 	}
 }

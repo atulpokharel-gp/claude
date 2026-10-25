@@ -36,10 +36,21 @@ Pass `--project <folder>` (repeatable) to also check project folders.
 | `REMOTE_SERVER` | low | Data sent to an outside service |
 | `SHELL_LAUNCHER` | low | Server started through `bash -c` or similar |
 
-Runtime tool-description scanning (fetching the live tool list from a server
-and checking each description for poisoning), and skill-file scanning for
-`~/.claude/skills` / plugin folders, are tracked as follow-ups in this
-thread.
+**Skill rules**
+
+Alongside MCP configs, the scanner walks Claude Code "skill" directories
+(`~/.claude/skills/`, `~/.claude/plugins/<plugin>/skills/`, and project
+`<project>/.claude/skills/`) and reads each `SKILL.md`. Findings appear in
+the `skills` section of the report.
+
+| Rule | Severity | Flags |
+| --- | --- | --- |
+| `SKILL_HIDDEN_INSTRUCTIONS` | high | Zero-width or bidi-override characters, or prompt-injection phrases, in a skill's name, description or body |
+| `SKILL_BROAD_TOOL_ACCESS` | medium | A skill grants itself shell-equivalent tools (`Bash`, `Bash(*)`, `Bash(sudo…)`, `Write`, `Edit`, `*`, …) |
+
+Runtime tool-description scanning (fetching the live tool list from a
+server and checking each description for poisoning) is tracked as the
+next follow-up in this thread.
 
 ## Use
 
@@ -56,7 +67,19 @@ RMM tools run scripts as SYSTEM or root, whose own home has no AI configs, so
 use `--all-users` there. [`rmm/`](rmm/) has ready-made install scripts for
 Windows (PowerShell) and macOS/Linux that download the scanner from your
 console, check its SHA-256, store the upload token where only administrators
-can read it, run the scan and can schedule it daily.
+can read it, run the scan, and schedule it to run every day.
+
+A daily scheduled scan is set up by default:
+
+| OS | Mechanism | Window |
+| --- | --- | --- |
+| Windows | Scheduled task running as SYSTEM | 10:00 local, random delay up to 2h |
+| macOS | launchd daemon in `/Library/LaunchDaemons/` | 10:00 local, random delay up to 2h |
+| Linux (systemd) | `zinloop-scan.timer` with `RandomizedDelaySec=2h` | 10:00 local, random delay up to 2h |
+| Linux (other) | cron file in `/etc/cron.d/zinloop` | 10:xx local, random delay up to 2h |
+
+Set `ZINLOOP_NO_SCHEDULE=1` (Unix) or pass `-NoSchedule` (Windows) to skip
+scheduling, for example if the RMM tool runs the scan itself on a schedule.
 
 ## Fix plain-text keys
 

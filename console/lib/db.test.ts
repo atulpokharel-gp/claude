@@ -235,6 +235,44 @@ describe("database", { skip: !adminUrl && "set TEST_DATABASE_ADMIN_URL to run" }
     assert.ok(kept.includes("2026-10-25"));
   });
 
+  test("each scan writes a diff row so the UI can show what changed", async () => {
+    const id = await createClient(a.mspId, { name: "Diff Co", devicesExpected: 1 });
+    const token = await createUploadToken(a.mspId, id, "");
+    // First scan: baseline, no changes.
+    await ingestScan(
+      token,
+      { ...sample, hostname: "DIFF-1", servers: [{ name: "a", app: "Cursor", findings: [] }], configs: [], scannedAt: "2026-10-20T08:00:00Z" },
+      new Date("2026-10-20T09:00:00Z"),
+    );
+    // Second scan: a new high-risk server appears.
+    await ingestScan(
+      token,
+      {
+        ...sample,
+        hostname: "DIFF-1",
+        servers: [
+          { name: "a", app: "Cursor", findings: [] },
+          { name: "b", app: "Claude Desktop", findings: [{ ruleId: "SHELL_ACCESS", severity: "high", title: "shell", detail: "", fix: "" }] },
+        ],
+        configs: [],
+        scannedAt: "2026-10-21T08:00:00Z",
+      },
+      new Date("2026-10-21T09:00:00Z"),
+    );
+    const rows = await withTenant(a.mspId, async (db) =>
+      (
+        await db.query<{ added: number; removed: number; changed: number; risk_up: number }>(
+          "select added, removed, changed, risk_up from scan_changes where client_id = $1 order by at",
+          [id],
+        )
+      ).rows,
+    );
+    assert.equal(rows.length, 2, "one diff row per scan, including the baseline");
+    assert.deepEqual({ added: rows[0].added, removed: rows[0].removed, changed: rows[0].changed }, { added: 0, removed: 0, changed: 0 });
+    assert.equal(rows[1].added, 1);
+    assert.equal(rows[1].risk_up, 0);
+  });
+
   test("bad tokens and bad reports are refused", async () => {
     const id = await createClient(a.mspId, { name: "Refuse Co" });
     const token = await createUploadToken(a.mspId, id, "");

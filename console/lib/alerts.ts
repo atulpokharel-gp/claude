@@ -5,7 +5,7 @@
 import { createHash } from "node:crypto";
 import { hasAppSecret, sign } from "./crypto.ts";
 import { withTenant, type Db } from "./db.ts";
-import { alertEmail, clientWeeklyEmail, weeklyEmail, type AlertFinding, type Email } from "./email.ts";
+import { alertEmail, changesEmail, clientWeeklyEmail, weeklyEmail, type AlertFinding, type ChangeRow, type Email } from "./email.ts";
 import { attention, snapshotOf, toolKey } from "./insights.ts";
 import { getClient, getTrend, listClients } from "./store.ts";
 import type { Client } from "./types.ts";
@@ -109,6 +109,118 @@ export async function checkAlerts(mspId: string, clientId: string, now = new Dat
     return 0;
   }
 }
+
+/**
+ * Emails the MSP team about changes to a client's agents since the last scan:
+ * new tools, changed permissions, and risky configs that came back after
+ * being remediated. One digest per client per day; follow-up scans on the
+ * same day don't re-notify. Never throws.
+ */
+export async function checkChangeAlerts(mspId: string, clientId: string, now = new Date()): Promise<number> {
+  try {
+    return await withTenant(mspId, async (db) => {
+      // Every scan_change not yet covered by a digest, oldest first. Rows a
+      // second same-day upload couldn't send (because of the daily dedupe)
+      // stay unmarked and roll forward into the next day's email.
+      const rows = (
+        await db.query<{
+          id: string;
+          device: string;
+          added: number;
+          changed: number;
+          returned: number;
+          risk_up: number;
+          delta: {
+            added?: Array<{ name?: string; app?: string }>;
+            changed?: Array<{ name?: string; app?: string; before?: { worstRisk?: string }; after?: { worstRisk?: string } }>;
+            returned?: Array<{ name?: string; app?: string; title?: string; ruleId?: string }>;
+          };
+        }>(
+          `select c.id, d.hostname as device, c.added, c.changed, c.returned, c.risk_up, c.delta
+           from scan_changes c join devices d on d.id = c.device_id
+           where c.client_id = $1 and c.notified_at is null
+             and (c.added > 0 or c.risk_up > 0 or c.returned > 0)
+           order by c.at`,
+          [clientId],
+        )
+      ).rows;
+      if (rows.length === 0) return 0;
+      const added: ChangeRow[] = [];
+      const changed: ChangeRow[] = [];
+      const returned: ChangeRow[] = [];
+      for (const r of rows) {
+        const device = r.device.slice(0, 100);
+        for (const s of r.delta.added ?? []) added.push({ device, what: `New AI tool: ${s.name ?? "unknown"}${s.app ? ` (${s.app})` : ""}` });
+        for (const s of r.delta.changed ?? []) {
+          const up = (s.after?.worstRisk ?? "") !== (s.before?.worstRisk ?? "") && SEV_RANK[(s.after?.worstRisk ?? "none") as keyof typeof SEV_RANK] > SEV_RANK[(s.before?.worstRisk ?? "none") as keyof typeof SEV_RANK];
+          if (!up) continue;
+          changed.push({
+            device,
+            what: `Permissions changed on ${s.name ?? "unknown"}${s.app ? ` (${s.app})` : ""}: risk ${s.before?.worstRisk ?? "none"} → ${s.after?.worstRisk ?? "none"}`,
+          });
+        }
+        for (const s of r.delta.returned ?? []) {
+          returned.push({
+            device,
+            what: `${s.title || s.ruleId || "a fixed risk"} is back on ${s.name ?? "unknown"}${s.app ? ` (${s.app})` : ""}`,
+          });
+        }
+      }
+      if (added.length + changed.length + returned.length === 0) return 0;
+
+      // One digest per client per day: the dedupe key is (client, day, user)
+      // so a later scan the same day doesn't send a second email with the
+      // same findings repeated. Rows that couldn't go out today stay
+      // notified_at = null, so they roll into tomorrow's digest. Rows the
+      // digest did cover are marked here, so tomorrow's digest doesn't
+      // repeat them.
+      const day = now.toISOString().slice(0, 10);
+
+      const client = await db.query<{ name: string }>("select name from clients where id = $1", [clientId]);
+      if (client.rowCount === 0) return 0;
+      const mspName = (await db.query<{ name: string }>("select name from msps")).rows[0]?.name ?? "";
+      const people = (
+        await db.query<Recipient>("select id, email from users where role in ('owner', 'member') and alert_emails order by created_at")
+      ).rows;
+      const base = consoleBase();
+      let n = 0;
+      for (const p of people) {
+        const unsub = unsubscribeUrl(p.id, "alert");
+        const mail = changesEmail({
+          mspName,
+          clientName: client.rows[0].name,
+          added,
+          changed,
+          returned,
+          clientUrl: base && `${base}/app/clients/${clientId}/changes`,
+          unsubscribeUrl: unsub,
+          settingsUrl: base && `${base}/app/settings`,
+        });
+        if (await enqueue(db, mspId, `changes:${clientId}:${day}:${p.id}`, "alert", p, mail, unsub)) n++;
+      }
+      // Mark the picked rows only if the digest went out to EVERY current
+      // eligible recipient. If someone was deduped (today's digest already
+      // reached them) while another new recipient got a fresh send, we leave
+      // the rows unmarked so the deduped recipient still sees them in the
+      // next day's digest. The next day's digest may re-notify the new
+      // recipient about these rows (same content, different day key), which
+      // is the acceptable price of never silently dropping a change.
+      if (n > 0 && n === people.length) {
+        const ids = rows.map((r) => r.id);
+        await db.query(
+          "update scan_changes set notified_at = $2 where id = any($1::uuid[]) and notified_at is null",
+          [ids, now],
+        );
+      }
+      return n;
+    });
+  } catch (err) {
+    console.error(`change alert check for client ${clientId} failed: ${(err as Error).message}`);
+    return 0;
+  }
+}
+
+const SEV_RANK = { high: 4, medium: 3, low: 2, none: 1 } as const;
 
 /** Monday of the week `now` is in, as YYYY-MM-DD (UTC). */
 export function weekOf(now: Date): string {
