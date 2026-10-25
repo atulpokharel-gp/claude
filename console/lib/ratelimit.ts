@@ -8,6 +8,7 @@ export const LIMITS = {
   mfa: { window: 15 * 60, max: 10 },
   signUpIp: { window: 60 * 60, max: 5 },
   invite: { window: 60 * 60, max: 30 },
+  pulseIp: { window: 60, max: 60 },
 } as const;
 
 export type LimitName = keyof typeof LIMITS;
