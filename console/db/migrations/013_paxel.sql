@@ -1,4 +1,4 @@
--- Zipax: AI coding habits profiler.
+-- Paxel: AI coding habits profiler.
 --
 -- Records how many LLM tokens each developer burned, split by AI coding tool
 -- (Claude Code, Codex, Aider, Cursor, Copilot) and by project. The scanner
@@ -16,7 +16,7 @@
 -- larger counts, so a late-arriving upload with fewer rows cannot regress
 -- today's number.
 
-create table zipax_usage_events (
+create table paxel_usage_events (
   id                 uuid primary key default gen_random_uuid(),
   msp_id             uuid not null references msps(id) on delete cascade,
   client_id          uuid not null references clients(id) on delete cascade,
@@ -69,29 +69,29 @@ create table zipax_usage_events (
 
 -- One row per (device, tool, user, project, model, day, session). On upload
 -- conflict, keep the larger counts (see store.ts).
-create unique index zipax_usage_events_bucket on zipax_usage_events
+create unique index paxel_usage_events_bucket on paxel_usage_events
   (device_id, tool, user_hash, project_hash, model, bucket_day, session_id);
 
-create index zipax_usage_events_msp_day on zipax_usage_events
+create index paxel_usage_events_msp_day on paxel_usage_events
   (msp_id, bucket_day desc);
-create index zipax_usage_events_client_day on zipax_usage_events
+create index paxel_usage_events_client_day on paxel_usage_events
   (client_id, bucket_day desc);
-create index zipax_usage_events_user_day on zipax_usage_events
+create index paxel_usage_events_user_day on paxel_usage_events
   (msp_id, user_hash, bucket_day desc);
-create index zipax_usage_events_project on zipax_usage_events
+create index paxel_usage_events_project on paxel_usage_events
   (msp_id, project_hash, bucket_day desc);
 
-alter table zipax_usage_events enable row level security;
-alter table zipax_usage_events force row level security;
+alter table paxel_usage_events enable row level security;
+alter table paxel_usage_events force row level security;
 
 -- Tenant isolation: every row must match the signed-in MSP, and client
 -- viewers see only their own client's rows (same pattern as migration 005).
-create policy tenant on zipax_usage_events
+create policy tenant on paxel_usage_events
   using (msp_id = current_msp()) with check (msp_id = current_msp());
-create policy viewer_scope on zipax_usage_events as restrictive to zinloop_app
+create policy viewer_scope on paxel_usage_events as restrictive to zinloop_app
   using (current_client() is null or client_id = current_client())
   with check (current_client() is null);
-create policy viewer_no_delete on zipax_usage_events as restrictive for delete to zinloop_app
+create policy viewer_no_delete on paxel_usage_events as restrictive for delete to zinloop_app
   using (current_client() is null);
 
-grant select, insert, update, delete on zipax_usage_events to zinloop_app;
+grant select, insert, update, delete on paxel_usage_events to zinloop_app;

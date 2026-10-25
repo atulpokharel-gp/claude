@@ -10,7 +10,7 @@
 -- /leaderboard page can read it without a tenant transaction. The
 -- function returns at most $2 rows and refuses an out-of-range window.
 
-create function zipax_public_leaderboard(window_days integer default 30, max_rows integer default 200)
+create function paxel_public_leaderboard(window_days integer default 30, max_rows integer default 200)
   returns table (
     msp_id uuid,
     client_id uuid,
@@ -33,7 +33,7 @@ create function zipax_public_leaderboard(window_days integer default 30, max_row
       ),
       prefs as (
         select msp_id, client_id, user_hash, display_name, public_slug, public_dims
-          from zipax_profile_prefs
+          from paxel_profile_prefs
           where public_slug is not null
             and array_length(public_dims, 1) is not null
             and array_length(public_dims, 1) > 0
@@ -42,7 +42,7 @@ create function zipax_public_leaderboard(window_days integer default 30, max_row
         select s.msp_id, s.user_hash, s.dimension,
                avg(s.score)::numeric as score,
                sum(s.sessions)       as sessions
-          from zipax_profile_scores s, capped
+          from paxel_profile_scores s, capped
           where s.bucket_day >= (current_date - make_interval(days => capped.days))
           group by s.msp_id, s.user_hash, s.dimension
       ),
@@ -81,5 +81,5 @@ create function zipax_public_leaderboard(window_days integer default 30, max_row
       order by mean_score desc, sessions_counted desc, user_hash asc
       limit (select rows from capped);
   $$;
-revoke all on function zipax_public_leaderboard(integer, integer) from public;
-grant execute on function zipax_public_leaderboard(integer, integer) to zinloop_app;
+revoke all on function paxel_public_leaderboard(integer, integer) from public;
+grant execute on function paxel_public_leaderboard(integer, integer) to zinloop_app;

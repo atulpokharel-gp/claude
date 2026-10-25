@@ -1,4 +1,4 @@
--- Zipax builder profiles.
+-- Paxel builder profiles.
 --
 -- Each Claude Code session is scored on five dimensions on the laptop
 -- (steering, execution, engineering, product-instinct, planning). The
@@ -15,7 +15,7 @@
 -- Both tables are tenant-scoped (msp_id with forced RLS) and client-scoped
 -- for the portal viewer via the pattern migration 005 defines.
 
-create table zipax_profile_scores (
+create table paxel_profile_scores (
   id            uuid primary key default gen_random_uuid(),
   msp_id        uuid not null references msps(id) on delete cascade,
   client_id     uuid not null references clients(id) on delete cascade,
@@ -44,26 +44,26 @@ create table zipax_profile_scores (
   last_seen_at  timestamptz not null default now()
 );
 
-create unique index zipax_profile_scores_bucket on zipax_profile_scores
+create unique index paxel_profile_scores_bucket on paxel_profile_scores
   (device_id, tool, user_hash, project_hash, dimension, bucket_day);
 
-create index zipax_profile_scores_user_day on zipax_profile_scores
+create index paxel_profile_scores_user_day on paxel_profile_scores
   (msp_id, user_hash, bucket_day desc);
-create index zipax_profile_scores_client_day on zipax_profile_scores
+create index paxel_profile_scores_client_day on paxel_profile_scores
   (client_id, bucket_day desc);
 
-alter table zipax_profile_scores enable row level security;
-alter table zipax_profile_scores force row level security;
+alter table paxel_profile_scores enable row level security;
+alter table paxel_profile_scores force row level security;
 
-create policy tenant on zipax_profile_scores
+create policy tenant on paxel_profile_scores
   using (msp_id = current_msp()) with check (msp_id = current_msp());
-create policy viewer_scope on zipax_profile_scores as restrictive to zinloop_app
+create policy viewer_scope on paxel_profile_scores as restrictive to zinloop_app
   using (current_client() is null or client_id = current_client())
   with check (current_client() is null);
-create policy viewer_no_delete on zipax_profile_scores as restrictive for delete to zinloop_app
+create policy viewer_no_delete on paxel_profile_scores as restrictive for delete to zinloop_app
   using (current_client() is null);
 
-grant select, insert, update, delete on zipax_profile_scores to zinloop_app;
+grant select, insert, update, delete on paxel_profile_scores to zinloop_app;
 
 
 -- Per-user preferences: whether a public profile is on, under what slug,
@@ -73,10 +73,10 @@ grant select, insert, update, delete on zipax_profile_scores to zinloop_app;
 -- public page at /p/{slug} looks the row up without a session. The lookup
 -- is through a SECURITY DEFINER function that returns only this row,
 -- never any PII — it does not join to scans or scores. The score read is
--- done afterwards against zipax_profile_scores filtered by user_hash,
+-- done afterwards against paxel_profile_scores filtered by user_hash,
 -- which lands in a tenant query (msp_id discovered from the pref row).
 
-create table zipax_profile_prefs (
+create table paxel_profile_prefs (
   msp_id        uuid not null references msps(id) on delete cascade,
   client_id     uuid not null references clients(id) on delete cascade,
   user_hash     text not null check (user_hash ~ '^[0-9a-f]{16,64}$'),
@@ -91,25 +91,25 @@ create table zipax_profile_prefs (
   primary key (msp_id, user_hash)
 );
 
-create index zipax_profile_prefs_client on zipax_profile_prefs (client_id);
+create index paxel_profile_prefs_client on paxel_profile_prefs (client_id);
 
-alter table zipax_profile_prefs enable row level security;
-alter table zipax_profile_prefs force row level security;
+alter table paxel_profile_prefs enable row level security;
+alter table paxel_profile_prefs force row level security;
 
-create policy tenant on zipax_profile_prefs
+create policy tenant on paxel_profile_prefs
   using (msp_id = current_msp()) with check (msp_id = current_msp());
-create policy viewer_scope on zipax_profile_prefs as restrictive to zinloop_app
+create policy viewer_scope on paxel_profile_prefs as restrictive to zinloop_app
   using (current_client() is null or client_id = current_client());
 -- A viewer may update prefs for their own client only.
-create policy viewer_update on zipax_profile_prefs as restrictive for update to zinloop_app
+create policy viewer_update on paxel_profile_prefs as restrictive for update to zinloop_app
   using (current_client() is null or client_id = current_client())
   with check (current_client() is null or client_id = current_client());
-create policy viewer_insert on zipax_profile_prefs as restrictive for insert to zinloop_app
+create policy viewer_insert on paxel_profile_prefs as restrictive for insert to zinloop_app
   with check (current_client() is null or client_id = current_client());
-create policy viewer_no_delete on zipax_profile_prefs as restrictive for delete to zinloop_app
+create policy viewer_no_delete on paxel_profile_prefs as restrictive for delete to zinloop_app
   using (current_client() is null);
 
-grant select, insert, update, delete on zipax_profile_prefs to zinloop_app;
+grant select, insert, update, delete on paxel_profile_prefs to zinloop_app;
 
 
 -- Public slug lookup. The unauthenticated /p/{slug} page calls this to
@@ -117,7 +117,7 @@ grant select, insert, update, delete on zipax_profile_prefs to zinloop_app;
 -- name and the dimension allow-list. No join, no PII. The caller then
 -- opens a tenant transaction on that msp_id and reads scores filtered to
 -- that user_hash and dimension list.
-create function zipax_public_profile(slug text)
+create function paxel_public_profile(slug text)
   returns table(
     msp_id uuid,
     client_id uuid,
@@ -130,10 +130,10 @@ create function zipax_public_profile(slug text)
   stable
   as $$
     select msp_id, client_id, user_hash, display_name, public_dims
-      from zipax_profile_prefs
+      from paxel_profile_prefs
       where public_slug = slug
         and public_slug is not null
         and array_length(public_dims, 1) is not null;
   $$;
-revoke all on function zipax_public_profile(text) from public;
-grant execute on function zipax_public_profile(text) to zinloop_app;
+revoke all on function paxel_public_profile(text) from public;
+grant execute on function paxel_public_profile(text) to zinloop_app;
