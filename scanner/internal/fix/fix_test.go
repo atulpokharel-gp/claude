@@ -357,11 +357,15 @@ func TestApplyKeepsSymlinkAndRewritesTarget(t *testing.T) {
 		t.Errorf("backup leaked next to the link target: %v", stray)
 	}
 	// The meta.json records enough to put the file back where it was.
-	meta, err := os.ReadFile(filepath.Join(filepath.Dir(plan.Files[0].Backup), "meta.json"))
+	metaBytes, err := os.ReadFile(filepath.Join(filepath.Dir(plan.Files[0].Backup), "meta.json"))
 	if err != nil {
 		t.Fatalf("meta.json missing: %v", err)
 	}
-	if !strings.Contains(string(meta), realDotfiles) {
-		t.Errorf("meta.json should record the original path %q: %s", realDotfiles, meta)
+	var meta BackupMeta
+	if err := json.Unmarshal(metaBytes, &meta); err != nil {
+		t.Fatalf("meta.json not valid JSON: %v", err)
+	}
+	if meta.OriginalPath != realDotfiles {
+		t.Errorf("meta.OriginalPath = %q, want %q", meta.OriginalPath, realDotfiles)
 	}
 }
