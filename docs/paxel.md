@@ -60,6 +60,11 @@ so you can run both from one install.
 - `/portal/paxel` — client-portal view, scoped by RLS to one client.
 - `/portal/paxel/dev/{user_hash}` — one developer, from the client's view.
   Also carries the "share a public profile" form.
+- `/paxel/settings` — the developer's self-serve home. Shows the private
+  profile, lets the dev turn public sharing on or off, pick which
+  dimensions to publish, change the display name, see the public URL,
+  and sign out of this browser's claim. No MSP or portal login is
+  required — only the `paxel_dev` cookie set by `/paxel/claim`.
 - `/p/{slug}` — unauthenticated public profile. Shows only the dimensions
   the developer opts into. Off by default.
 
@@ -101,9 +106,14 @@ profile prefs for that `user_hash`. Flow:
 3. The CLI prints a one-time URL in the shape
    `https://zinloop.com/paxel/claim?token=…`. Opening it in a browser
    sets a signed `paxel_dev` cookie bound to that user_hash.
-4. The share form on `/portal/paxel/dev/{user}` is only shown when a
-   signed cookie's `user_hash` matches the page's. Other viewers see
-   the current URL read-only.
+4. The dev manages their profile at `/paxel/settings`, which is gated
+   only by that cookie. The share form on `/portal/paxel/dev/{user}` is
+   also shown when the cookie matches the page's `user_hash`; other
+   viewers see the current URL read-only.
+5. To rebind another browser or regenerate the token, run
+   `zinloop paxel` on the laptop; delete
+   `~/.zinloop/paxel-claim-token` first to issue a brand new token
+   (invalidates every browser signed in with the old one).
 
 ## Why inside Zinloop (not a separate app)
 

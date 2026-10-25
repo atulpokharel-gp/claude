@@ -67,8 +67,8 @@ export default async function Claim({ searchParams }: { searchParams: Promise<{ 
       <h1>You're claimed</h1>
       <p className="muted">
         This browser now controls the public-profile prefs for <code>{id.userHash.slice(0, 10)}…</code>.
-        Head to <a href={`/portal/paxel/dev/${id.userHash}`}>your profile page</a> to pick which
-        dimensions to publish.
+        Head to <a href="/paxel/settings">Paxel settings</a> to pick which dimensions to publish and
+        see your public URL.
       </p>
     </div>
   );

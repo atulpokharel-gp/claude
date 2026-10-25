@@ -116,6 +116,10 @@ function ShareForm({
       </div>
       <div className="panel-body">
         <p className="muted small">
+          Prefer a dedicated page? <a href="/paxel/settings">Paxel settings</a> has the same controls
+          plus a sign-out button and the public URL.
+        </p>
+        <p className="muted small">
           Pick which dimensions to show on your public page. Nothing is published until at least one is
           ticked and you save. Toggle them all off (or hit "Turn off") to unpublish.
         </p>
@@ -162,8 +166,8 @@ function ReadOnlyShareNotice({ slug, dims }: { slug: string | null; dims: string
         <p className="muted small">
           Only the developer this profile belongs to can edit the share settings. On your own laptop,
           run <code>zinloop paxel</code> once — the CLI prints a one-time URL in the shape{" "}
-          <code>https://zinloop.com/paxel/claim?token=…</code>. Visit that URL in this browser, then
-          this page will show the form.
+          <code>https://zinloop.com/paxel/claim?token=…</code>. Open that URL in this browser, then
+          manage your profile from <a href="/paxel/settings">Paxel settings</a>.
         </p>
         {slug ? (
           <p className="muted small">
