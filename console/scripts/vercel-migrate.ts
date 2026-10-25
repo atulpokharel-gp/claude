@@ -19,7 +19,8 @@ if (process.env.VERCEL_ENV !== "production") {
   console.error(`Refusing a production build from branch "${branch}". In Vercel, set Settings → Git → Production Branch to "${productionBranch}".`);
   process.exit(1);
 } else if (!adminUrl || !appPassword) {
-  console.error("Production build needs DATABASE_ADMIN_URL and DB_APP_PASSWORD. See docs/vercel.md.");
+  const missing = [!adminUrl && "DATABASE_ADMIN_URL", !appPassword && "DB_APP_PASSWORD"].filter(Boolean).join(", ");
+  console.error(`Production build is missing ${missing}. Add it under Vercel → Settings → Environment Variables (Production). See docs/vercel.md.`);
   process.exit(1);
 } else {
   const db = new pg.Client({ connectionString: adminUrl });
