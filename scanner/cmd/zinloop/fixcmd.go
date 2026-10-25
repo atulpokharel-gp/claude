@@ -39,7 +39,7 @@ func runFix(args []string, stdout, stderr io.Writer) int {
 	if err := fs.Parse(args); err != nil {
 		return 1
 	}
-	env, err := buildEnv(*home, projects)
+	env, err := buildEnv(*home, projects, nil, nil)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return 1
@@ -188,7 +188,7 @@ func runRotate(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if err := fs.Parse(args); err != nil {
 		return 1
 	}
-	env, err := buildEnv(*home, nil)
+	env, err := buildEnv(*home, nil, nil, nil)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return 1
