@@ -115,3 +115,47 @@ test("serverKey is stable regardless of case in the name", () => {
   assert.equal(serverKey({ name: "GitHub", configPath: "/a" }), serverKey({ name: "github", configPath: "/a" }));
   assert.notEqual(serverKey({ name: "a", configPath: "/x" }), serverKey({ name: "a", configPath: "/y" }));
 });
+
+test("serverKey separates Claude Code projects that share one config file", () => {
+  // Claude Code stores every project's MCP servers in ~/.claude.json, so
+  // configPath is the same for every project. The scanner emits the project
+  // path as `scope`; without that in the key, two projects' "github" servers
+  // would collide and one would overwrite the other.
+  const a = { name: "github", app: "Claude Code", configPath: "/home/u/.claude.json", scope: "/home/u/proj-a" };
+  const b = { name: "github", app: "Claude Code", configPath: "/home/u/.claude.json", scope: "/home/u/proj-b" };
+  assert.notEqual(serverKey(a), serverKey(b));
+  // Same server in the same project is still the same key.
+  assert.equal(serverKey(a), serverKey({ ...a }));
+});
+
+test("same-named servers in different Claude Code projects are tracked separately", () => {
+  const prev = {
+    schemaVersion: 1,
+    hostname: "h",
+    servers: [
+      { name: "github", app: "Claude Code", configPath: "/u/.claude.json", scope: "/u/a", findings: [findShell] },
+      { name: "github", app: "Claude Code", configPath: "/u/.claude.json", scope: "/u/b", findings: [findShell] },
+    ],
+  };
+  const now = {
+    schemaVersion: 1,
+    hostname: "h",
+    servers: [
+      // Project a's github got a new finding.
+      {
+        name: "github",
+        app: "Claude Code",
+        configPath: "/u/.claude.json",
+        scope: "/u/a",
+        findings: [findShell, findRemote],
+      },
+      // Project b's github is unchanged.
+      { name: "github", app: "Claude Code", configPath: "/u/.claude.json", scope: "/u/b", findings: [findShell] },
+    ],
+  };
+  const d = diffScans(prev, now);
+  // Exactly one server changed, not both; nothing added or removed.
+  assert.equal(d.counts.changed, 1);
+  assert.equal(d.counts.added, 0);
+  assert.equal(d.counts.removed, 0);
+});

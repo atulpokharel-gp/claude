@@ -18,6 +18,11 @@ export interface RawServer {
   name?: string;
   app?: string;
   configPath?: string;
+  // Claude Code stores each of its projects' MCP servers inside the same
+  // config file (~/.claude.json), so `configPath` alone can't tell two
+  // projects' same-named servers apart. The scanner emits the project path
+  // as `scope`; fold it into the key so each project keeps its own history.
+  scope?: string;
   command?: string;
   args?: string[];
   url?: string;
@@ -85,18 +90,20 @@ export interface ScanDelta {
   };
 }
 
-/** A server's identity across scans: config file + app + name, falling back to app + name. */
+/** A server's identity across scans: config file + scope + app + name. */
 export function serverKey(s: RawServer): string {
   const name = (s.name ?? "").trim().toLowerCase();
   const app = (s.app ?? "").trim().toLowerCase();
+  const scope = (s.scope ?? "").trim();
   const path = (s.configPath ?? "").trim();
-  // Config path can be very long and case-sensitive on Linux, so hash it to
-  // keep keys bounded without losing uniqueness. Fold `app` in too so a
-  // same-named server registered in two different apps (or two Claude Code
-  // projects whose scanner report drops configPath) doesn't collide and
-  // silently lose its history.
-  const pathKey = path ? createHash("sha256").update(path).digest("hex").slice(0, 16) : "";
-  return `${pathKey}:${app}:${name}`;
+  // Config path and scope can both be long and case-sensitive on Linux, so
+  // hash them together to keep the key bounded. The scope distinguishes
+  // same-named servers that live in different Claude Code projects (same
+  // configPath, same app) and that nothing else would separate.
+  const locationKey = path || scope
+    ? createHash("sha256").update(`${path}\0${scope}`).digest("hex").slice(0, 16)
+    : "";
+  return `${locationKey}:${app}:${name}`;
 }
 
 function severityOrNone(v: unknown): Severity {
