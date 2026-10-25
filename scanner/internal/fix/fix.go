@@ -5,6 +5,8 @@ package fix
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -153,10 +155,30 @@ func Apply(plan Plan, opts Options) (Plan, error) {
 	return plan, nil
 }
 
-// applyFile edits one config. The record of moved keys is saved before the
-// config is rewritten, so a crash or failure can never leave a protected key
-// that rotate and scans don't know about. If the rewrite then fails, the
-// new record entries are removed again.
+// BackupMetaFile is the name of the metadata JSON kept alongside every backup
+// copy. It records the file's original path so a revert can put it back
+// without having to guess, even if the backup directory is moved.
+const BackupMetaFile = "meta.json"
+
+// BackupMeta is what BackupMetaFile holds. It never contains secret values.
+type BackupMeta struct {
+	// OriginalPath is the config path the backup was copied from, after symlinks
+	// were resolved. Revert writes the restored bytes back here.
+	OriginalPath string `json:"originalPath"`
+	// ConfigPath is the pre-symlink path the scan found. Kept for display.
+	ConfigPath string    `json:"configPath"`
+	App        string    `json:"app"`
+	Refs       []string  `json:"refs"`
+	BackedUpAt time.Time `json:"backedUpAt"`
+}
+
+// applyFile edits one config. It stores every key in the password store first
+// and verifies each one; if any step fails, every key already stored for this
+// file is removed from the password store before returning, so a crash or a
+// failed verify never leaves orphan keys that `rotate` and scans don't know
+// about. The record of moved keys is saved before the config is rewritten,
+// so a crash between saving the record and writing the config means the next
+// scan sees "waiting for rotation" rather than "plain-text key in config".
 func applyFile(f FileFix, opts Options, state *vault.State) (string, error) {
 	// Write to the real file when the config is a symlink (dotfiles setups),
 	// so the link stays and the plain-text copy doesn't survive at the target.
@@ -184,9 +206,22 @@ func applyFile(f FileFix, opts Options, state *vault.State) (string, error) {
 
 	now := opts.Now().UTC()
 	var entries []vault.Entry
+	// stored holds the refs this call has saved to the password store, so a
+	// failure midway can clean every one of them up before returning. Without
+	// this, an error after the first key is Set would leave that key readable
+	// from the keychain but invisible to the state file, so `rotate` and the
+	// next scan would never see it.
+	var stored []string
+	cleanupStore := func() {
+		for _, ref := range stored {
+			_ = opts.Store.Delete(ref)
+		}
+	}
+
 	for _, sf := range f.Servers {
 		entry, err := findServer(doc, f.Format, sf.Scope, sf.Server)
 		if err != nil {
+			cleanupStore()
 			return "", err
 		}
 		env, _ := entry["env"].(map[string]any)
@@ -199,14 +234,18 @@ func applyFile(f FileFix, opts Options, state *vault.State) (string, error) {
 		for k, key := range sf.EnvKeys {
 			val, ok := env[key].(string)
 			if !ok {
+				cleanupStore()
 				return "", fmt.Errorf("%s: env %s changed since the scan; run the fix again", sf.Server, key)
 			}
 			ref := sf.Refs[k]
 			if err := opts.Store.Set(ref, val); err != nil {
+				cleanupStore()
 				return "", fmt.Errorf("save %s to the password store: %w", ref, err)
 			}
+			stored = append(stored, ref)
 			got, err := opts.Store.Get(ref)
 			if err != nil || got != val {
+				cleanupStore()
 				return "", fmt.Errorf("password store didn't return %s correctly; nothing was changed in %s", ref, f.Path)
 			}
 			delete(env, key)
@@ -226,6 +265,7 @@ func applyFile(f FileFix, opts Options, state *vault.State) (string, error) {
 	enc.SetEscapeHTML(false)
 	enc.SetIndent("", "  ")
 	if err := enc.Encode(doc); err != nil {
+		cleanupStore()
 		return "", err
 	}
 
@@ -249,21 +289,79 @@ func applyFile(f FileFix, opts Options, state *vault.State) (string, error) {
 	}
 	if err := saveState(*state, opts.Home); err != nil {
 		undoRecord()
+		cleanupStore()
 		return "", fmt.Errorf("couldn't save the record of moved keys, nothing changed: %w", err)
 	}
-	backup := target + ".zinloop-backup-" + now.Format("20060102-150405")
-	writeErr := os.WriteFile(backup, orig, 0o600)
+
+	backup, backupErr := writeBackup(target, f, orig, entries, now, opts.Home)
+	writeErr := backupErr
 	if writeErr == nil {
 		writeErr = vault.WriteFileAtomic(target, buf.Bytes(), info.Mode().Perm())
 	}
 	if err := writeErr; err != nil {
 		undoRecord()
+		cleanupStore()
+		if backup != "" {
+			_ = os.RemoveAll(filepath.Dir(backup))
+		}
 		if saveErr := saveState(*state, opts.Home); saveErr != nil {
 			return "", fmt.Errorf("couldn't write %s (original kept), and couldn't clean up the record: %v; %w", f.Path, saveErr, err)
 		}
 		return "", fmt.Errorf("couldn't write %s, original kept: %w", f.Path, err)
 	}
 	return backup, nil
+}
+
+// writeBackup copies the original file bytes to a private per-run folder under
+// ~/.zinloop/backups/ and writes a meta.json beside it describing what to put
+// back where. Keeping backups out of the AI app's config folder means a
+// dotfiles backup, a stray `git add .cursor`, or a sync tool watching the
+// config directory can never pick up the plain-text copy.
+func writeBackup(target string, f FileFix, orig []byte, entries []vault.Entry, now time.Time, home string) (string, error) {
+	dir := vault.BackupsDir(home)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", err
+	}
+	id := now.Format("20060102-150405") + "-" + shortHash(target)
+	runDir := filepath.Join(dir, id)
+	if err := os.MkdirAll(runDir, 0o700); err != nil {
+		return "", err
+	}
+	// Narrow the dir perms in case umask or an older run widened them.
+	_ = os.Chmod(runDir, 0o700)
+
+	backup := filepath.Join(runDir, filepath.Base(target))
+	if err := vault.WriteFileAtomic(backup, orig, 0o600); err != nil {
+		_ = os.RemoveAll(runDir)
+		return "", err
+	}
+
+	refs := make([]string, 0, len(entries))
+	for _, e := range entries {
+		refs = append(refs, e.Ref)
+	}
+	meta := BackupMeta{
+		OriginalPath: target,
+		ConfigPath:   f.Path,
+		App:          f.App,
+		Refs:         refs,
+		BackedUpAt:   now,
+	}
+	data, err := json.MarshalIndent(meta, "", "  ")
+	if err != nil {
+		_ = os.RemoveAll(runDir)
+		return "", err
+	}
+	if err := vault.WriteFileAtomic(filepath.Join(runDir, BackupMetaFile), append(data, '\n'), 0o600); err != nil {
+		_ = os.RemoveAll(runDir)
+		return "", err
+	}
+	return backup, nil
+}
+
+func shortHash(s string) string {
+	sum := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(sum[:4])
 }
 
 func findServer(doc map[string]any, format discover.Format, scope, name string) (map[string]any, error) {

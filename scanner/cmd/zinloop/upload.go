@@ -69,8 +69,30 @@ func checkUploadURL(raw string) (*url.URL, error) {
 	return nil, errors.New("the upload URL must use https")
 }
 
+// uploadAttempts is how many times upload tries before giving up. The first
+// try is immediate; later tries wait a backoff. Overridable for tests.
+var uploadAttempts = 4
+
+// uploadBackoff is how long to wait before retry n (counted from 1).
+// Overridable for tests.
+var uploadBackoff = func(n int) time.Duration {
+	switch n {
+	case 1:
+		return 2 * time.Second
+	case 2:
+		return 5 * time.Second
+	default:
+		return 15 * time.Second
+	}
+}
+
 // upload sends the report to the console. The response body is read only for
 // an error message and never echoed in full.
+//
+// Retries: network failures and 5xx responses are retried with backoff.
+// Everything else (4xx, redirect, bad URL, missing token) is returned on the
+// first try because retrying won't change the result. 429 is treated as
+// retryable so a brief burst from --all-users on many laptops is tolerated.
 func upload(rawURL, token string, rep any) error {
 	u, err := checkUploadURL(rawURL)
 	if err != nil {
@@ -84,23 +106,41 @@ func upload(rawURL, token string, rep any) error {
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequest(http.MethodPost, u.String(), bytes.NewReader(body))
+	var lastErr error
+	for attempt := 1; attempt <= uploadAttempts; attempt++ {
+		retry, err := uploadOnce(u.String(), token, body)
+		if err == nil {
+			return nil
+		}
+		lastErr = err
+		if !retry || attempt == uploadAttempts {
+			return err
+		}
+		time.Sleep(uploadBackoff(attempt))
+	}
+	return lastErr
+}
+
+// uploadOnce sends one POST. retry is true for a transient failure (network,
+// 5xx, 429) and false for anything else.
+func uploadOnce(uStr, token string, body []byte) (retry bool, err error) {
+	req, err := http.NewRequest(http.MethodPost, uStr, bytes.NewReader(body))
 	if err != nil {
-		return err
+		return false, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("User-Agent", "zinloop/"+version)
 	resp, err := uploadClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("couldn't reach the console: %w", err)
+		return true, fmt.Errorf("couldn't reach the console: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusCreated || resp.StatusCode == http.StatusOK {
-		return nil
+		return false, nil
 	}
 	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
-		return fmt.Errorf("the console answered with a redirect (%d); use the final upload URL, starting with https", resp.StatusCode)
+		return false, fmt.Errorf("the console answered with a redirect (%d); use the final upload URL, starting with https", resp.StatusCode)
 	}
 	var msg struct {
 		Error string `json:"error"`
@@ -112,5 +152,7 @@ func upload(rawURL, token string, rep any) error {
 	if len(msg.Error) > 300 {
 		msg.Error = msg.Error[:300]
 	}
-	return fmt.Errorf("the console refused the scan (%d): %s", resp.StatusCode, msg.Error)
+	// 5xx and 429 are the console's fault or load; try again.
+	transient := resp.StatusCode >= 500 || resp.StatusCode == http.StatusTooManyRequests
+	return transient, fmt.Errorf("the console refused the scan (%d): %s", resp.StatusCode, msg.Error)
 }

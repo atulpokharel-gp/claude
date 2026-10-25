@@ -27,10 +27,19 @@ Pass `--project <folder>` (repeatable) to also check project folders.
 | `BROAD_FILESYSTEM` | high | Filesystem servers allowed into `/`, the home folder or a whole drive |
 | `INSECURE_TRANSPORT` | high | Remote servers over plain `http` |
 | `RISKY_CONTAINER` | high | Docker with `--privileged`, host networking, or the Docker socket mounted |
+| `HIDDEN_INSTRUCTIONS` | high | Zero-width or bidi-override characters, or prompt-injection phrases, hiding in a server's config values (config-level tool poisoning) |
+| `UNTRUSTED_SOURCE` | high | `npx`/`uvx` installing from a git URL, direct URL or local path (bypasses registry provenance) |
 | `UNPINNED_PACKAGE` | medium | `npx`/`uvx`/`dlx` packages with no fixed version, or `@latest` |
+| `UNTRUSTED_REGISTRY` | medium | `--registry` / `--index-url` pointing somewhere other than npm or PyPI |
+| `OAUTH_BROAD_SCOPE` | medium | Admin-level or write-all OAuth scopes (`admin:*`, `write:all`, `offline_access`, …) in scope-related env, args or URL params |
 | `KEY_NOT_ROTATED` | medium | A key moved by `fix-secrets` that was exposed before and hasn't been replaced yet |
 | `REMOTE_SERVER` | low | Data sent to an outside service |
 | `SHELL_LAUNCHER` | low | Server started through `bash -c` or similar |
+
+Runtime tool-description scanning (fetching the live tool list from a server
+and checking each description for poisoning), and skill-file scanning for
+`~/.claude/skills` / plugin folders, are tracked as follow-ups in this
+thread.
 
 ## Use
 

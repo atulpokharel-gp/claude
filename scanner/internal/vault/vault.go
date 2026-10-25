@@ -128,6 +128,14 @@ func StatePath(home string) string {
 	return filepath.Join(home, ".zinloop", "secrets.json")
 }
 
+// BackupsDir returns the folder that holds original configs copied aside by
+// the fix. It sits inside the Zinloop state directory so a backup never ends
+// up in the AI app's own config folder, where a dotfiles backup or a stray
+// `git add` could pick it up with the old plain-text keys still in it.
+func BackupsDir(home string) string {
+	return filepath.Join(home, ".zinloop", "backups")
+}
+
 // legacyStatePath is where versions before the rename kept the record.
 func legacyStatePath(home string) string {
 	return filepath.Join(home, ".agentguard", "secrets.json")

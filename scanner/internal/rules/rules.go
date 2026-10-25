@@ -61,17 +61,36 @@ var (
 	pkgVersion  = regexp.MustCompile(`^(@[^/]+/)?[^@]+@(.+)$`)
 	shellServer = regexp.MustCompile(`(?i)(desktop-commander|mcp-shell|shell-server|server-shell|mcp-server-commands|terminal-mcp|mcp-terminal|run-command|code-runner)`)
 	fsServer    = regexp.MustCompile(`(?i)filesystem`)
+	// Zero-width and bidirectional-override characters that can hide text or
+	// reverse the display order of what the user sees. Rendering engines
+	// honour them, so a tool description that looks safe can run hidden text.
+	hiddenChars = regexp.MustCompile(`[\x{200B}-\x{200F}\x{202A}-\x{202E}\x{2060}-\x{2064}\x{2066}-\x{2069}\x{FEFF}]`)
+	// Known prompt-injection phrases used to override earlier instructions.
+	// A match in a config value is a tool-poisoning signal.
+	injectionPhrase = regexp.MustCompile(`(?i)(ignore\s+(all\s+|the\s+|any\s+)?(previous|prior|above|earlier)\s+(instructions|rules|prompts?)|disregard\s+(the\s+|all\s+)?(above|previous|system|prior)\s+(instructions|prompts?)|forget\s+(all\s+|your\s+|the\s+)?(previous|prior|earlier)\s+(instructions|prompts?|rules)|override\s+(your|the|all)\s+(instructions|rules|prompts?)|reveal\s+(your|the)\s+(system\s+)?(prompt|instructions)|print\s+(your|the)\s+(system\s+)?prompt|you\s+are\s+(now\s+)?dan\b|do\s+anything\s+now)`)
+	// OAuth scopes that grant broad or administrative access.
+	broadOAuthScope = regexp.MustCompile(`(?i)(^|[,\s])(\*|admin(:[^,\s]+)?|admin[._-](all|org|user|repo)|write:all|write[._-]all|write:org|full[_-]?access|full[_-]?control|offline_access|read:all|read[._-]all|read:org|user:all|repo$|repo:[^,\s]+|workspace:all|all:all|owner|superuser|root|dangerously[_-]skip[_-]permissions)(?:$|[,\s])`)
+	// Hosts trusted for package provenance. A --registry or --index-url that
+	// points elsewhere pulls code from a source users rarely review.
+	trustedNpmHost = regexp.MustCompile(`^(registry\.npmjs\.org|npm\.pkg\.github\.com)$`)
+	trustedPyHost  = regexp.MustCompile(`^(pypi\.org|files\.pythonhosted\.org)$`)
+	// Package specs that bypass registry provenance entirely.
+	untrustedSourcePrefix = regexp.MustCompile(`^(git\+|git://|git@|https?://|file:|\./|\.\\|/|~|[A-Za-z]:[\\/])`)
 )
 
 // Check runs every rule against one server.
 func Check(s discover.Server, ctx Context) []Finding {
 	var out []Finding
 	out = append(out, secretsInConfig(s)...)
+	out = append(out, hiddenInstructions(s)...)
 	out = append(out, insecureTransport(s)...)
 	out = append(out, unpinnedPackage(s)...)
+	out = append(out, untrustedSource(s)...)
+	out = append(out, untrustedRegistry(s)...)
 	out = append(out, broadFilesystem(s, ctx)...)
 	out = append(out, shellAccess(s)...)
 	out = append(out, riskyContainer(s)...)
+	out = append(out, oauthBroadScope(s)...)
 	out = append(out, remoteServer(s)...)
 	out = append(out, keyNotRotated(s, ctx)...)
 	return out
@@ -247,6 +266,11 @@ func unpinnedPackage(s discover.Server) []Finding {
 	}
 	pkg := firstPackageArg(runner, args)
 	if pkg == "" {
+		return nil
+	}
+	// A git URL, direct URL or local path is already called out by
+	// UNTRUSTED_SOURCE; "pin a version" doesn't apply there.
+	if untrustedSourcePrefix.MatchString(pkg) {
 		return nil
 	}
 	if isPinned(runner, pkg) {
@@ -530,4 +554,238 @@ func baseName(p string) string {
 		return p[i+1:]
 	}
 	return p
+}
+
+// hiddenInstructions flags zero-width or bidi-override characters, or
+// prompt-injection phrases, hiding in config values. This is the
+// config-level flavour of "tool poisoning": a server name, env value, URL
+// or arg that looks ordinary but carries hidden text an agent will read.
+func hiddenInstructions(s discover.Server) []Finding {
+	var where []string
+	check := func(label, v string) {
+		if v == "" {
+			return
+		}
+		if hiddenChars.MatchString(v) {
+			where = append(where, label+" (hidden characters)")
+			return
+		}
+		if injectionPhrase.MatchString(v) {
+			where = append(where, label+" (injection phrase)")
+		}
+	}
+	check("server name", s.Name)
+	check("command", s.Command)
+	for i, a := range s.Args {
+		check("argument "+strconv.Itoa(i+1), a)
+	}
+	for _, k := range sortedMapKeys(s.Env) {
+		check("env "+k, s.Env[k])
+	}
+	for _, k := range sortedMapKeys(s.Headers) {
+		check("header "+k, s.Headers[k])
+	}
+	check("server URL", s.URL)
+	if len(where) == 0 {
+		return nil
+	}
+	sort.Strings(where)
+	return []Finding{{
+		RuleID:   "HIDDEN_INSTRUCTIONS",
+		Severity: High,
+		Title:    "Hidden text or injection phrases in the config",
+		Detail:   "This server has text that an agent will read but a human reviewer may miss (" + strings.Join(where, ", ") + "). That is how tool-poisoning and prompt-injection attacks on MCP servers hide payloads.",
+		Fix:      "Remove the hidden characters or override phrases, and only trust tool descriptions from servers you fully control.",
+	}}
+}
+
+// untrustedSource flags package specs that bypass the normal registry: git
+// URLs, http(s) URLs or local paths. These don't go through npm/PyPI
+// provenance signing and can swap under you without a version bump.
+func untrustedSource(s discover.Server) []Finding {
+	runner, args, ok := packageRunner(s)
+	if !ok {
+		return nil
+	}
+	pkg := firstPackageArg(runner, args)
+	if pkg == "" || !untrustedSourcePrefix.MatchString(pkg) {
+		return nil
+	}
+	kind := "a URL or local path"
+	switch {
+	case strings.HasPrefix(pkg, "git+"), strings.HasPrefix(pkg, "git://"), strings.HasPrefix(pkg, "git@"):
+		kind = "a git source"
+	case strings.HasPrefix(pkg, "http://"), strings.HasPrefix(pkg, "https://"):
+		kind = "a direct URL"
+	case strings.HasPrefix(pkg, "file:"), strings.HasPrefix(pkg, "./"), strings.HasPrefix(pkg, `.\`), strings.HasPrefix(pkg, "/"), strings.HasPrefix(pkg, "~"):
+		kind = "a local path"
+	}
+	return []Finding{{
+		RuleID:   "UNTRUSTED_SOURCE",
+		Severity: High,
+		Title:    "Installed from outside the package registry",
+		Detail:   "This server is pulled from " + kind + " (" + pkg + ") instead of npm or PyPI. It skips registry provenance and can change silently between runs.",
+		Fix:      "Publish the server to a registry and pin an exact version, or vendor the code and run it from a reviewed, read-only location.",
+	}}
+}
+
+// untrustedRegistry flags --registry / --index-url pointing to a non-standard
+// host. Pulling packages from an unexpected registry is a known supply-chain
+// vector; the risk doesn't require the package itself to look wrong.
+func untrustedRegistry(s discover.Server) []Finding {
+	runner, args, ok := packageRunner(s)
+	if !ok {
+		return nil
+	}
+	var hosts []string
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		name, val, hasVal := strings.Cut(a, "=")
+		var flag, raw string
+		switch name {
+		case "--registry", "--index", "--index-url", "-i", "--extra-index-url", "--default-index":
+			flag = name
+			if hasVal {
+				raw = val
+			} else if i+1 < len(args) {
+				raw = args[i+1]
+				i++
+			}
+		default:
+			continue
+		}
+		if raw == "" {
+			continue
+		}
+		u, err := url.Parse(raw)
+		if err != nil || u.Host == "" {
+			continue
+		}
+		host := strings.ToLower(u.Hostname())
+		switch runner {
+		case "uvx":
+			if trustedPyHost.MatchString(host) {
+				continue
+			}
+		default:
+			if trustedNpmHost.MatchString(host) {
+				continue
+			}
+		}
+		hosts = append(hosts, flag+" "+host)
+	}
+	if len(hosts) == 0 {
+		return nil
+	}
+	sort.Strings(hosts)
+	return []Finding{{
+		RuleID:   "UNTRUSTED_REGISTRY",
+		Severity: Medium,
+		Title:    "Package comes from a non-standard registry",
+		Detail:   "This server fetches its code through " + strings.Join(hosts, ", ") + " instead of the default registry. If that registry is taken over or replaced, every start installs code it serves.",
+		Fix:      "Remove the registry override, or confirm the host is on the company's approved list and pin the exact version.",
+	}}
+}
+
+// oauthBroadScope flags admin/*/write:all/offline_access-style scopes in
+// scope-related config, which turn a leaked token into a full account
+// takeover. Narrower scopes make the same leak much less dangerous.
+func oauthBroadScope(s discover.Server) []Finding {
+	isScopeKey := func(k string) bool {
+		lk := strings.ToLower(k)
+		return strings.Contains(lk, "scope") || strings.Contains(lk, "scopes") || strings.Contains(lk, "permission")
+	}
+	var where []string
+	for _, k := range sortedMapKeys(s.Env) {
+		if isScopeKey(k) && hasBroadScope(s.Env[k]) {
+			where = append(where, "env "+k)
+		}
+	}
+	for _, k := range sortedMapKeys(s.Headers) {
+		if isScopeKey(k) && hasBroadScope(s.Headers[k]) {
+			where = append(where, "header "+k)
+		}
+	}
+	for i := 0; i < len(s.Args); i++ {
+		a := s.Args[i]
+		name, val, hasVal := strings.Cut(a, "=")
+		flagName := strings.TrimLeft(name, "-")
+		if strings.HasPrefix(name, "-") && isScopeKey(flagName) {
+			switch {
+			case hasVal && hasBroadScope(val):
+				where = append(where, "argument "+strconv.Itoa(i+1))
+			case !hasVal && i+1 < len(s.Args) && hasBroadScope(s.Args[i+1]):
+				where = append(where, "argument "+strconv.Itoa(i+2))
+				i++
+			}
+		}
+	}
+	if s.URL != "" {
+		if u, err := url.Parse(s.URL); err == nil {
+			for k, vals := range u.Query() {
+				if isScopeKey(k) {
+					for _, v := range vals {
+						if hasBroadScope(v) {
+							where = append(where, "URL query "+k)
+							break
+						}
+					}
+				}
+			}
+		}
+	}
+	if len(where) == 0 {
+		return nil
+	}
+	sort.Strings(where)
+	return []Finding{{
+		RuleID:   "OAUTH_BROAD_SCOPE",
+		Severity: Medium,
+		Title:    "OAuth scope is wider than the server needs",
+		Detail:   "This server asks for admin-level or write-all OAuth scopes (" + strings.Join(where, ", ") + "). If the token leaks, the attacker gets the same wide access.",
+		Fix:      "Issue a token with only the scopes the server actually calls, and prefer read-only or resource-scoped tokens.",
+	}}
+}
+
+func hasBroadScope(v string) bool {
+	v = strings.TrimSpace(v)
+	if v == "" || !isLiteral(v) {
+		return false
+	}
+	// Normalise separators so "admin,write:all repo:write" is tokenisable.
+	norm := " " + strings.ReplaceAll(v, ",", " ") + " "
+	return broadOAuthScope.MatchString(norm)
+}
+
+// packageRunner reports the runner name (npx, uvx, …) and the args after any
+// subcommand (pnpm/yarn/bun need "dlx"/"x") when a server is launched through
+// one. Rules that look at the installed package share this detection with
+// unpinnedPackage so they stay consistent.
+func packageRunner(s discover.Server) (string, []string, bool) {
+	runner := baseName(strings.ToLower(s.Command))
+	runner = strings.TrimSuffix(runner, ".cmd")
+	runner = strings.TrimSuffix(runner, ".exe")
+	args := s.Args
+	switch runner {
+	case "npx", "bunx", "uvx":
+		return runner, args, true
+	case "pnpm", "yarn", "bun":
+		if len(args) == 0 || (args[0] != "dlx" && args[0] != "x") {
+			return "", nil, false
+		}
+		return runner, args[1:], true
+	}
+	return "", nil, false
+}
+
+func sortedMapKeys(m map[string]string) []string {
+	if len(m) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }

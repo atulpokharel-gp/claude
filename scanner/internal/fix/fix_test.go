@@ -116,14 +116,36 @@ func TestApplyMovesKeysAndKeepsServerWorking(t *testing.T) {
 		}
 	}
 
-	// The backup is the exact original and private.
-	backup := desktopCfg + ".zinloop-backup-20261024-150000"
-	got, err := os.ReadFile(backup)
+	// The backup sits under ~/.zinloop/backups/, not next to the config, so a
+	// dotfiles backup or a `git add` in the AI app's config folder can never
+	// pick up a plain-text copy.
+	var desktopBackup string
+	for _, f := range plan.Files {
+		if f.Path == desktopCfg {
+			desktopBackup = f.Backup
+		}
+	}
+	if desktopBackup == "" {
+		t.Fatal("desktop backup path missing from plan")
+	}
+	backupsRoot := filepath.Join(home, ".zinloop", "backups")
+	if !strings.HasPrefix(desktopBackup, backupsRoot+string(filepath.Separator)) {
+		t.Errorf("backup %q should sit under %q", desktopBackup, backupsRoot)
+	}
+	got, err := os.ReadFile(desktopBackup)
 	if err != nil || string(got) != string(before) {
 		t.Fatalf("backup missing or different: %v", err)
 	}
-	if info, _ := os.Stat(backup); runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 { // Windows uses ACLs, not mode bits
+	if info, _ := os.Stat(desktopBackup); runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 { // Windows uses ACLs, not mode bits
 		t.Errorf("backup mode %v, want 0600", info.Mode().Perm())
+	}
+	if info, _ := os.Stat(filepath.Dir(desktopBackup)); runtime.GOOS != "windows" && info.Mode().Perm() != 0o700 {
+		t.Errorf("backup directory mode %v, want 0700", info.Mode().Perm())
+	}
+	// The AI app's config folder has no copy of the original on disk.
+	stray, _ := filepath.Glob(desktopCfg + ".zinloop-backup-*")
+	if len(stray) != 0 {
+		t.Errorf("backup leaked into the AI app's config folder: %v", stray)
 	}
 
 	// A rescan sees the same servers, now protected, with the real command intact
@@ -321,8 +343,25 @@ func TestApplyKeepsSymlinkAndRewritesTarget(t *testing.T) {
 	if strings.Contains(string(data), "plain-text-pw") {
 		t.Error("the link target still holds the plain-text key")
 	}
-	realDotfiles, _ := filepath.EvalSymlinks(dotfiles) // macOS temp dirs sit behind /var -> /private/var
-	if len(plan.Files) != 1 || !strings.HasPrefix(plan.Files[0].Backup, realDotfiles+".zinloop-backup-") {
-		t.Errorf("backup should sit next to the real file: %+v", plan.Files)
+	if len(plan.Files) != 1 {
+		t.Fatalf("plan should hold one file: %+v", plan.Files)
+	}
+	backupsRoot := filepath.Join(home, ".zinloop", "backups")
+	if !strings.HasPrefix(plan.Files[0].Backup, backupsRoot+string(filepath.Separator)) {
+		t.Errorf("backup should sit under %q, got %q", backupsRoot, plan.Files[0].Backup)
+	}
+	// The link target's folder has no stray plain-text copy.
+	realDotfiles, _ := filepath.EvalSymlinks(dotfiles)
+	stray, _ := filepath.Glob(realDotfiles + ".zinloop-backup-*")
+	if len(stray) != 0 {
+		t.Errorf("backup leaked next to the link target: %v", stray)
+	}
+	// The meta.json records enough to put the file back where it was.
+	meta, err := os.ReadFile(filepath.Join(filepath.Dir(plan.Files[0].Backup), "meta.json"))
+	if err != nil {
+		t.Fatalf("meta.json missing: %v", err)
+	}
+	if !strings.Contains(string(meta), realDotfiles) {
+		t.Errorf("meta.json should record the original path %q: %s", realDotfiles, meta)
 	}
 }
