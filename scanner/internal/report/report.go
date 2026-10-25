@@ -33,6 +33,12 @@ type Report struct {
 	SkillDirs      []skillscan.LocationResult `json:"skillDirs,omitempty"`
 	Tools          []ToolResult               `json:"tools,omitempty"`
 	ToolProbes     []ToolProbeResult          `json:"toolProbes,omitempty"`
+	// PathWarnings flag redirected or tampered config/skill paths — a
+	// $CLAUDE_CONFIG_DIR override, a symlink leaving the user's home, or a
+	// world-writable config file. They surface alongside the per-server
+	// findings so an operator sees a redirect even when the servers behind
+	// it are clean.
+	PathWarnings []discover.PathWarning `json:"pathWarnings,omitempty"`
 }
 
 // Summary counts servers and skills by their worst finding. Server and skill
@@ -51,6 +57,11 @@ type Summary struct {
 	SkillClean  int `json:"skillClean,omitempty"`
 	Tools       int `json:"tools,omitempty"`
 	ToolHigh    int `json:"toolHigh,omitempty"`
+	// PathWarnings counts redirected / tampered / world-writable config
+	// or skill locations surfaced by the discover pass.
+	PathWarnings       int `json:"pathWarnings,omitempty"`
+	PathWarningsHigh   int `json:"pathWarningsHigh,omitempty"`
+	PathWarningsMedium int `json:"pathWarningsMedium,omitempty"`
 }
 
 // ServerResult is one server with its findings and overall risk.
@@ -94,10 +105,26 @@ type ToolProbeResult struct {
 // Build checks every server and assembles the report.
 // Secret-looking arguments are redacted here so nothing downstream sees them.
 func Build(servers []discover.Server, configs []discover.ConfigResult, skills []skillscan.Skill, skillDirs []skillscan.LocationResult, ctx rules.Context, meta Report) Report {
+	return BuildWithWarnings(servers, configs, skills, skillDirs, nil, ctx, meta)
+}
+
+// BuildWithWarnings is Build with an additional set of path warnings to
+// surface alongside the per-server findings.
+func BuildWithWarnings(servers []discover.Server, configs []discover.ConfigResult, skills []skillscan.Skill, skillDirs []skillscan.LocationResult, pathWarnings []discover.PathWarning, ctx rules.Context, meta Report) Report {
 	r := meta
 	r.SchemaVersion = SchemaVersion
 	r.Configs = configs
 	r.SkillDirs = skillDirs
+	r.PathWarnings = append([]discover.PathWarning(nil), pathWarnings...)
+	for _, w := range pathWarnings {
+		r.Summary.PathWarnings++
+		switch w.Severity {
+		case "high":
+			r.Summary.PathWarningsHigh++
+		case "medium":
+			r.Summary.PathWarningsMedium++
+		}
+	}
 	r.Servers = make([]ServerResult, 0, len(servers))
 	for _, s := range servers {
 		f := rules.Check(s, ctx)
@@ -198,6 +225,7 @@ func Merge(meta Report, parts []Report) Report {
 	r.SkillDirs = []skillscan.LocationResult{}
 	r.Tools = []ToolResult{}
 	r.ToolProbes = []ToolProbeResult{}
+	r.PathWarnings = []discover.PathWarning{}
 	for _, p := range parts {
 		r.Servers = append(r.Servers, p.Servers...)
 		r.Configs = append(r.Configs, p.Configs...)
@@ -205,6 +233,7 @@ func Merge(meta Report, parts []Report) Report {
 		r.SkillDirs = append(r.SkillDirs, p.SkillDirs...)
 		r.Tools = append(r.Tools, p.Tools...)
 		r.ToolProbes = append(r.ToolProbes, p.ToolProbes...)
+		r.PathWarnings = append(r.PathWarnings, p.PathWarnings...)
 		r.Summary.Servers += p.Summary.Servers
 		r.Summary.High += p.Summary.High
 		r.Summary.Medium += p.Summary.Medium
@@ -217,6 +246,9 @@ func Merge(meta Report, parts []Report) Report {
 		r.Summary.SkillClean += p.Summary.SkillClean
 		r.Summary.Tools += p.Summary.Tools
 		r.Summary.ToolHigh += p.Summary.ToolHigh
+		r.Summary.PathWarnings += p.Summary.PathWarnings
+		r.Summary.PathWarningsHigh += p.Summary.PathWarningsHigh
+		r.Summary.PathWarningsMedium += p.Summary.PathWarningsMedium
 	}
 	sort.SliceStable(r.Servers, func(i, j int) bool {
 		return r.Servers[i].Risk.Rank() > r.Servers[j].Risk.Rank()
@@ -326,6 +358,25 @@ func WriteText(w io.Writer, r Report) {
 		}
 		fmt.Fprintf(w, "Checked %d skill directories, found %d skills.\n", skillDirs, r.Summary.Skills)
 		fmt.Fprintf(w, "Skill risk: %d high, %d medium, %d low, %d clean.\n", r.Summary.SkillHigh, r.Summary.SkillMedium, r.Summary.SkillLow, r.Summary.SkillClean)
+	}
+	if r.Summary.PathWarnings > 0 {
+		fmt.Fprintf(w, "Path warnings: %d (%d high, %d medium).\n",
+			r.Summary.PathWarnings, r.Summary.PathWarningsHigh, r.Summary.PathWarningsMedium)
+	}
+	for _, pw := range r.PathWarnings {
+		sev := strings.ToUpper(pw.Severity)
+		if sev == "" {
+			sev = "NOTE"
+		}
+		fmt.Fprintf(w, "\n[%s] path: %s\n", sev, pw.App)
+		fmt.Fprintf(w, "  path:    %s\n", pw.Path)
+		if pw.Default != "" {
+			fmt.Fprintf(w, "  default: %s\n", pw.Default)
+		}
+		fmt.Fprintf(w, "  reason:  %s\n", pw.Reason)
+		if pw.Detail != "" {
+			fmt.Fprintf(w, "      %s\n", pw.Detail)
+		}
 	}
 
 	for _, s := range r.Servers {
