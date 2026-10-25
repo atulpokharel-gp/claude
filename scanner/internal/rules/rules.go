@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/atulpokharel-gp/claude/scanner/internal/discover"
+	"github.com/atulpokharel-gp/claude/scanner/internal/skillscan"
 )
 
 // Severity ranks how urgent a finding is.
@@ -94,6 +95,99 @@ func Check(s discover.Server, ctx Context) []Finding {
 	out = append(out, remoteServer(s)...)
 	out = append(out, keyNotRotated(s, ctx)...)
 	return out
+}
+
+// CheckSkill runs the skill-specific rules against one on-disk skill.
+// Skill findings use the same Finding shape as MCP findings so the report
+// can list them side by side.
+func CheckSkill(s skillscan.Skill) []Finding {
+	var out []Finding
+	out = append(out, skillHiddenInstructions(s)...)
+	out = append(out, skillBroadToolAccess(s)...)
+	return out
+}
+
+func skillHiddenInstructions(s skillscan.Skill) []Finding {
+	var where []string
+	check := func(label, v string) {
+		if v == "" {
+			return
+		}
+		if hiddenChars.MatchString(v) {
+			where = append(where, label+" (hidden characters)")
+			return
+		}
+		if injectionPhrase.MatchString(v) {
+			where = append(where, label+" (injection phrase)")
+		}
+	}
+	check("name", s.Name)
+	check("description", s.Description)
+	// The body can be long; a per-line scan localises the hit for the report.
+	for i, line := range strings.Split(s.Body, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		if hiddenChars.MatchString(trimmed) {
+			where = append(where, "body line "+strconv.Itoa(i+1)+" (hidden characters)")
+			continue
+		}
+		if injectionPhrase.MatchString(trimmed) {
+			where = append(where, "body line "+strconv.Itoa(i+1)+" (injection phrase)")
+		}
+	}
+	if len(where) == 0 {
+		return nil
+	}
+	if len(where) > 10 {
+		// Keep the report readable: name the first few and total count.
+		where = append(where[:10], "and "+strconv.Itoa(len(where)-10)+" more")
+	}
+	return []Finding{{
+		RuleID:   "SKILL_HIDDEN_INSTRUCTIONS",
+		Severity: High,
+		Title:    "Skill carries hidden text or override phrases",
+		Detail:   "This skill's instructions include text an agent will read but a human reviewer may miss (" + strings.Join(where, ", ") + "). A SKILL.md is loaded verbatim when the skill triggers, so hidden overrides take effect on every invocation.",
+		Fix:      "Review the SKILL.md by hand, remove the hidden or override text, and only enable skills from authors the company trusts.",
+	}}
+}
+
+// Shell-equivalent or write-wide tools that a skill grants itself. A
+// narrower Bash form like Bash(git status:*) names one command and is not
+// flagged; Bash alone or Bash(*) is a shell.
+var broadSkillTool = regexp.MustCompile(`^(\*|Bash|Shell|Terminal|Write|Edit|NotebookEdit|WebFetch|Agent)$`)
+
+func skillBroadToolAccess(s skillscan.Skill) []Finding {
+	var risky []string
+	for _, t := range s.AllowedTools {
+		trimmed := strings.TrimSpace(t)
+		if trimmed == "" {
+			continue
+		}
+		if broadSkillTool.MatchString(trimmed) {
+			risky = append(risky, trimmed)
+			continue
+		}
+		// Any Bash(...) that opens the whole shell or routes through sudo.
+		if strings.HasPrefix(trimmed, "Bash(") && strings.HasSuffix(trimmed, ")") {
+			inner := trimmed[len("Bash(") : len(trimmed)-1]
+			if inner == "*" || inner == ".*" || strings.HasPrefix(inner, "sudo") {
+				risky = append(risky, trimmed)
+			}
+		}
+	}
+	if len(risky) == 0 {
+		return nil
+	}
+	sort.Strings(risky)
+	return []Finding{{
+		RuleID:   "SKILL_BROAD_TOOL_ACCESS",
+		Severity: Medium,
+		Title:    "Skill asks for broad or shell-equivalent tools",
+		Detail:   "This skill's allowed-tools includes " + strings.Join(risky, ", ") + ". A skill that can shell out or write anywhere turns a prompt-injection hit into a full compromise.",
+		Fix:      "Narrow allowed-tools to the specific commands and files the skill needs (e.g. Bash(git status:*) rather than Bash) and remove shell-equivalent tools you don't use.",
+	}}
 }
 
 // Worst returns the highest severity in a list, or None.
