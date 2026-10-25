@@ -43,11 +43,27 @@ export function CheckTool() {
   function run(input = text) {
     setCopied("");
     try {
-      setResult(checkConfig(input));
+      const r = checkConfig(input);
+      setResult(r);
       setError("");
+      // Public counter for /live. Grade only, no servers, no config content.
+      void pulse(["check_run", `grade:${r.grade}`]);
     } catch (e) {
       setResult(null);
       setError(e instanceof ConfigError ? e.message : "Something went wrong reading that file.");
+    }
+  }
+
+  async function pulse(buckets: string[]) {
+    try {
+      await fetch("/api/public/pulse", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ buckets }),
+        keepalive: true,
+      });
+    } catch {
+      // Counter failures must never block the checker.
     }
   }
 
@@ -55,6 +71,7 @@ export function CheckTool() {
     try {
       await navigator.clipboard.writeText(value);
       setCopied(label);
+      if (label === "link" || label === "badge") void pulse(["share_created"]);
     } catch {
       setCopied("");
     }
@@ -172,6 +189,7 @@ export function CheckTool() {
                 href={`https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(shareUrl)}`}
                 target="_blank"
                 rel="noopener noreferrer"
+                onClick={() => void pulse(["share_created"])}
               >
                 LinkedIn
               </a>
@@ -180,6 +198,7 @@ export function CheckTool() {
                 href={`https://x.com/intent/post?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(shareUrl)}`}
                 target="_blank"
                 rel="noopener noreferrer"
+                onClick={() => void pulse(["share_created"])}
               >
                 X
               </a>

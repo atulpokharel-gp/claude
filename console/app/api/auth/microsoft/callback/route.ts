@@ -1,5 +1,6 @@
 // GET /api/auth/microsoft/callback  Microsoft sends the browser back here.
 
+import { timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { MFA_PENDING_SECONDS } from "@/lib/auth.ts";
@@ -11,12 +12,20 @@ import { consoleBase, redirectUri, takeFlow } from "@/lib/sso-flow.ts";
 
 export const dynamic = "force-dynamic";
 
+/** Constant-time string equality. Returns false when either side is empty or lengths differ. */
+function safeEqual(a: string | null | undefined, b: string | null | undefined): boolean {
+  if (!a || !b) return false;
+  const ab = Buffer.from(a);
+  const bb = Buffer.from(b);
+  return ab.length === bb.length && timingSafeEqual(ab, bb);
+}
+
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const base = consoleBase(req);
   const flow = await takeFlow();
   const go = (path: string) => NextResponse.redirect(`${base}${path}`, 303);
-  if (!flow || url.searchParams.get("state") !== flow.s) return go("/login?sso=expired");
+  if (!flow || !safeEqual(url.searchParams.get("state"), flow.s)) return go("/login?sso=expired");
 
   const viewer = flow.mode === "link" ? (await currentSession({ viewer: true }))?.role === "viewer" : false;
   const back = flow.mode === "link" ? (viewer ? "/portal/account" : "/app/settings") : "/login";

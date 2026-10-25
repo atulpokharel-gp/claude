@@ -9,7 +9,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestCheckUploadURL(t *testing.T) {
@@ -102,6 +104,52 @@ func TestUploadRefusesRedirects(t *testing.T) {
 	err := upload(redirector.URL, "zlu_x", map[string]int{"schemaVersion": 1})
 	if err == nil || !strings.Contains(err.Error(), "redirect") {
 		t.Errorf("want a redirect error, got %v", err)
+	}
+}
+
+// A 500 from the console on the first try must be retried, not surfaced as a
+// permanent failure. This matters because a laptop that gives up on one
+// blip loses a whole day of scan history.
+func TestUploadRetriesOnServerError(t *testing.T) {
+	var hits int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := atomic.AddInt32(&hits, 1)
+		if n < 3 {
+			w.WriteHeader(http.StatusBadGateway)
+			_, _ = w.Write([]byte(`{"error":"upstream down"}`))
+			return
+		}
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer srv.Close()
+	oldBackoff := uploadBackoff
+	uploadBackoff = func(int) time.Duration { return time.Millisecond }
+	defer func() { uploadBackoff = oldBackoff }()
+	if err := upload(srv.URL, "zlu_test-token-value", map[string]int{"schemaVersion": 1}); err != nil {
+		t.Fatalf("want success after retries, got %v", err)
+	}
+	if atomic.LoadInt32(&hits) != 3 {
+		t.Errorf("hits = %d, want 3", atomic.LoadInt32(&hits))
+	}
+}
+
+// A 401 (bad token) is permanent — retrying it just wastes time and ratelimit.
+func TestUploadDoesNotRetryClientError(t *testing.T) {
+	var hits int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&hits, 1)
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"error":"nope"}`))
+	}))
+	defer srv.Close()
+	oldBackoff := uploadBackoff
+	uploadBackoff = func(int) time.Duration { return time.Millisecond }
+	defer func() { uploadBackoff = oldBackoff }()
+	if err := upload(srv.URL, "zlu_test-token-value", map[string]int{"schemaVersion": 1}); err == nil {
+		t.Fatal("want an error")
+	}
+	if atomic.LoadInt32(&hits) != 1 {
+		t.Errorf("hits = %d, want 1 (no retry)", atomic.LoadInt32(&hits))
 	}
 }
 

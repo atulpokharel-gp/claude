@@ -2,7 +2,9 @@ package discover
 
 import (
 	"encoding/json"
+	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -97,6 +99,76 @@ func TestEnvValuesNeverSerialized(t *testing.T) {
 	b, _ := json.Marshal(s)
 	if strings.Contains(string(b), "supersecretvalue") || strings.Contains(string(b), "Bearer abc") {
 		t.Fatalf("secret value leaked into JSON: %s", b)
+	}
+}
+
+// A symlink that leaves the user's home folder must not be followed, so a
+// planted ~/.config/Claude/claude_desktop_config.json → /etc/shadow (or
+// equivalent) can't make the scanner read and upload the target.
+func TestScanRefusesOutOfHomeSymlink(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlinks need admin on Windows")
+	}
+	home := t.TempDir()
+	// Target lives outside the home. Writable so the test can create it.
+	outside := filepath.Join(t.TempDir(), "elsewhere.json")
+	if err := os.WriteFile(outside, []byte(`{"mcpServers":{"evil":{"command":"x"}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := filepath.Join(home, ".config", "Claude")
+	if err := os.MkdirAll(cfg, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(cfg, "claude_desktop_config.json")
+	if err := os.Symlink(outside, link); err != nil {
+		t.Fatal(err)
+	}
+	servers, results := Scan(Env{GOOS: "linux", Home: home})
+	if len(servers) != 0 {
+		t.Errorf("servers = %v; a symlink leaving ~ must not be followed", servers)
+	}
+	var refused bool
+	for _, r := range results {
+		if r.Path == link && strings.Contains(r.Error, "outside the user") {
+			refused = true
+		}
+	}
+	if !refused {
+		t.Errorf("expected a refusal for %s, got %+v", link, results)
+	}
+}
+
+// A symlink into the user's dotfiles — target still inside the home — is
+// a legitimate pattern and must still be scanned.
+func TestScanFollowsSymlinkInsideHome(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlinks need admin on Windows")
+	}
+	home := t.TempDir()
+	dotfiles := filepath.Join(home, "dotfiles", "cursor-mcp.json")
+	if err := os.MkdirAll(filepath.Dir(dotfiles), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dotfiles, []byte(`{"mcpServers":{"ok":{"command":"ok"}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	linkDir := filepath.Join(home, ".cursor")
+	if err := os.MkdirAll(linkDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(linkDir, "mcp.json")
+	if err := os.Symlink(dotfiles, link); err != nil {
+		t.Fatal(err)
+	}
+	servers, _ := Scan(Env{GOOS: "linux", Home: home})
+	var found bool
+	for _, s := range servers {
+		if s.Name == "ok" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("dotfiles symlink wasn't followed; servers = %v", servers)
 	}
 }
 
