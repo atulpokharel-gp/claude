@@ -6,7 +6,7 @@ import { notFound } from "next/navigation";
 import { hasDatabase } from "@/lib/db.ts";
 import { requireSession } from "@/lib/session.ts";
 import { allTokens, fmtTokens, fmtUsd, userProfile, userRollup } from "@/lib/paxel.ts";
-import { GroupTable, RangePicker } from "../../page.tsx";
+import { GroupTable, RangePicker } from "../../_shared.tsx";
 import { ProfilePanel } from "@/components/ProfilePanel.tsx";
 
 export const metadata: Metadata = { title: "Paxel — Developer" };

@@ -47,13 +47,14 @@ type Bucket struct {
 
 // Report is what we POST to the console.
 type Report struct {
-	Hostname    string       `json:"hostname"`
-	OS          string       `json:"os,omitempty"`
-	ScannerVer  string       `json:"scannerVersion,omitempty"`
-	ScannedAt   string       `json:"scannedAt,omitempty"`
-	Buckets     []Bucket     `json:"buckets"`
-	Profiles    []ProfileRow `json:"profiles,omitempty"`
-	Diagnostics []string     `json:"diagnostics,omitempty"`
+	Hostname    string          `json:"hostname"`
+	OS          string          `json:"os,omitempty"`
+	ScannerVer  string          `json:"scannerVersion,omitempty"`
+	ScannedAt   string          `json:"scannedAt,omitempty"`
+	Buckets     []Bucket        `json:"buckets"`
+	Profiles    []ProfileRow    `json:"profiles,omitempty"`
+	Claim       *ClaimForUpload `json:"claim,omitempty"`
+	Diagnostics []string        `json:"diagnostics,omitempty"`
 }
 
 // Env is the input to Collect: where to look.

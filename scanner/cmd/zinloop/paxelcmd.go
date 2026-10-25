@@ -78,6 +78,11 @@ func runPaxel(args []string, stdout, stderr io.Writer) int {
 	profiles, profDiag := paxel.CollectProfiles(env)
 	rep.Profiles = profiles
 	rep.Diagnostics = append(rep.Diagnostics, profDiag...)
+	claim, claimURL, cErr := paxel.LoadClaim(env, *uploadURL)
+	if cErr != nil {
+		fmt.Fprintln(stderr, "paxel: couldn't read claim token:", cErr)
+	}
+	rep.Claim = claim
 	rep.Hostname = host
 	rep.OS = runtime.GOOS
 	rep.ScannerVer = version
@@ -106,6 +111,12 @@ func runPaxel(args []string, stdout, stderr io.Writer) int {
 			return 1
 		}
 		fmt.Fprintln(stdout, "uploaded", len(rep.Buckets), "buckets to", *uploadURL)
+		if claimURL != "" {
+			fmt.Fprintln(stdout, "")
+			fmt.Fprintln(stdout, "to control your public builder profile from this laptop, open:")
+			fmt.Fprintln(stdout, "  "+claimURL)
+			fmt.Fprintln(stdout, "(keep this link private; anyone with it can edit your profile)")
+		}
 	}
 	return 0
 }

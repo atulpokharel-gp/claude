@@ -1,5 +1,6 @@
 "use server";
 
+import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { requireViewer } from "@/lib/session.ts";
 import {
@@ -7,6 +8,9 @@ import {
   type Dimension,
   getPrefs,
   newPublicSlug,
+  PAXEL_DEV_COOKIE,
+  PaxelError,
+  readDevIdentity,
   savePrefs,
 } from "@/lib/paxel.ts";
 
@@ -22,6 +26,12 @@ export async function savePublicProfileAction(formData: FormData): Promise<void>
   const s = await requireViewer();
   const userHash = String(formData.get("userHash") ?? "").toLowerCase();
   if (!HASH_RE.test(userHash)) return;
+  // Only the developer who claimed this user_hash can edit its prefs.
+  const jar = await cookies();
+  const dev = readDevIdentity(jar.get(PAXEL_DEV_COOKIE)?.value);
+  if (!dev || dev.mspId !== s.mspId || dev.userHash !== userHash) {
+    throw new PaxelError("You can edit only your own profile. Claim this user_hash via your laptop's Paxel CLI first.", 403);
+  }
   const displayName = String(formData.get("displayName") ?? "").slice(0, 120);
   const action = String(formData.get("action") ?? "");
   const tenant = { mspId: s.mspId, clientId: s.clientId };
