@@ -17,5 +17,5 @@ func uninstallService(_, _ io.Writer) error { return errUnsupported }
 func startService(_, _ io.Writer) error     { return errUnsupported }
 func stopService(_, _ io.Writer) error      { return errUnsupported }
 
-func printServiceStatus(_, _ io.Writer) error            { return errUnsupported }
+func printServiceStatus(_, _ io.Writer) error                { return errUnsupported }
 func printServiceLogs(int, bool, io.Writer, io.Writer) error { return errUnsupported }

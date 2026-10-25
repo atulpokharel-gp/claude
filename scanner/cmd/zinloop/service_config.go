@@ -71,19 +71,19 @@ func installedBinary() string {
 	return filepath.Join(installDir(), name)
 }
 
-func configPath() string  { return filepath.Join(configDir(), "config.json") }
-func tokenPath() string   { return filepath.Join(configDir(), "token") }
-func logPath() string     { return filepath.Join(configDir(), "zinloop.log") }
-func statePath() string   { return filepath.Join(configDir(), "state.json") }
+func configPath() string { return filepath.Join(configDir(), "config.json") }
+func tokenPath() string  { return filepath.Join(configDir(), "token") }
+func logPath() string    { return filepath.Join(configDir(), "zinloop.log") }
+func statePath() string  { return filepath.Join(configDir(), "state.json") }
 
 // serviceState records when the service last scanned, so `zinloop status` can
 // show it without pulling the whole upload log.
 type serviceState struct {
-	LastScanAt    time.Time `json:"lastScanAt"`
-	LastUploadAt  time.Time `json:"lastUploadAt"`
-	LastError     string    `json:"lastError,omitempty"`
-	ScansOK       int       `json:"scansOK"`
-	ScansFailed   int       `json:"scansFailed"`
+	LastScanAt   time.Time `json:"lastScanAt"`
+	LastUploadAt time.Time `json:"lastUploadAt"`
+	LastError    string    `json:"lastError,omitempty"`
+	ScansOK      int       `json:"scansOK"`
+	ScansFailed  int       `json:"scansFailed"`
 }
 
 func readConfig() (serviceConfig, error) {
