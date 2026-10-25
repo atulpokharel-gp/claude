@@ -44,6 +44,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 			return runExec(args[1:], stderr)
 		case "rotate":
 			return runRotate(args[1:], os.Stdin, stdout, stderr)
+		case "revert":
+			return runRevert(args[1:], stdout, stderr)
 		}
 	}
 	return runScan(args, stdout, stderr)
