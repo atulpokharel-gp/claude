@@ -169,6 +169,9 @@
 .check { display: flex; gap: 10px; align-items: flex-start; font-size: 15px; color: var(--z-body); flex-basis: 100%; }
 .check input { width: 20px; height: 20px; margin-top: 2px; flex: none; }
 .link-btn { background: none; border: 0; padding: 0; font: inherit; color: var(--z-ink); text-decoration: underline; cursor: pointer; }
+.inline-form { display: inline; }
+.pill.on { color: #166534; background: #dcfce7; border-radius: 999px; padding: 2px 10px; font-size: 0.78rem; font-weight: 600; }
+.pill.off { color: var(--z-muted); background: var(--z-line); border-radius: 999px; padding: 2px 10px; font-size: 0.78rem; font-weight: 600; }
 
 /* "Sign in with Microsoft" under the password form. */
 .auth .sso { margin-top: 12px; }
