@@ -85,14 +85,18 @@ export interface ScanDelta {
   };
 }
 
-/** A server's identity across scans: config file + name, falling back to name alone. */
+/** A server's identity across scans: config file + app + name, falling back to app + name. */
 export function serverKey(s: RawServer): string {
   const name = (s.name ?? "").trim().toLowerCase();
+  const app = (s.app ?? "").trim().toLowerCase();
   const path = (s.configPath ?? "").trim();
   // Config path can be very long and case-sensitive on Linux, so hash it to
-  // keep keys bounded without losing uniqueness.
+  // keep keys bounded without losing uniqueness. Fold `app` in too so a
+  // same-named server registered in two different apps (or two Claude Code
+  // projects whose scanner report drops configPath) doesn't collide and
+  // silently lose its history.
   const pathKey = path ? createHash("sha256").update(path).digest("hex").slice(0, 16) : "";
-  return pathKey ? `${pathKey}:${name}` : `:${name}`;
+  return `${pathKey}:${app}:${name}`;
 }
 
 function severityOrNone(v: unknown): Severity {

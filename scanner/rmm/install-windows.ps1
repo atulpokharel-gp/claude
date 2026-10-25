@@ -59,10 +59,11 @@ if (-not $NoSchedule) {
   # instead of a sharp spike at 10:00. Two hours is enough for several
   # thousand laptops in one tenant to stop looking like a flood.
   $action = New-ScheduledTaskAction -Execute $exe -Argument "--all-users --upload `"$ConsoleUrl/api/scans`" --token-file `"$tokenFile`""
-  $trigger = New-ScheduledTaskTrigger -Daily -At 10am
-  # The TimeSpan form of RandomDelay works on PowerShell 5.1 and later; the
-  # ISO 8601 string form doesn't on 5.1, so stay with TimeSpan.
-  $trigger.RandomDelay = [System.TimeSpan]::FromHours(2)
+  # Pass -RandomDelay to the cmdlet rather than assigning afterwards:
+  # $trigger.RandomDelay is a string on the MSFT_TaskTrigger CIM class, so
+  # assigning a TimeSpan to it serializes as "System.TimeSpan" and the
+  # registration fails. The parameter form handles the ISO 8601 encoding.
+  $trigger = New-ScheduledTaskTrigger -Daily -At 10am -RandomDelay (New-TimeSpan -Hours 2)
   $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -RunLevel Highest
   $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -DontStopIfGoingOnBatteries -AllowStartIfOnBatteries
   Register-ScheduledTask -Force -TaskName 'Zinloop daily scan' -Action $action -Trigger $trigger -Principal $principal -Settings $settings | Out-Null
