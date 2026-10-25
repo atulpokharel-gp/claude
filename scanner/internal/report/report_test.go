@@ -15,7 +15,7 @@ func TestBuildRedactsAndCounts(t *testing.T) {
 		{Name: "leaky", Command: "/bin/x", Args: []string{"--token", token}},
 		{Name: "url", URL: "https://user:pw@api.example.com/mcp?key=abc"},
 	}
-	r := Build(servers, nil, rules.Context{}, Report{Hostname: "h"})
+	r := Build(servers, nil, nil, nil, rules.Context{}, Report{Hostname: "h"})
 
 	if r.Summary.Servers != 3 || r.Summary.High != 2 || r.Summary.Clean != 1 {
 		t.Errorf("summary = %+v", r.Summary)
@@ -41,7 +41,7 @@ func TestRedactsCredentialFlagsAndConnectionStrings(t *testing.T) {
 		Command: "/bin/db-mcp",
 		Args:    []string{"--password", pw, "--api-key=" + pw, "postgresql://user:" + pw + "@db.example.com/app", "--port", "5432"},
 	}}
-	r := Build(servers, nil, rules.Context{}, Report{})
+	r := Build(servers, nil, nil, nil, rules.Context{}, Report{})
 	got := r.Servers[0]
 	joined := strings.Join(got.Args, " ")
 	if strings.Contains(joined, pw) {
@@ -68,7 +68,7 @@ func TestFindingTextDoesNotRepeatRedactedArgs(t *testing.T) {
 		Command: "uvx",
 		Args:    []string{"--from", "https://packages.example.org/server.whl?token=" + tok, "server"},
 	}}
-	r := Build(servers, nil, rules.Context{}, Report{})
+	r := Build(servers, nil, nil, nil, rules.Context{}, Report{})
 	for _, f := range r.Servers[0].Findings {
 		if strings.Contains(f.Title+f.Detail+f.Fix, tok) {
 			t.Errorf("%s finding text leaks the token: %q / %q", f.RuleID, f.Detail, f.Fix)
@@ -85,7 +85,7 @@ func TestRedactsTokenInURLPath(t *testing.T) {
 		{Name: "arg", Command: "/bin/x", Args: []string{"https://api.example.org/" + tok}},
 		{Name: "url", URL: "https://api.example.org/" + tok + "/mcp"},
 	}
-	r := Build(servers, nil, rules.Context{}, Report{})
+	r := Build(servers, nil, nil, nil, rules.Context{}, Report{})
 	var text strings.Builder
 	WriteText(&text, r)
 	if strings.Contains(text.String(), tok) {

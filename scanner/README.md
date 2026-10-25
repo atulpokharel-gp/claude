@@ -36,10 +36,21 @@ Pass `--project <folder>` (repeatable) to also check project folders.
 | `REMOTE_SERVER` | low | Data sent to an outside service |
 | `SHELL_LAUNCHER` | low | Server started through `bash -c` or similar |
 
-Runtime tool-description scanning (fetching the live tool list from a server
-and checking each description for poisoning), and skill-file scanning for
-`~/.claude/skills` / plugin folders, are tracked as follow-ups in this
-thread.
+**Skill rules**
+
+Alongside MCP configs, the scanner walks Claude Code "skill" directories
+(`~/.claude/skills/`, `~/.claude/plugins/<plugin>/skills/`, and project
+`<project>/.claude/skills/`) and reads each `SKILL.md`. Findings appear in
+the `skills` section of the report.
+
+| Rule | Severity | Flags |
+| --- | --- | --- |
+| `SKILL_HIDDEN_INSTRUCTIONS` | high | Zero-width or bidi-override characters, or prompt-injection phrases, in a skill's name, description or body |
+| `SKILL_BROAD_TOOL_ACCESS` | medium | A skill grants itself shell-equivalent tools (`Bash`, `Bash(*)`, `Bash(sudo…)`, `Write`, `Edit`, `*`, …) |
+
+Runtime tool-description scanning (fetching the live tool list from a
+server and checking each description for poisoning) is tracked as the
+next follow-up in this thread.
 
 ## Use
 

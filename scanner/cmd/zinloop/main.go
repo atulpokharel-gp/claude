@@ -17,6 +17,7 @@ import (
 	"github.com/atulpokharel-gp/claude/scanner/internal/discover"
 	"github.com/atulpokharel-gp/claude/scanner/internal/report"
 	"github.com/atulpokharel-gp/claude/scanner/internal/rules"
+	"github.com/atulpokharel-gp/claude/scanner/internal/skillscan"
 	"github.com/atulpokharel-gp/claude/scanner/internal/vault"
 )
 
@@ -171,9 +172,13 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 				Error:    "couldn't read the record of protected keys: " + stateErr.Error(),
 			})
 		}
-		part := report.Build(servers, configs, ctx, meta)
+		skills, skillDirs := skillscan.Scan(env)
+		part := report.Build(servers, configs, skills, skillDirs, ctx, meta)
 		for i := range part.Servers {
 			part.Servers[i].User = ownerOf(part.Servers[i].ConfigPath, homes)
+		}
+		for i := range part.Skills {
+			part.Skills[i].User = ownerOf(part.Skills[i].Path, homes)
 		}
 		parts = append(parts, part)
 	}
