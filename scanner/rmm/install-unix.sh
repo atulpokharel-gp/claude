@@ -2,7 +2,7 @@
 # Zinloop scanner for macOS and Linux, for RMM tools. Run as root.
 #
 # Set in your RMM tool:
-#   ZINLOOP_CONSOLE_URL  e.g. https://app.zinloop.com
+#   ZINLOOP_CONSOLE_URL  e.g. https://zinloop.com
 #   ZINLOOP_TOKEN        the client's upload token from the console (zlu_...)
 # Optional: ZINLOOP_SCHEDULE=1 adds a daily run (launchd on macOS, cron on Linux).
 #

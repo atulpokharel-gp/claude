@@ -2,7 +2,7 @@
 # ConnectWise Automate). Run as SYSTEM or an administrator.
 #
 # Set these two variables in your RMM tool (or pass them as parameters):
-#   ZINLOOP_CONSOLE_URL  e.g. https://app.zinloop.com
+#   ZINLOOP_CONSOLE_URL  e.g. https://zinloop.com
 #   ZINLOOP_TOKEN        the client's upload token from the console (zlu_...)
 #
 # What it does: downloads the scanner to C:\ProgramData\Zinloop, checks its
