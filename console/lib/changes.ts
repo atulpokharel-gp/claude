@@ -37,6 +37,11 @@ export interface RawReport {
   schemaVersion?: number;
   hostname?: string;
   servers?: RawServer[];
+  // Per-location read results. When a config file can't be read (locked,
+  // permission denied, parse error), its servers are omitted from `servers`
+  // and the entry carries an `error`. The diff must not treat those as
+  // removed, or the next successful scan would report their servers as new.
+  configs?: Array<{ path?: string; error?: string }>;
 }
 
 export interface ServerSummary {
@@ -108,6 +113,17 @@ export function serverKey(s: RawServer): string {
 
 function severityOrNone(v: unknown): Severity {
   return v === "high" || v === "medium" || v === "low" || v === "none" ? v : "none";
+}
+
+/** The set of config paths that recorded a read error on a report. */
+function erroredConfigPaths(r: RawReport | null | undefined): Set<string> {
+  const out = new Set<string>();
+  for (const c of r?.configs ?? []) {
+    if (c && typeof c.path === "string" && typeof c.error === "string" && c.error) {
+      out.add(c.path.trim());
+    }
+  }
+  return out;
 }
 
 function worstOf(findings: RawServer["findings"]): Severity {
@@ -207,6 +223,13 @@ export function diffScans(prev: RawReport | null, now: RawReport, prevPrev?: Raw
   const prevServers = ((prev?.servers ?? []) as RawServer[]).filter((s) => !!s && typeof s === "object");
   const prevPrevServers = ((prevPrev?.servers ?? []) as RawServer[]).filter((s) => !!s && typeof s === "object");
 
+  // Config paths that failed to read in `now`. Their servers are missing
+  // from `now.servers`, so we must not treat them as removed and must not
+  // check them for "returned" findings. The next scan that reads the file
+  // successfully would otherwise report the servers as new tools and their
+  // findings as regressions, firing a false alert.
+  const nowErroredPaths = erroredConfigPaths(now);
+
   const nowByKey = new Map<string, RawServer>();
   for (const s of nowServers) nowByKey.set(serverKey(s), s);
   const prevByKey = new Map<string, RawServer>();
@@ -228,9 +251,16 @@ export function diffScans(prev: RawReport | null, now: RawReport, prevPrev?: Raw
     };
   }
 
+  // Mirror of nowErroredPaths for the previous scan: a server that only
+  // shows up now because the prior scan couldn't read its config isn't
+  // "new" — we just didn't see it last time.
+  const prevErroredPaths = erroredConfigPaths(prev);
+
   for (const [key, nowS] of nowByKey) {
     const prevS = prevByKey.get(key);
     if (!prevS) {
+      const path = (nowS.configPath ?? "").trim();
+      if (path && prevErroredPaths.has(path)) continue;
       added.push(summaryOf(nowS));
       continue;
     }
@@ -249,16 +279,26 @@ export function diffScans(prev: RawReport | null, now: RawReport, prevPrev?: Raw
   }
 
   for (const [key, prevS] of prevByKey) {
-    if (!nowByKey.has(key)) removed.push(summaryOf(prevS));
+    if (nowByKey.has(key)) continue;
+    // The server's config file failed to read this time around, so we can't
+    // say it's gone — carry it forward as unchanged instead of reporting
+    // a false removal.
+    if (prevS.configPath && nowErroredPaths.has(prevS.configPath.trim())) continue;
+    removed.push(summaryOf(prevS));
   }
 
   // "Returned" findings: a rule present in this scan AND in the scan two
   // scans ago, but absent in the most recent scan. This is the signal that
-  // a fix was applied and then the risky config came back.
+  // a fix was applied and then the risky config came back. Skip the check
+  // when either comparison scan had a read error for this server's config,
+  // since "absent" would then just mean "we didn't look", not "it was gone".
   if (prevPrev) {
+    const prevPrevErroredPaths = erroredConfigPaths(prevPrev);
     for (const [key, nowS] of nowByKey) {
       const olderS = prevPrevByKey.get(key);
       if (!olderS) continue;
+      const path = (nowS.configPath ?? "").trim();
+      if (path && (prevErroredPaths.has(path) || prevPrevErroredPaths.has(path))) continue;
       const prevS = prevByKey.get(key);
       const nowRules = new Set(rulesOf(nowS.findings));
       const prevRules = new Set(rulesOf(prevS?.findings));
@@ -308,10 +348,22 @@ export function diffScans(prev: RawReport | null, now: RawReport, prevPrev?: Raw
 /** Compacts a delta to under ~64 KB for storage, keeping the most important rows. */
 export function trimDelta(d: ScanDelta): ScanDelta {
   const cap = 100;
+  // Risk-up changes drive the alert digest. If they arrive after a long run
+  // of harmless config changes, a naive cap would drop them from the stored
+  // list and the alert would silently see no risk-increasing entries even
+  // though risk_up > 0. Sort them to the front first so the trim keeps the
+  // alert-worthy ones.
+  const rankedChanged = [...d.changed].sort((a, b) => {
+    const aUp = SEVERITY_RANK[a.after.worstRisk] - SEVERITY_RANK[a.before.worstRisk];
+    const bUp = SEVERITY_RANK[b.after.worstRisk] - SEVERITY_RANK[b.before.worstRisk];
+    if (aUp !== bUp) return bUp - aUp; // bigger risk jump first
+    // Among same-jump entries, prefer the one that ends at a higher severity.
+    return SEVERITY_RANK[b.after.worstRisk] - SEVERITY_RANK[a.after.worstRisk];
+  });
   return {
     added: d.added.slice(0, cap),
     removed: d.removed.slice(0, cap),
-    changed: d.changed.slice(0, cap),
+    changed: rankedChanged.slice(0, cap),
     returned: d.returned.slice(0, cap),
     counts: d.counts, // counts are the full totals, not the trimmed lists
   };

@@ -128,6 +128,58 @@ test("serverKey separates Claude Code projects that share one config file", () =
   assert.equal(serverKey(a), serverKey({ ...a }));
 });
 
+test("a config that errored this scan isn't counted as a removal", () => {
+  // Imagine ~/.cursor/mcp.json was locked when the scanner ran. Its server
+  // is missing from the current `servers` list, but the configs entry
+  // records the error. The next scan after the lock lifts would otherwise
+  // report that server as new (false add) and its finding as returned.
+  const prev = { ...base, servers: [{ name: "a", app: "Cursor", configPath: "/u/.cursor/mcp.json", findings: [findShell] }], configs: [{ path: "/u/.cursor/mcp.json" }] };
+  const now = { ...base, servers: [], configs: [{ path: "/u/.cursor/mcp.json", error: "permission denied" }] };
+  const d = diffScans(prev, now);
+  assert.equal(d.counts.removed, 0);
+  // And the next scan after that doesn't surface a false "returned".
+  const nowAgain = { ...base, servers: [{ name: "a", app: "Cursor", configPath: "/u/.cursor/mcp.json", findings: [findShell] }], configs: [{ path: "/u/.cursor/mcp.json" }] };
+  const d2 = diffScans(now, nowAgain, prev);
+  assert.equal(d2.counts.returned, 0);
+  assert.equal(d2.counts.added, 0);
+});
+
+test("trimDelta sorts risk-up changes to the front so the alert sees them", () => {
+  // Build 100 harmless changes (worst risk unchanged) followed by one
+  // risk-increasing change. A naive cap would drop the risky one and the
+  // digest would see no alert-worthy entries despite risk_up = 1.
+  const harmless = Array.from({ length: 100 }, (_, i) => ({
+    key: `k${i}`,
+    name: `s${i}`,
+    app: "Cursor",
+    configPath: `/p${i}`,
+    before: { worstRisk: "none" as const, rules: [] },
+    after: { worstRisk: "none" as const, rules: [] },
+    addedFindings: [],
+    removedFindings: [],
+  }));
+  const risky = {
+    key: "khot",
+    name: "github",
+    app: "Cursor",
+    configPath: "/hot",
+    before: { worstRisk: "none" as const, rules: [] },
+    after: { worstRisk: "high" as const, rules: ["x"] },
+    addedFindings: [],
+    removedFindings: [],
+  };
+  const delta = {
+    added: [],
+    removed: [],
+    changed: [...harmless, risky],
+    returned: [],
+    counts: { added: 0, removed: 0, changed: 101, riskUp: 1, riskDown: 0, returned: 0 },
+  };
+  const trimmed = trimDelta(delta);
+  assert.ok(trimmed.changed.some((c) => c.key === "khot"), "the risky change must survive the trim");
+  assert.equal(trimmed.changed[0].key, "khot");
+});
+
 test("same-named servers in different Claude Code projects are tracked separately", () => {
   const prev = {
     schemaVersion: 1,
