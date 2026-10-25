@@ -10,7 +10,11 @@ reach, and helps shut down the risky ones.
 | [`console/`](console/) | The website and MSP console (Next.js + Postgres): sign-up, two-factor sign-in, team invites, clients, laptop scans, Microsoft 365 checks and a printable client report |
 | [`docs/`](docs/) | [Deploying](docs/deploy.md) and [setting up Microsoft 365](docs/m365.md) |
 
-The website is at `/`, the console at `/app`. Payments aren't built yet; plans
+The website is at `/`, the console at `/app`. The free public checker is at
+`/check`: anyone pastes an AI connector config and gets a grade they can share.
+It runs in the browser with the same rules as the scanner (`console/lib/mcp-check.ts`).
+`npm run research:configs` counts risky configs in public GitHub repos and saves
+only totals, for a research report. Payments aren't built yet; plans
 are set by hand with `npm run db:set-plan`.
 
 ## Try it

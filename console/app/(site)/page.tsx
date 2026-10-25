@@ -18,6 +18,7 @@ export default function Home() {
             <div className="buttons">
               <Link className="zbtn zbtn-main" href="/free-scan">Get a free exposure scan</Link>
               <Link className="zbtn zbtn-ghost" href="/how-it-works">See how it works</Link>
+              <Link className="zbtn zbtn-ghost" href="/check">Grade your own AI setup</Link>
             </div>
             <p className="small">Works with Claude Desktop, Claude Code, Cursor, VS Code and Windsurf on Windows, macOS and Linux.</p>
           </div>

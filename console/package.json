@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "test": "node --test --experimental-strip-types lib/*.test.ts",
+    "test": "node --test --experimental-strip-types lib/*.test.ts scripts/*.test.ts",
     "db:migrate": "node --experimental-strip-types scripts/migrate.ts",
     "db:create-msp": "node --experimental-strip-types scripts/create-msp.ts",
     "db:set-plan": "node --experimental-strip-types scripts/set-plan.ts",
@@ -15,7 +15,8 @@
     "m365:sync": "node --experimental-strip-types scripts/m365-sync.ts",
     "db:snapshot": "node --experimental-strip-types scripts/snapshot.ts",
     "mail:weekly": "node --experimental-strip-types scripts/weekly.ts",
-    "mail:send": "node --experimental-strip-types scripts/send-mail.ts"
+    "mail:send": "node --experimental-strip-types scripts/send-mail.ts",
+    "research:configs": "node --experimental-strip-types scripts/research-public-configs.ts"
   },
   "dependencies": {
     "next": "15.5.28",
