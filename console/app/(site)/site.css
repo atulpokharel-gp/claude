@@ -197,3 +197,19 @@
 .sev.ok { background: #dcefe3; color: #1f5c38; }
 @media (prefers-color-scheme: dark) { .site .sev.ok { background: #173a26; color: #9ad9b1; } }
 .checker .zfield > span { font-weight: 600; }
+
+/* Live pulse page (/live) */
+.pulse-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; }
+.pulse-tile { background: var(--z-card); border: 2px solid var(--z-ink); border-radius: 10px; padding: 20px; display: flex; flex-direction: column; gap: 4px; }
+.pulse-n { font-family: var(--z-display); font-weight: 900; font-size: 44px; line-height: 1; font-variant-numeric: tabular-nums; }
+.pulse-l { color: var(--z-body); font-size: 14px; }
+.pulse-grades { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.pulse-grades li { display: grid; grid-template-columns: 44px 1fr auto auto; align-items: center; gap: 12px; }
+.grade.grade-sm { width: 36px; height: 36px; font-size: 22px; border-radius: 8px; }
+.pulse-bar { background: var(--z-code); border-radius: 999px; overflow: hidden; height: 16px; }
+.pulse-bar span { display: block; height: 100%; border-radius: 999px; }
+.pulse-pct { font-variant-numeric: tabular-nums; font-weight: 600; min-width: 48px; text-align: right; }
+.pulse-cnt { min-width: 72px; text-align: right; }
+.pulse-days { list-style: none; margin: 0; padding: 0; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 6px; align-items: end; height: 180px; border-bottom: 1px solid var(--z-line); padding-bottom: 6px; }
+.pulse-days li { display: flex; flex-direction: column; align-items: center; gap: 4px; height: 100%; justify-content: flex-end; }
+.pulse-day-bar { width: 100%; background: var(--z-amber); border-radius: 4px 4px 0 0; }

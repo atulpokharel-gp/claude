@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { gradeBlurb, parseShare, siteBase } from "@/lib/mcp-check.ts";
+import { bump } from "@/lib/pulse.ts";
 
 type Params = Promise<Record<string, string | string[] | undefined>>;
 
@@ -22,6 +23,8 @@ export async function generateMetadata({ searchParams }: { searchParams: Params 
 
 export default async function SharedResult({ searchParams }: { searchParams: Params }) {
   const s = parseShare(await searchParams);
+  // One ping per rendered share view, best-effort.
+  if (s) await bump(["share_viewed"]).catch(() => {});
   return (
     <section className="section">
       <div className="wrap stack" style={{ gap: 24, maxWidth: 720 }}>

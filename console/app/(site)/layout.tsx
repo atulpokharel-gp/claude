@@ -13,6 +13,7 @@ export default function SiteLayout({ children }: { children: React.ReactNode }) 
           </Link>
           <nav className="site-nav" aria-label="Main">
             <Link href="/check">Free AI check</Link>
+            <Link className="hide-sm" href="/live">Live</Link>
             <Link className="hide-sm" href="/how-it-works">How it works</Link>
             <Link className="hide-sm" href="/msps">For MSPs</Link>
             <Link className="hide-sm" href="/security">Security</Link>
@@ -29,6 +30,7 @@ export default function SiteLayout({ children }: { children: React.ReactNode }) 
           <span>© 2026 Zinloop Security</span>
           <nav aria-label="Footer">
             <Link href="/check">Free AI check</Link>
+            <Link href="/live">Live</Link>
             <Link href="/how-it-works">How it works</Link>
             <Link href="/security">Security</Link>
             <Link href="/pricing">Pricing</Link>
