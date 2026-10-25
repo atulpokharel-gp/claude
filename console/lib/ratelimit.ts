@@ -8,7 +8,16 @@ export const LIMITS = {
   mfa: { window: 15 * 60, max: 10 },
   signUpIp: { window: 60 * 60, max: 5 },
   invite: { window: 60 * 60, max: 30 },
-  pulseIp: { window: 60, max: 60 },
+  // A laptop normally sends one scan a day; 60/hour per token still fits
+  // --all-users and ad-hoc retries, but a leaked token can't flood.
+  scanUploadToken: { window: 60 * 60, max: 60 },
+  // Per source IP, a touch more generous so a shared RMM egress IP covering
+  // many clients isn't throttled.
+  scanUploadIp: { window: 60 * 60, max: 600 },
+  // Clients and tokens are owner/member actions and should never be fast;
+  // this catches a runaway script or a stolen session.
+  createClient: { window: 60 * 60, max: 50 },
+  createUploadToken: { window: 60 * 60, max: 100 },
 } as const;
 
 export type LimitName = keyof typeof LIMITS;

@@ -7,16 +7,34 @@ const SEVERITIES: Severity[] = ["high", "medium", "low", "none"];
 
 export class ScanImportError extends Error {}
 
+// A single uploaded report can't carry more than this many servers or
+// findings-per-server. These caps are generous for a real laptop (even
+// --all-users on a shared machine stays well below) and keep a hostile
+// payload from exploding memory and jsonb storage. Strings are also sliced
+// to a safe maximum so the stored report stays bounded in size and depth.
+const MAX_SERVERS = 500;
+const MAX_FINDINGS = 100;
+const MAX_STRING = 2000;
+const MAX_WARNINGS = 200;
+
 function isObj(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
 function str(v: unknown, fallback = ""): string {
-  return typeof v === "string" ? v : fallback;
+  if (typeof v !== "string") return fallback;
+  return v.length > MAX_STRING ? v.slice(0, MAX_STRING) : v;
 }
 
 function strList(v: unknown): string[] {
-  return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+  if (!Array.isArray(v)) return [];
+  const out: string[] = [];
+  for (const x of v) {
+    if (typeof x !== "string") continue;
+    out.push(x.length > MAX_STRING ? x.slice(0, MAX_STRING) : x);
+    if (out.length >= MAX_FINDINGS) break;
+  }
+  return out;
 }
 
 function toFinding(v: unknown): Finding | null {
@@ -66,14 +84,16 @@ export function importScan(json: unknown): Client {
       "This file isn't an zinloop report. Run `zinloop --json --out scan.json` and choose scan.json.",
     );
   }
+  if (json.servers.length > MAX_SERVERS) {
+    throw new ScanImportError(`Too many servers in one report (max ${MAX_SERVERS}).`);
+  }
   const host = str(json.hostname, "this computer");
   const scannedAt = str(json.scannedAt, new Date().toISOString());
   const agents: Agent[] = [];
   json.servers.forEach((raw, i) => {
     if (!isObj(raw)) return;
-    const findings = (Array.isArray(raw.findings) ? raw.findings : [])
-      .map(toFinding)
-      .filter((f): f is Finding => f !== null);
+    const rawFindings = Array.isArray(raw.findings) ? raw.findings.slice(0, MAX_FINDINGS) : [];
+    const findings = rawFindings.map(toFinding).filter((f): f is Finding => f !== null);
     const scope = str(raw.scope);
     agents.push({
       id: `scan-${i}`,
@@ -88,7 +108,7 @@ export function importScan(json: unknown): Client {
       lastSeen: scannedAt.slice(0, 10),
       people: [personFor(raw)].filter((p): p is PersonRef => p !== undefined),
       ...(str(raw.configPath) ? { configPath: str(raw.configPath).slice(0, 500) } : {}),
-      protectedKeys: (Array.isArray(raw.protectedSecrets) ? raw.protectedSecrets : [])
+      protectedKeys: (Array.isArray(raw.protectedSecrets) ? raw.protectedSecrets.slice(0, MAX_FINDINGS) : [])
         .map((p) => (isObj(p) ? str(p.env) : ""))
         .filter(Boolean),
     });
@@ -96,7 +116,8 @@ export function importScan(json: unknown): Client {
   // Config files the scanner found but couldn't read. Their servers are missing,
   // so the result is incomplete and must say so.
   const warnings: string[] = [];
-  for (const c of Array.isArray(json.configs) ? json.configs : []) {
+  const configs = Array.isArray(json.configs) ? json.configs.slice(0, MAX_WARNINGS) : [];
+  for (const c of configs) {
     if (isObj(c) && str(c.error)) {
       warnings.push(`Couldn't read ${str(c.path, "a config file")} (${str(c.app, "unknown app")}): ${str(c.error)}`);
     }
