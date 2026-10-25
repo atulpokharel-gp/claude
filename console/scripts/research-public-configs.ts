@@ -99,9 +99,11 @@ async function main() {
       // and a partial sample must never be published as a full one.
       if (res.status === 422) break;
       if (!res.ok) throw new Error(`GitHub search failed (${res.status}) for "${q}" page ${page}; no report written`);
-      const body = (await res.json()) as { items: { sha: string; url: string }[] };
+      const body = (await res.json()) as { items: { sha: string; url: string; repository?: { private?: boolean } }[] };
       if (!body.items?.length) break;
       for (const item of body.items) {
+        // The token may see private repos; the report covers public ones only.
+        if (item.repository?.private !== false) continue;
         if (seen.has(item.sha)) continue;
         seen.add(item.sha);
         const raw = await gh(item.url, token, "application/vnd.github.raw+json");
