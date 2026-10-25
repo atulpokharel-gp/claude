@@ -3,6 +3,7 @@ package paxel
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -22,13 +23,16 @@ func TestLoadOrCreateClaimTokenCreatesAndReuses(t *testing.T) {
 	if a != b {
 		t.Errorf("expected the same token on second call, got %q then %q", a, b)
 	}
-	// File perms must be 0600.
+	// File perms must be 0600 on Unix. Windows does not honor Unix perms —
+	// os.Stat always reports 0666 there regardless of what Chmod did.
 	st, err := os.Stat(filepath.Join(home, ".zinloop", "paxel-claim-token"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if perm := st.Mode().Perm(); perm != 0o600 {
-		t.Errorf("token file perm = %o, want 0600", perm)
+	if runtime.GOOS != "windows" {
+		if perm := st.Mode().Perm(); perm != 0o600 {
+			t.Errorf("token file perm = %o, want 0600", perm)
+		}
 	}
 }
 
