@@ -4,6 +4,7 @@
 import type { Metadata } from "next";
 import { hasDatabase } from "@/lib/db.ts";
 import { requireSession } from "@/lib/session.ts";
+import Link from "next/link";
 import { allTokens, companyRollup, fmtTokens, fmtUsd, type Rollup } from "@/lib/paxel.ts";
 import { GroupTable, RangePicker } from "./_shared.tsx";
 
@@ -34,6 +35,10 @@ export default async function PaxelCompany({ searchParams }: { searchParams: Pro
           collects prompts or code.
         </p>
         <RangePicker days={days} base="/app/paxel" />
+        <p className="muted small">
+          <Link href="/app/paxel/leaderboard">Company leaderboard</Link> ·{" "}
+          <Link href="/app/paxel/team">Team profile (anonymous)</Link>
+        </p>
       </div>
 
       <TopTiles data={data} />

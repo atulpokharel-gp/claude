@@ -67,6 +67,14 @@ so you can run both from one install.
   required — only the `paxel_dev` cookie set by `/paxel/claim`.
 - `/p/{slug}` — unauthenticated public profile. Shows only the dimensions
   the developer opts into. Off by default.
+- `/leaderboard` — unauthenticated, cross-tenant leaderboard. Lists only
+  developers who turned a public profile on; everyone else stays hidden.
+  Ranked by mean of the ticked dimensions, or filter to a single
+  dimension.
+- `/app/paxel/leaderboard` — MSP company leaderboard. Every developer the
+  MSP sees, ranked. No opt-in required (internal view).
+- `/portal/paxel/leaderboard` — client-portal team leaderboard. Every
+  developer in the signed-in viewer's one client, ranked.
 
 Each dashboard supports 7-, 30- and 90-day ranges.
 

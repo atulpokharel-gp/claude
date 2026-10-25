@@ -24,6 +24,9 @@ export default async function PortalPaxel({ searchParams }: { searchParams: Prom
           collects prompts or code.
         </p>
         <RangePicker days={days} />
+        <p className="muted small">
+          <Link href="/portal/paxel/leaderboard">Team leaderboard</Link>
+        </p>
       </div>
 
       <Tiles data={data} />

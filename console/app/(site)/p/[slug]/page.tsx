@@ -55,7 +55,8 @@ export default async function PublicProfile({ params }: { params: Promise<{ slug
         ))}
       </div>
       <p className="muted small">
-        Powered by <a href="/">Zinloop Paxel</a>.
+        See the full <a href="/leaderboard">public leaderboard</a> · Powered by{" "}
+        <a href="/">Zinloop Paxel</a>.
       </p>
     </div>
   );
