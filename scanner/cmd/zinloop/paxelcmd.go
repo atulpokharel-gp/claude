@@ -75,6 +75,9 @@ func runPaxel(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "paxel: collect failed:", err)
 		return 1
 	}
+	profiles, profDiag := paxel.CollectProfiles(env)
+	rep.Profiles = profiles
+	rep.Diagnostics = append(rep.Diagnostics, profDiag...)
 	rep.Hostname = host
 	rep.OS = runtime.GOOS
 	rep.ScannerVer = version
@@ -94,6 +97,7 @@ func runPaxel(args []string, stdout, stderr io.Writer) int {
 		_ = enc.Encode(rep)
 	} else {
 		printPaxelSummary(stdout, rep)
+		printProfileSummary(stdout, rep)
 	}
 
 	if *uploadURL != "" {
@@ -165,6 +169,26 @@ func printPaxelSummary(out io.Writer, r paxel.Report) {
 		for _, d := range r.Diagnostics {
 			fmt.Fprintln(out, "    -", d)
 		}
+	}
+}
+
+func printProfileSummary(out io.Writer, r paxel.Report) {
+	if len(r.Profiles) == 0 {
+		return
+	}
+	// Average each dimension over whatever rows are present.
+	avg := map[string]int{}
+	count := map[string]int{}
+	for _, p := range r.Profiles {
+		avg[p.Dimension] += p.Score
+		count[p.Dimension]++
+	}
+	fmt.Fprintln(out, "  builder profile (0-100, averaged across sessions):")
+	for _, dim := range paxel.AllDimensions {
+		if count[dim] == 0 {
+			continue
+		}
+		fmt.Fprintf(out, "    %-18s %3d\n", dim, avg[dim]/count[dim])
 	}
 }
 

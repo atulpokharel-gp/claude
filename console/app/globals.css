@@ -261,3 +261,17 @@ td.bad { color: var(--high); font-weight: 600; }
 .range-picker a { padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line); text-decoration: none; color: var(--muted); font-size: 0.85rem; }
 .range-picker a.range-on { background: var(--accent-soft); color: var(--ink); border-color: var(--line); font-weight: 600; }
 table.data { min-width: 480px; }
+
+/* Paxel builder-profile bars. */
+.profile-bars { display: flex; flex-direction: column; gap: 18px; }
+.profile-row { display: flex; flex-direction: column; gap: 4px; }
+.profile-row-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.profile-name { font-weight: 600; font-size: 0.95rem; }
+.profile-score { font-variant-numeric: tabular-nums; font-weight: 600; font-size: 1.1rem; }
+.profile-track { background: var(--bg); border: 1px solid var(--line); border-radius: 999px; height: 10px; overflow: hidden; }
+.profile-fill { background: var(--accent, var(--clean)); height: 100%; border-radius: 999px; transition: width 300ms ease; }
+.profile-blurb { margin: 2px 0 0; }
+.dim-fieldset { border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; display: flex; flex-direction: column; gap: 6px; }
+.dim-fieldset legend { padding: 0 6px; font-size: 0.85rem; color: var(--muted); }
+.form-actions { display: flex; gap: 10px; align-items: center; }
+.wrap.narrow { max-width: 720px; margin: 32px auto; padding: 0 16px; display: flex; flex-direction: column; gap: 18px; }

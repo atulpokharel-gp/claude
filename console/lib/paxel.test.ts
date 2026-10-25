@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { allTokens, fmtTokens, fmtUsd, parseUpload, PaxelError, rollup, type NormalBucket } from "./paxel.ts";
+import { allTokens, DIMENSIONS, fmtTokens, fmtUsd, newPublicSlug, parseUpload, PaxelError, rollup, type NormalBucket } from "./paxel.ts";
 
 const USER_A = "aa".repeat(16); // 32 hex
 const USER_B = "bb".repeat(16);
@@ -187,6 +187,82 @@ test("fmtTokens is human-friendly", () => {
   assert.equal(fmtTokens(1_500), "1.5K");
   assert.equal(fmtTokens(1_500_000), "1.5M");
   assert.equal(fmtTokens(2_500_000_000), "2.5B");
+});
+
+test("parseUpload accepts and validates profile rows", () => {
+  const got = parseUpload({
+    hostname: "laptop1",
+    buckets: [],
+    profiles: [
+      {
+        tool: "claude-code",
+        userHash: USER_A,
+        userLabel: "alice",
+        projectHash: PROJ_X,
+        projectLabel: "foo",
+        dimension: "steering",
+        day: "2026-10-20",
+        score: 72,
+        sessions: 3,
+        metrics: { user_turns: 8, tool_uses: 20 },
+      },
+    ],
+  });
+  assert.equal(got.profiles.length, 1);
+  const p = got.profiles[0];
+  assert.equal(p.score, 72);
+  assert.equal(p.sessions, 3);
+  assert.equal(p.metrics.tool_uses, 20);
+});
+
+test("parseUpload drops profile rows with unknown dimension or bad score", () => {
+  const got = parseUpload({
+    hostname: "h",
+    buckets: [],
+    profiles: [
+      { tool: "claude-code", userHash: USER_A, projectHash: PROJ_X, dimension: "chaos", day: "2026-10-20", score: 50 },
+      { tool: "claude-code", userHash: USER_A, projectHash: PROJ_X, dimension: "steering", day: "2026-10-20" },
+    ],
+  });
+  assert.equal(got.profiles.length, 0);
+});
+
+test("parseUpload clamps profile score to 0-100", () => {
+  const got = parseUpload({
+    hostname: "h",
+    buckets: [],
+    profiles: [
+      { tool: "claude-code", userHash: USER_A, projectHash: PROJ_X, dimension: "steering", day: "2026-10-20", score: 1000 },
+      { tool: "claude-code", userHash: USER_A, projectHash: PROJ_X, dimension: "execution", day: "2026-10-20", score: -5 },
+    ],
+  });
+  assert.equal(got.profiles[0].score, 100);
+  assert.equal(got.profiles[1].score, 0);
+});
+
+test("parseUpload caps profiles length", () => {
+  const profiles = Array.from({ length: 10_000 }, (_, i) => ({
+    tool: "claude-code",
+    userHash: USER_A,
+    projectHash: PROJ_X,
+    dimension: "steering",
+    day: "2026-10-20",
+    score: i % 100,
+  }));
+  assert.throws(() => parseUpload({ hostname: "h", buckets: [], profiles }), (e: unknown) => e instanceof PaxelError);
+});
+
+test("DIMENSIONS has exactly the five expected keys", () => {
+  assert.deepEqual([...DIMENSIONS].sort(), ["engineering", "execution", "planning", "product-instinct", "steering"]);
+});
+
+test("newPublicSlug returns a 14+ char lowercase alnum string", () => {
+  for (let i = 0; i < 20; i++) {
+    const s = newPublicSlug();
+    assert.match(s, /^[a-z0-9]{14,32}$/, `slug ${s} not in shape`);
+  }
+  // Different slugs each call.
+  assert.notEqual(newPublicSlug(), newPublicSlug());
 });
 
 test("fmtUsd shows two decimals under $1000 and whole dollars above", () => {
