@@ -31,6 +31,8 @@ type Report struct {
 	Configs        []discover.ConfigResult    `json:"configs"`
 	Skills         []SkillResult              `json:"skills,omitempty"`
 	SkillDirs      []skillscan.LocationResult `json:"skillDirs,omitempty"`
+	Tools          []ToolResult               `json:"tools,omitempty"`
+	ToolProbes     []ToolProbeResult          `json:"toolProbes,omitempty"`
 }
 
 // Summary counts servers and skills by their worst finding. Server and skill
@@ -47,6 +49,8 @@ type Summary struct {
 	SkillMedium int `json:"skillMedium,omitempty"`
 	SkillLow    int `json:"skillLow,omitempty"`
 	SkillClean  int `json:"skillClean,omitempty"`
+	Tools       int `json:"tools,omitempty"`
+	ToolHigh    int `json:"toolHigh,omitempty"`
 }
 
 // ServerResult is one server with its findings and overall risk.
@@ -66,6 +70,25 @@ type SkillResult struct {
 	User     string          `json:"user,omitempty"`
 	Risk     rules.Severity  `json:"risk"`
 	Findings []rules.Finding `json:"findings"`
+}
+
+// ToolResult is one tool advertised by an MCP server at runtime, together
+// with any findings from running the tool-level rules against it.
+type ToolResult struct {
+	Server      string          `json:"server"`
+	Name        string          `json:"name"`
+	Description string          `json:"description,omitempty"`
+	Risk        rules.Severity  `json:"risk"`
+	Findings    []rules.Finding `json:"findings"`
+}
+
+// ToolProbeResult records whether a server could be probed and, if not,
+// why. It is kept separate from ToolResult so the UI can distinguish
+// "server responded with no tools" from "probe failed".
+type ToolProbeResult struct {
+	Server string `json:"server"`
+	Tools  int    `json:"tools"`
+	Error  string `json:"error,omitempty"`
 }
 
 // Build checks every server and assembles the report.
@@ -130,6 +153,37 @@ func Build(servers []discover.Server, configs []discover.ConfigResult, skills []
 	return r
 }
 
+// WithTools attaches runtime tool-probe output to an already-built report.
+// Keeping it separate from Build lets callers who don't opt into probing
+// avoid passing nil slices through the main signature. Tools are checked
+// with rules.CheckTool and sorted worst-first for the UI.
+func WithTools(r Report, tools []rules.Tool, probes []ToolProbeResult) Report {
+	r.ToolProbes = probes
+	r.Tools = make([]ToolResult, 0, len(tools))
+	for _, t := range tools {
+		f := rules.CheckTool(t)
+		if f == nil {
+			f = []rules.Finding{}
+		}
+		res := ToolResult{
+			Server:      t.Server,
+			Name:        t.Name,
+			Description: t.Description,
+			Risk:        rules.Worst(f),
+			Findings:    f,
+		}
+		r.Tools = append(r.Tools, res)
+		if res.Risk == rules.High {
+			r.Summary.ToolHigh++
+		}
+	}
+	r.Summary.Tools = len(r.Tools)
+	sort.SliceStable(r.Tools, func(i, j int) bool {
+		return r.Tools[i].Risk.Rank() > r.Tools[j].Risk.Rank()
+	})
+	return r
+}
+
 // Merge joins reports built for several user profiles on one computer into
 // one report, keeping meta's hostname, OS and times.
 func Merge(meta Report, parts []Report) Report {
@@ -142,11 +196,15 @@ func Merge(meta Report, parts []Report) Report {
 	r.Configs = []discover.ConfigResult{}
 	r.Skills = []SkillResult{}
 	r.SkillDirs = []skillscan.LocationResult{}
+	r.Tools = []ToolResult{}
+	r.ToolProbes = []ToolProbeResult{}
 	for _, p := range parts {
 		r.Servers = append(r.Servers, p.Servers...)
 		r.Configs = append(r.Configs, p.Configs...)
 		r.Skills = append(r.Skills, p.Skills...)
 		r.SkillDirs = append(r.SkillDirs, p.SkillDirs...)
+		r.Tools = append(r.Tools, p.Tools...)
+		r.ToolProbes = append(r.ToolProbes, p.ToolProbes...)
 		r.Summary.Servers += p.Summary.Servers
 		r.Summary.High += p.Summary.High
 		r.Summary.Medium += p.Summary.Medium
@@ -157,12 +215,17 @@ func Merge(meta Report, parts []Report) Report {
 		r.Summary.SkillMedium += p.Summary.SkillMedium
 		r.Summary.SkillLow += p.Summary.SkillLow
 		r.Summary.SkillClean += p.Summary.SkillClean
+		r.Summary.Tools += p.Summary.Tools
+		r.Summary.ToolHigh += p.Summary.ToolHigh
 	}
 	sort.SliceStable(r.Servers, func(i, j int) bool {
 		return r.Servers[i].Risk.Rank() > r.Servers[j].Risk.Rank()
 	})
 	sort.SliceStable(r.Skills, func(i, j int) bool {
 		return r.Skills[i].Risk.Rank() > r.Skills[j].Risk.Rank()
+	})
+	sort.SliceStable(r.Tools, func(i, j int) bool {
+		return r.Tools[i].Risk.Rank() > r.Tools[j].Risk.Rank()
 	})
 	return r
 }
@@ -292,6 +355,22 @@ func WriteText(w io.Writer, r Report) {
 			fmt.Fprintf(w, "  - %s: %s\n", strings.ToUpper(string(f.Severity)), f.Title)
 			fmt.Fprintf(w, "      %s\n", f.Detail)
 			fmt.Fprintf(w, "      Fix: %s\n", f.Fix)
+		}
+	}
+	for _, t := range r.Tools {
+		if t.Risk == rules.None {
+			continue
+		}
+		fmt.Fprintf(w, "\n[%s] tool: %s  (server %s)\n", strings.ToUpper(string(t.Risk)), t.Name, t.Server)
+		for _, f := range t.Findings {
+			fmt.Fprintf(w, "  - %s: %s\n", strings.ToUpper(string(f.Severity)), f.Title)
+			fmt.Fprintf(w, "      %s\n", f.Detail)
+			fmt.Fprintf(w, "      Fix: %s\n", f.Fix)
+		}
+	}
+	for _, p := range r.ToolProbes {
+		if p.Error != "" {
+			fmt.Fprintf(w, "\nCould not probe %s: %s\n", p.Server, p.Error)
 		}
 	}
 	for _, c := range r.Configs {

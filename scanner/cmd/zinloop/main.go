@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -18,6 +19,7 @@ import (
 	"github.com/atulpokharel-gp/claude/scanner/internal/report"
 	"github.com/atulpokharel-gp/claude/scanner/internal/rules"
 	"github.com/atulpokharel-gp/claude/scanner/internal/skillscan"
+	"github.com/atulpokharel-gp/claude/scanner/internal/toolprobe"
 	"github.com/atulpokharel-gp/claude/scanner/internal/vault"
 )
 
@@ -83,6 +85,8 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 	tokenFile := fs.String("token-file", "", "file holding the console upload token")
 	allUsers := fs.Bool("all-users", false, "scan every user profile on this computer (run as administrator or root, for example from an RMM tool)")
 	usersDir := fs.String("users-dir", "", "with --all-users, the folder holding user profiles (default: C:\\Users, /Users or /home)")
+	probeTools := fs.Bool("probe-tools", false, "start each stdio MCP server and scan its live tool list for hidden instructions (opt-in: this executes the configured servers)")
+	probeTimeout := fs.Duration("probe-timeout", toolprobe.DefaultTimeout, "per-server timeout for --probe-tools")
 	var projects multiFlag
 	fs.Var(&projects, "project", "project folder to check for project-level configs (repeatable)")
 	if err := fs.Parse(args); err != nil {
@@ -174,6 +178,11 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 		}
 		skills, skillDirs := skillscan.Scan(env)
 		part := report.Build(servers, configs, skills, skillDirs, ctx, meta)
+		if *probeTools {
+			fmt.Fprintln(stderr, "warning: --probe-tools starts each stdio MCP server to list its tools; disable it if you don't trust the configured servers.")
+			tools, probes := probeAllAsRules(servers, *probeTimeout)
+			part = report.WithTools(part, tools, probes)
+		}
 		for i := range part.Servers {
 			part.Servers[i].User = ownerOf(part.Servers[i].ConfigPath, homes)
 		}
@@ -247,6 +256,22 @@ func ownerOf(path string, homes []string) string {
 		return ""
 	}
 	return filepath.Base(best)
+}
+
+// probeAllAsRules runs the stdio tool probe on every discovered server and
+// converts the output into the rules.Tool / report.ToolProbeResult types the
+// report layer expects.
+func probeAllAsRules(servers []discover.Server, timeout time.Duration) ([]rules.Tool, []report.ToolProbeResult) {
+	results := toolprobe.ProbeAll(context.Background(), servers, toolprobe.Options{Timeout: timeout})
+	var tools []rules.Tool
+	probes := make([]report.ToolProbeResult, 0, len(results))
+	for _, r := range results {
+		probes = append(probes, report.ToolProbeResult{Server: r.Server, Tools: len(r.Tools), Error: r.Error})
+		for _, t := range r.Tools {
+			tools = append(tools, rules.Tool{Server: r.Server, Name: t.Name, Description: t.Description})
+		}
+	}
+	return tools, probes
 }
 
 // within reports whether path is dir or inside it. On Windows the comparison
