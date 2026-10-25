@@ -1,7 +1,7 @@
 // A simple horizontal bar for each of the five builder-profile dimensions.
 // Server component — pure render, no state.
 
-import { DIMENSION_BLURB, DIMENSION_LABEL, type DimensionAggregate } from "@/lib/paxel.ts";
+import { DIMENSION_BLURB, DIMENSION_LABEL, type DimensionAggregate } from "@/lib/zipax.ts";
 
 export function ProfilePanel({ dims, caption }: { dims: DimensionAggregate[]; caption?: string }) {
   const anyScore = dims.some((d) => d.score > 0 || d.sessions > 0);
@@ -9,7 +9,7 @@ export function ProfilePanel({ dims, caption }: { dims: DimensionAggregate[]; ca
     return (
       <div className="panel-body">
         <p className="empty">
-          No builder-profile data yet. Run <code>zinloop paxel</code> on a laptop with a few Claude Code
+          No builder-profile data yet. Run <code>zinloop zipax</code> on a laptop with a few Claude Code
           sessions to populate this.
         </p>
       </div>

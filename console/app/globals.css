@@ -256,13 +256,13 @@ td.bad { color: var(--high); font-weight: 600; }
 .form label.check { display: flex; flex-direction: row; gap: 10px; align-items: flex-start; font-weight: normal; }
 .form label.check input { width: auto; margin-top: 3px; flex: none; }
 
-/* Paxel range picker and table bits. */
+/* Zipax range picker and table bits. */
 .range-picker { display: inline-flex; gap: 6px; }
 .range-picker a { padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line); text-decoration: none; color: var(--muted); font-size: 0.85rem; }
 .range-picker a.range-on { background: var(--accent-soft); color: var(--ink); border-color: var(--line); font-weight: 600; }
 table.data { min-width: 480px; }
 
-/* Paxel builder-profile bars. */
+/* Zipax builder-profile bars. */
 .profile-bars { display: flex; flex-direction: column; gap: 18px; }
 .profile-row { display: flex; flex-direction: column; gap: 4px; }
 .profile-row-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }

@@ -1,6 +1,6 @@
 // Public builder-profile leaderboard. Only developers who turned a public
-// profile on in /paxel/settings appear here. The scores and ranking are
-// computed server-side by the paxel_public_leaderboard SQL function; this
+// profile on in /zipax/settings appear here. The scores and ranking are
+// computed server-side by the zipax_public_leaderboard SQL function; this
 // page never sees prompts, code, tokens, cost, projects or anyone's email.
 
 import type { Metadata } from "next";
@@ -12,12 +12,12 @@ import {
   type Dimension,
   type LeaderboardRow,
   readPublicLeaderboard,
-} from "@/lib/paxel.ts";
+} from "@/lib/zipax.ts";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
   title: "Builder profile leaderboard",
-  description: "A public ranking of developers by their opt-in Paxel builder profile.",
+  description: "A public ranking of developers by their opt-in Zipax builder profile.",
 };
 
 export default async function PublicLeaderboard({
@@ -43,9 +43,9 @@ export default async function PublicLeaderboard({
       <div className="page-head">
         <h1>Builder profile leaderboard</h1>
         <p className="muted">
-          Ranks developers by their opt-in Paxel builder-profile scores over the last {days} days.
+          Ranks developers by their opt-in Zipax builder-profile scores over the last {days} days.
           Only people who turned a public profile on in{" "}
-          <Link href="/paxel/settings">Paxel settings</Link> appear here. Scores are computed on each
+          <Link href="/zipax/settings">Zipax settings</Link> appear here. Scores are computed on each
           developer's laptop from local coding sessions — no prompts, no code, no project names.
         </p>
         <DimPicker current={dim} days={days} />
@@ -55,9 +55,9 @@ export default async function PublicLeaderboard({
         <section className="panel">
           <div className="panel-body">
             <p className="empty">
-              Nobody has published a profile yet. Run <code>zinloop paxel</code> on your laptop, visit
-              the printed <code>/paxel/claim</code> URL, then turn public sharing on in{" "}
-              <Link href="/paxel/settings">Paxel settings</Link> to appear here.
+              Nobody has published a profile yet. Run <code>zinloop zipax</code> on your laptop, visit
+              the printed <code>/zipax/claim</code> URL, then turn public sharing on in{" "}
+              <Link href="/zipax/settings">Zipax settings</Link> to appear here.
             </p>
           </div>
         </section>
