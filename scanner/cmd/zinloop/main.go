@@ -51,6 +51,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 			return runRevert(args[1:], stdout, stderr)
 		case "paxel":
 			return runPaxel(args[1:], stdout, stderr)
+		case "install", "uninstall", "status", "logs", "service":
+			return runService(args[0], args[1:], stdout, stderr)
 		}
 	}
 	return runScan(args, stdout, stderr)
@@ -61,10 +63,23 @@ func run(args []string, stdout, stderr io.Writer) int {
 // the fixture layout under testdata/home works on every OS.
 var goos = runtime.GOOS
 
-func buildEnv(home string, projects []string) (discover.Env, error) {
-	env := discover.Env{GOOS: goos, Home: home, AppData: os.Getenv("APPDATA"), ProjectDirs: projects}
+func buildEnv(home string, projects, extraConfigs, extraSkillDirs []string) (discover.Env, error) {
+	env := discover.Env{
+		GOOS:            goos,
+		Home:            home,
+		AppData:         os.Getenv("APPDATA"),
+		ProjectDirs:     projects,
+		ExtraConfigs:    extraConfigs,
+		ExtraSkillDirs:  extraSkillDirs,
+		ClaudeConfigDir: os.Getenv("CLAUDE_CONFIG_DIR"),
+		XDGConfigHome:   os.Getenv("XDG_CONFIG_HOME"),
+	}
 	if home != "" {
-		env.AppData = "" // keep a custom home self-contained
+		// A custom home must stay self-contained: ignore environment overrides
+		// that could point the scanner outside it.
+		env.AppData = ""
+		env.ClaudeConfigDir = ""
+		env.XDGConfigHome = ""
 		return env, nil
 	}
 	h, err := os.UserHomeDir()
@@ -89,8 +104,10 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 	usersDir := fs.String("users-dir", "", "with --all-users, the folder holding user profiles (default: C:\\Users, /Users or /home)")
 	probeTools := fs.Bool("probe-tools", false, "start each stdio MCP server and scan its live tool list for hidden instructions (opt-in: this executes the configured servers)")
 	probeTimeout := fs.Duration("probe-timeout", toolprobe.DefaultTimeout, "per-server timeout for --probe-tools")
-	var projects multiFlag
+	var projects, extraConfigs, extraSkillDirs multiFlag
 	fs.Var(&projects, "project", "project folder to check for project-level configs (repeatable)")
+	fs.Var(&extraConfigs, "extra-config", "extra config file to scan at a non-default path (repeatable; e.g. a container volume or RMM-pushed config)")
+	fs.Var(&extraSkillDirs, "extra-skills-dir", "extra skill directory to scan at a non-default path (repeatable)")
 	if err := fs.Parse(args); err != nil {
 		return 1
 	}
@@ -112,7 +129,13 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 		for i, h := range listProfiles(dirs) {
 			e := discover.Env{GOOS: goos, Home: h}
 			if i == 0 {
-				e.ProjectDirs = projects // scan --project folders once, not once per profile
+				// Scan shared bits (projects, extras) once rather than once per
+				// profile. --all-users deliberately ignores the invoker's env
+				// overrides, since the scanner typically runs as SYSTEM/root
+				// against profiles that are not the invoker's.
+				e.ProjectDirs = projects
+				e.ExtraConfigs = extraConfigs
+				e.ExtraSkillDirs = extraSkillDirs
 			}
 			if goos == "windows" {
 				e.AppData = filepath.Join(h, "AppData", "Roaming")
@@ -124,7 +147,7 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 			return 1
 		}
 	} else {
-		env, err := buildEnv(*home, projects)
+		env, err := buildEnv(*home, projects, extraConfigs, extraSkillDirs)
 		if err != nil {
 			fmt.Fprintln(stderr, err)
 			return 1
@@ -167,7 +190,7 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 				ctx.NeedsRotation[ref] = true
 			}
 		}
-		servers, configs := discover.Scan(env)
+		servers, configs, cfgWarnings := discover.ScanWithWarnings(env)
 		if stateErr != nil {
 			// Without the record we can't tell which protected keys still need
 			// rotating, so put the failure in the report. The console then
@@ -178,8 +201,9 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 				Error:    "couldn't read the record of protected keys: " + stateErr.Error(),
 			})
 		}
-		skills, skillDirs := skillscan.Scan(env)
-		part := report.Build(servers, configs, skills, skillDirs, ctx, meta)
+		skills, skillDirs, skillWarnings := skillscan.ScanWithWarnings(env)
+		warnings := append(cfgWarnings, skillWarnings...)
+		part := report.BuildWithWarnings(servers, configs, skills, skillDirs, warnings, ctx, meta)
 		if *probeTools {
 			fmt.Fprintln(stderr, "warning: --probe-tools starts each stdio MCP server to list its tools; disable it if you don't trust the configured servers.")
 			tools, probes := probeAllAsRules(servers, *probeTimeout)
@@ -228,6 +252,16 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 		}
 		for _, s := range rep.Servers {
 			if s.Risk.Rank() >= threshold.Rank() {
+				return 2
+			}
+		}
+		for _, s := range rep.Skills {
+			if s.Risk.Rank() >= threshold.Rank() {
+				return 2
+			}
+		}
+		for _, pw := range rep.PathWarnings {
+			if rules.Severity(pw.Severity).Rank() >= threshold.Rank() {
 				return 2
 			}
 		}
