@@ -288,8 +288,16 @@ func TestBackupPermissionsAndContents(t *testing.T) {
 	if err := json.Unmarshal(meta, &m); err != nil {
 		t.Fatal(err)
 	}
-	if m.OriginalPath != cfg {
-		t.Errorf("meta.OriginalPath = %q, want %q", m.OriginalPath, cfg)
+	// macOS temp dirs sit behind /var -> /private/var, and Windows runners use
+	// 8.3 short-name HOME paths (RUNNER~1) that EvalSymlinks resolves to the
+	// long form. applyFile stores the resolved path in meta.OriginalPath, so
+	// resolve the test's own cfg path the same way before comparing.
+	wantPath, err := filepath.EvalSymlinks(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.OriginalPath != wantPath {
+		t.Errorf("meta.OriginalPath = %q, want %q", m.OriginalPath, wantPath)
 	}
 	if len(m.Refs) != 1 {
 		t.Errorf("meta.Refs = %v, want 1 entry", m.Refs)
