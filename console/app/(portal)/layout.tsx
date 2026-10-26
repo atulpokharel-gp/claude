@@ -27,7 +27,7 @@ export default async function PortalLayout({ children }: { children: React.React
             <nav className="nav" aria-label="Main">
               <Link href="/portal">Overview</Link>
               <Link href="/portal/report">Report</Link>
-              <Link href="/portal/paxel">Paxel</Link>
+              <Link href="/portal/zipax">Zipax</Link>
               <Link href="/portal/account">Your account</Link>
             </nav>
           )}

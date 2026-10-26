@@ -10,7 +10,7 @@ import { notFound } from "next/navigation";
 import {
   DIMENSION_LABEL,
   readPublicProfile,
-} from "@/lib/paxel.ts";
+} from "@/lib/zipax.ts";
 
 export const dynamic = "force-dynamic";
 
@@ -19,7 +19,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const view = await readPublicProfile(slug);
   return {
     title: view ? `${view.displayName} — builder profile` : "Builder profile",
-    description: view ? `Public Paxel builder-profile scores for ${view.displayName}` : undefined,
+    description: view ? `Public Zipax builder-profile scores for ${view.displayName}` : undefined,
     robots: { index: false, follow: false },
   };
 }
@@ -56,7 +56,7 @@ export default async function PublicProfile({ params }: { params: Promise<{ slug
       </div>
       <p className="muted small">
         See the full <a href="/leaderboard">public leaderboard</a> · Powered by{" "}
-        <a href="/">Zinloop Paxel</a>.
+        <a href="/">Zinloop Zipax</a>.
       </p>
     </div>
   );
