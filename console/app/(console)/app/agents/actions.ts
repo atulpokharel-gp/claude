@@ -65,18 +65,24 @@ export async function taskAction(_prev:FormResult,fd:FormData):Promise<FormResul
   const s=await admin();
   const title=text(fd,"title",200),description=text(fd,"description",2000);
   const client=text(fd,"client",36)||null;
+  const target=text(fd,"targetAgent",36)||null;
   const model=text(fd,"model",120);
   const amount=Number(fd.get("budget"));
   if(!title)throw Error("Task title required");
   if(!Number.isFinite(amount)||amount<=0||amount>1000)throw Error("Task budget must be between $0.01 and $1000");
   if(client&&!isUUID(client))throw Error("Invalid client");
+  if(target&&!isUUID(target))throw Error("Invalid target agent");
   await withTenant(s.mspId,async db=>{
     if(client){
       const valid=await db.query("select 1 from clients where id=$1",[client]);
       if(!valid.rowCount)throw Error("Client not found");
     }
-    await db.query("insert into cp_tasks(msp_id,client_id,title,description,budget_usd,preferred_model) values($1,$2,$3,$4,$5,$6)",[
-      s.mspId,client,title,description,amount,model]);
+    if(target){
+      const a=(await db.query<{client_id:string|null}>("select client_id from cp_agents where id=$1 and status='online'",[target])).rows[0];
+      if(!a||a.client_id!==client)throw Error("Target agent must match task client scope");
+    }
+    await db.query("insert into cp_tasks(msp_id,client_id,target_agent_id,title,description,budget_usd,preferred_model) values($1,$2,$3,$4,$5,$6,$7)",[
+      s.mspId,client,target,title,description,amount,model]);
   });
   revalidatePath("/app/agents");
   return {success:"Task created in the shared channel. Eligible agents may claim it."};
