@@ -148,6 +148,43 @@ export async function pollChannel(p:AgentPrincipal,taskId:string,after=0){
     return {messages:rows.map(r=>({...r,at:r.at.toISOString()}))};
   });
 }
+
+/** List active tasks and IDs so other eligible agents can join the channel. */
+export async function listTasks(p:AgentPrincipal){
+  return withTenant(p.mspId,async db=>{
+    const rows=(await db.query<{id:string;title:string;status:string;assigned_agent_id:string|null;preferred_model:string;budget_usd:string}>(
+      "select id,title,status,assigned_agent_id,preferred_model,budget_usd from cp_tasks "+
+      "where ($1::uuid is null or client_id=$1::uuid) order by created_at desc limit 100",
+      [p.clientId])).rows;
+    return {tasks:rows.map(r=>({id:r.id,title:r.title,status:r.status,claimedBy:r.assigned_agent_id,
+      preferredModel:r.preferred_model,budgetUsd:Number(r.budget_usd)}))};
+  });
+}
+/** Renew a task claim while actively working. */
+export async function heartbeatTask(p:AgentPrincipal,taskId:string){
+  if(!UUID.test(taskId))return bad("Invalid task ID");
+  return withTenant(p.mspId,async db=>{
+    const r=await db.query(
+      "update cp_tasks set lease_until=now()+interval '15 minutes' "+
+      "where id=$1 and assigned_agent_id=$2 and status='claimed' and lease_until>now() "+
+      "and ($3::uuid is null or client_id=$3::uuid)",
+      [taskId,p.agentId,p.clientId]);
+    if(!r.rowCount)return bad("Task not claimed by this agent or lease expired",403);
+    return {ok:true,leaseMinutes:15};
+  });
+}
+export async function finishTask(p:AgentPrincipal,taskId:string,result:"done"|"failed"){
+  if(!UUID.test(taskId)||!["done","failed"].includes(result))return bad("Invalid task status");
+  return withTenant(p.mspId,async db=>{
+    const r=await db.query(
+      "update cp_tasks set status=$3,lease_until=null where id=$1 and assigned_agent_id=$2 "+
+      "and status='claimed' and ($4::uuid is null or client_id=$4::uuid)",
+      [taskId,p.agentId,result,p.clientId]);
+    if(!r.rowCount)return bad("Only the claiming agent can complete this task",403);
+    return {ok:true,status:result};
+  });
+}
+
 export function createControlConfig(evaluator:Evaluator,raw:string){
   let config:Record<string,unknown>;
   try{
