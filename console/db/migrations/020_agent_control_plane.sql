@@ -71,6 +71,7 @@ create table cp_budgets (
 create table cp_tasks (
  id uuid primary key default gen_random_uuid(),
  msp_id uuid not null references msps(id) on delete cascade,
+ client_id uuid references clients(id) on delete set null,
  title text not null check(length(title) between 1 and 200),
  description text not null default '' check(length(description)<=2000),
  status text not null default 'queued' check(status in ('queued','claimed','done','failed')),
@@ -116,7 +117,7 @@ begin
  end loop;
 end $$;
 
-grant usage, select on all sequences in schema public to zinloop_app;
+grant usage, select on sequence cp_events_id_seq, cp_messages_id_seq to zinloop_app;
 
 -- Only the migration owner can lookup opaque bearer hashes before the tenant
 -- is known. Unprivileged runtime APIs never pass an MSP id as trusted input.
