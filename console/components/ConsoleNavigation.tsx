@@ -11,6 +11,9 @@ const GROUPS=[
     {label:"People",href:"/app/people",glyph:"♙"},
     {label:"Scan file explorer",href:"/app/import",glyph:"◎"}
   ]},
+  {title:"AGENT GOVERNANCE",items:[
+    {label:"Agent Control Plane",href:"/app/agents",glyph:"✳"}
+  ]},
   {title:"DEPLOY & MANAGE",items:[
     {label:"Scanner downloads",href:"/app/downloads",glyph:"⇩"},
     {label:"Team & settings",href:"/app/settings",glyph:"⚙"}
