@@ -1,9 +1,21 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { headers } from "next/headers";
 
+export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Docs" };
 
-export default function Docs() {
+async function consoleBase(): Promise<string> {
+  const env = process.env.CONSOLE_URL?.trim();
+  if (env) return env.replace(/\/+$/, "");
+  const h = await headers();
+  const host = h.get("x-forwarded-host") ?? h.get("host") ?? "app.example.com";
+  const proto = h.get("x-forwarded-proto") ?? "https";
+  return `${proto}://${host}`;
+}
+
+export default async function Docs() {
+  const base = await consoleBase();
   return (
     <section className="section">
       <div className="wrap doc">
@@ -38,7 +50,7 @@ export default function Docs() {
           <div className="table-box"><table>
             <thead><tr><th>Variable</th><th>Value</th></tr></thead>
             <tbody>
-              <tr><td><code>ZINLOOP_CONSOLE_URL</code></td><td>Your console address, for example <code>https://zinloop.com</code></td></tr>
+              <tr><td><code>ZINLOOP_CONSOLE_URL</code></td><td>Your console address, for example <code>{base}</code></td></tr>
               <tr><td><code>ZINLOOP_TOKEN</code></td><td>The client's upload token, starting <code>zlu_</code></td></tr>
             </tbody>
           </table></div>
@@ -50,11 +62,11 @@ export default function Docs() {
 
           <h3 id="unix">macOS and Linux</h3>
           <p>Download <a href="/download/install-unix.sh">install-unix.sh</a>. Set <code>ZINLOOP_SCHEDULE=1</code> to run it daily.</p>
-          <pre>{"sudo ZINLOOP_CONSOLE_URL=https://zinloop.com ZINLOOP_TOKEN=zlu_... ZINLOOP_SCHEDULE=1 sh install-unix.sh"}</pre>
+          <pre>{`sudo ZINLOOP_CONSOLE_URL=${base} ZINLOOP_TOKEN=zlu_... ZINLOOP_SCHEDULE=1 sh install-unix.sh`}</pre>
 
           <h2 id="manual">Run it by hand</h2>
           <p>Download the build for the computer from <code>/download/zinloop-&lt;os&gt;-&lt;cpu&gt;</code> on your console, then:</p>
-          <pre>{"zinloop                     # readable summary for the current user\nzinloop --json --out scan.json\nzinloop --all-users         # every profile (run as administrator or root)\nZINLOOP_TOKEN=zlu_... zinloop --upload https://zinloop.com/api/scans"}</pre>
+          <pre>{`zinloop                     # readable summary for the current user\nzinloop --json --out scan.json\nzinloop --all-users         # every profile (run as administrator or root)\nZINLOOP_TOKEN=zlu_... zinloop --upload ${base}/api/scans`}</pre>
           <p>Without <code>--upload</code> the scanner sends nothing. You can open a saved <code>scan.json</code> in the console under <b>Open a scan file</b>.</p>
 
           <h2 id="fix">Fix plain-text keys</h2>

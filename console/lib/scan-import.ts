@@ -81,7 +81,7 @@ export function personFor(raw: Record<string, unknown>): PersonRef | undefined {
 export function importScan(json: unknown): Client {
   if (!isObj(json) || json.schemaVersion !== 1 || !Array.isArray(json.servers)) {
     throw new ScanImportError(
-      "This file isn't an zinloop report. Run `zinloop --json --out scan.json` and choose scan.json.",
+      "This file isn't a zinloop report. Run `zinloop --json --out scan.json` and choose scan.json.",
     );
   }
   if (json.servers.length > MAX_SERVERS) {
