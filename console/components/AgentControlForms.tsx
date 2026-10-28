@@ -33,7 +33,8 @@ export function AgentControlForms({agents,clients}:{agents:{id:string;name:strin
    <label>Instructions (shared with eligible agent runtimes)<textarea name="description" rows={2} maxLength={2000}/></label>
    <div className="cp-form-row"><label>Client scope<select name="client"><option value="">MSP coordinator only</option>{clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
    <label>Task budget (USD)<input name="budget" type="number" min="0.01" max="1000" step="0.01" defaultValue="1.00" required/></label></div>
-   <label>Preferred model (optional)<input name="model" placeholder="Use an exact provider model ID" maxLength={120}/></label>
+   <label>Target agent (optional)<select name="targetAgent"><option value="">Any eligible agent</option>{agents.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select></label>
+   <label>Preferred model (pinned for this task, optional)<input name="model" placeholder="Use an exact provider model ID" maxLength={120}/></label>
    <button className="btn primary" disabled={pendingTask}>Create shared task</button><Result state={taskState}/>
   </form></section>
   <section className="panel"><div className="panel-head"><h2>4. Per-agent model and spend policy</h2></div><form className="cp-form" action={budget}>
