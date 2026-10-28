@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { canonicalPublicProfileRedirect } from "@/lib/public-host.ts";
 
 /**
  * Zipax split-host.
@@ -10,6 +11,13 @@ import { NextRequest, NextResponse } from "next/server";
  *
  * We also rewrite `/` on the Zipax host to `/leaderboard` so the landing
  * page there is the public dev leaderboard rather than the MSP home.
+ *
+ * Finally, `/p/<slug>` is a public developer page. Its canonical home is
+ * zipax.zinloop.com; a hit on zinloop.com (or any non-Zipax alias) is a 308
+ * redirect to the matching URL on zipax.zinloop.com so that a shared link
+ * ends up on the Zipax-branded host regardless of where it was pasted from.
+ * The redirect decision lives in `canonicalPublicProfileRedirect` so it can
+ * be unit-tested without faking a NextRequest.
  */
 export function middleware(req: NextRequest) {
   const host = (req.headers.get("host") ?? "").toLowerCase();
@@ -22,6 +30,15 @@ export function middleware(req: NextRequest) {
     const url = req.nextUrl.clone();
     url.pathname = "/leaderboard";
     return NextResponse.rewrite(url, { request: { headers: requestHeaders } });
+  }
+
+  const canonical = canonicalPublicProfileRedirect(
+    host,
+    req.nextUrl.pathname,
+    req.nextUrl.search,
+  );
+  if (canonical) {
+    return NextResponse.redirect(canonical, 308);
   }
 
   return NextResponse.next({ request: { headers: requestHeaders } });

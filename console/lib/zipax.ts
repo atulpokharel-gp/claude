@@ -839,7 +839,15 @@ export async function getPrefs(tenant: Tenant, userHash: string): Promise<Profil
   });
 }
 
-const SLUG_RE = /^[a-z0-9]{14,32}$/;
+const SLUG_RE = /^[a-z0-9]{3,32}$/;
+
+export const SLUG_MIN = 3;
+export const SLUG_MAX = 32;
+
+// Re-exported from ./public-host.ts so legacy imports stay valid without
+// pulling node:crypto into Edge code; the authoritative definitions live
+// in that file so the Edge middleware can import them directly.
+export { ZIPAX_PUBLIC_HOST, canonicalPublicProfileRedirect } from "./public-host.ts";
 
 export function newPublicSlug(): string {
   // 14 random base36-ish chars. Avoid i/l/o/0/1 confusion by using the full
@@ -873,7 +881,7 @@ export async function savePrefs(
   let publicSlug: string | null | undefined = patch.publicSlug;
   if (typeof publicSlug === "string") {
     publicSlug = publicSlug.toLowerCase().trim();
-    if (publicSlug !== "" && !SLUG_RE.test(publicSlug)) throw new ZipaxError("Public slug must be 14-32 lowercase letters/digits.");
+    if (publicSlug !== "" && !SLUG_RE.test(publicSlug)) throw new ZipaxError("Public slug must be 3-32 lowercase letters/digits.");
     if (publicSlug === "") publicSlug = null;
   }
   const publicDims = (patch.publicDims ?? []).filter((d) => DIMENSION_SET.has(d));
