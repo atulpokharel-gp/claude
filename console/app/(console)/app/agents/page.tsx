@@ -48,7 +48,7 @@ export default async function AgentsPage(){
  <section className="panel" id="tasks"><div className="panel-head"><h2>Agent collaboration channel</h2><span className="muted small">Agent claim / handoff / result messages</span></div>
   <div className="table-wrap"><table><thead><tr><th>Task</th><th>Scope</th><th>Claimed by</th><th>Status</th><th>Budget</th><th>Model</th></tr></thead>
   <tbody>{data.tasks.map(t=><tr key={t.id}><td><b>{t.title}</b><div className="muted small">{t.description.slice(0,125)}</div><div className="muted small">Task ID: <code>{t.id}</code></div></td>
-  <td>{t.client_name||"MSP coordinator"}</td><td>{t.agent_name||"Unassigned"}</td><td><span className="endpoint-status">{t.status}</span></td>
+  <td>{t.client_name||"MSP coordinator"}</td><td>{t.agent_name||t.target_agent_name||"Any eligible agent"}</td><td><span className="endpoint-status">{t.status}</span></td>
   <td>{dollars(t.spent_usd)} / {dollars(t.budget_usd)}<div className="muted small">{dollars(t.reserved_usd)} held</div></td><td>{t.preferred_model||"Agent policy"}</td></tr>)}</tbody></table></div>
   {!data.tasks.length&&<p className="empty">No tasks yet. Create a task and let a connected agent claim it via the SDK.</p>}
  </section>
