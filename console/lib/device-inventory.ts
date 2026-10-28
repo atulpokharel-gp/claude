@@ -8,6 +8,7 @@ import { importScan } from "./scan-import.ts";
 import type { Agent, Finding, Severity } from "./types.ts";
 
 export interface ScanSupplement {
+  servers: { name: string; app: string; configPath: string; scope: string; transport: string; disabled: boolean; risk: Severity; envKeys: string[]; headerKeys: string[]; protectedKeys: string[]; findings: Finding[] }[];
   configs: { app: string; path: string; found: boolean; servers: number; error: string }[];
   skills: { name: string; source: string; risk: Severity; findings: Finding[] }[];
   tools: { name: string; server: string; risk: Severity; findings: Finding[] }[];
@@ -36,7 +37,7 @@ interface DeviceDbRow {
   id: string; client_id: string; client_name: string; hostname: string; os: string;
   last_scan_at: Date | null; report: unknown;
 }
-const emptyDetails = (): ScanSupplement => ({ configs: [], skills: [], tools: [], probes: [], pathWarnings: [] });
+const emptyDetails = (): ScanSupplement => ({ servers: [], configs: [], skills: [], tools: [], probes: [], pathWarnings: [] });
 const text = (v: unknown, limit = 300): string => typeof v === "string" ? v.slice(0, limit) : "";
 const list = (v: unknown): Record<string, unknown>[] =>
   Array.isArray(v) ? v.slice(0, 500).filter((x): x is Record<string, unknown> => !!x && typeof x === "object" && !Array.isArray(x)) : [];
@@ -51,6 +52,14 @@ function supplement(raw: unknown): ScanSupplement {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return emptyDetails();
   const r = raw as Record<string, unknown>;
   return {
+    servers: list(r.servers).map(x => ({
+      name: text(x.name, 130), app: text(x.app, 100), configPath: text(x.configPath, 350),
+      scope: text(x.scope, 350), transport: text(x.transport, 30), disabled: x.disabled === true,
+      risk: severity(x.risk), envKeys: Array.isArray(x.envKeys) ? x.envKeys.filter((v):v is string=>typeof v==="string").slice(0,100).map(v=>v.slice(0,100)) : [],
+      headerKeys: Array.isArray(x.headerKeys) ? x.headerKeys.filter((v):v is string=>typeof v==="string").slice(0,100).map(v=>v.slice(0,100)) : [],
+      protectedKeys: list(x.protectedSecrets).map(v=>text(v.env,100)).filter(Boolean),
+      findings: findings(x.findings)
+    })),
     configs: list(r.configs).map(x => ({
       app: text(x.app, 80), path: text(x.path, 350),
       found: x.found === true, servers: typeof x.servers === "number" ? x.servers : 0,
