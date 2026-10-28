@@ -54,6 +54,32 @@
     color-scheme: dark;
   }
 }
+
+/* Zipax face: served from zipax.zinloop.com. Dark-only regardless of OS pref. */
+.site[data-face="zipax"] {
+  --z-bg: #06080f;
+  --z-band: #0d1322;
+  --z-card: #11162a;
+  --z-ink: #eef1fb;
+  --z-body: #c3cfd8;
+  --z-muted: #9aa3c2;
+  --z-line: #262d4a;
+  --z-cobalt: #6b84ff;
+  --z-cobalt-hover: #8fa2ff;
+  --z-lime: #c9ff3b;
+  --z-code: #0d1322;
+  --z-dark: #06080f;
+  --z-high-bg: #3d1d16;
+  --z-high: #f4a08c;
+  --z-med-bg: #3a2c12;
+  --z-med: #f2c46d;
+  --z-shadow: #c9ff3b;
+  color-scheme: dark;
+}
+.site[data-face="zipax"] .zbtn-main { background: var(--z-cobalt); color: #fff; border-color: var(--z-cobalt); }
+.site[data-face="zipax"] .zbtn-ghost { color: var(--z-ink); border-color: var(--z-ink); }
+.site[data-face="zipax"] .zbtn-ghost:hover { background: var(--z-band); }
+.site[data-face="zipax"] .site-brand .disp { color: var(--z-lime); }
 .site a { color: var(--z-ink); }
 .site a:focus-visible, .site button:focus-visible, .site input:focus-visible, .site select:focus-visible, .site textarea:focus-visible {
   outline: 3px solid #2b6cb0; outline-offset: 2px;
