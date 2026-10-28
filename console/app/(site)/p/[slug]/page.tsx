@@ -46,7 +46,7 @@ export default async function PublicProfile({ params }: { params: Promise<{ slug
             <div className="profile-track">
               <div className="profile-fill" style={{ width: `${d.score}%` }} aria-hidden />
             </div>
-            {d.sessions > 0 ? (
+            {view.showSessions && d.sessions > 0 ? (
               <p className="muted small">
                 {d.sessions} session{d.sessions === 1 ? "" : "s"} over the last 30 days
               </p>

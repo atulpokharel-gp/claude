@@ -116,12 +116,13 @@ function ShareForm({
       </div>
       <div className="panel-body">
         <p className="muted small">
-          Prefer a dedicated page? <a href="/zipax/settings">Zipax settings</a> has the same controls
-          plus a sign-out button and the public URL.
+          This form picks which dimension scores show on your public page. For the full privacy
+          controls — leaderboard opt-in, anonymous mode, hiding overall/sessions —
+          visit <a href="/zipax/settings">Zipax settings</a>.
         </p>
         <p className="muted small">
-          Pick which dimensions to show on your public page. Nothing is published until at least one is
-          ticked and you save. Toggle them all off (or hit "Turn off") to unpublish.
+          Nothing is published until at least one dimension is ticked and you save. Toggle them all
+          off (or hit "Turn off") to unpublish.
         </p>
         <form action={savePublicProfileAction} className="form">
           <input type="hidden" name="userHash" value={userHash} />

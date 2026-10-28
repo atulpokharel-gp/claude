@@ -789,7 +789,17 @@ export interface ProfilePrefs {
   displayName: string;
   publicSlug: string | null;
   publicDims: Dimension[];
+  // Privacy controls (migration 018). Private-by-default for the leaderboard
+  // toggle; the three show_* toggles default to showing the field so an
+  // existing publish keeps the pre-018 look.
+  leaderboardOptIn: boolean;
+  showDisplayName: boolean;
+  showMeanScore: boolean;
+  showSessions: boolean;
 }
+
+/** Label used anywhere the dev chose to hide their display name. */
+export const ANONYMOUS_LABEL = "Anonymous developer";
 
 export async function getPrefs(tenant: Tenant, userHash: string): Promise<ProfilePrefs | null> {
   if (!HASH_RE.test(userHash)) return null;
@@ -802,8 +812,13 @@ export async function getPrefs(tenant: Tenant, userHash: string): Promise<Profil
         display_name: string;
         public_slug: string | null;
         public_dims: string[];
+        leaderboard_opt_in: boolean;
+        show_display_name: boolean;
+        show_mean_score: boolean;
+        show_sessions: boolean;
       }>(
-        `select msp_id, client_id, user_hash, display_name, public_slug, public_dims
+        `select msp_id, client_id, user_hash, display_name, public_slug, public_dims,
+                leaderboard_opt_in, show_display_name, show_mean_score, show_sessions
            from zipax_profile_prefs where user_hash = $1`,
         [userHash],
       )
@@ -816,6 +831,10 @@ export async function getPrefs(tenant: Tenant, userHash: string): Promise<Profil
       displayName: r.display_name,
       publicSlug: r.public_slug,
       publicDims: r.public_dims.filter((d): d is Dimension => DIMENSION_SET.has(d)),
+      leaderboardOptIn: r.leaderboard_opt_in,
+      showDisplayName: r.show_display_name,
+      showMeanScore: r.show_mean_score,
+      showSessions: r.show_sessions,
     };
   });
 }
@@ -833,11 +852,21 @@ export function newPublicSlug(): string {
   return out;
 }
 
+export interface SavePrefsPatch {
+  displayName?: string;
+  publicSlug?: string | null;
+  publicDims?: Dimension[];
+  leaderboardOptIn?: boolean;
+  showDisplayName?: boolean;
+  showMeanScore?: boolean;
+  showSessions?: boolean;
+}
+
 /** Needs tenant scope; the viewer is one client, so clientId is required. */
 export async function savePrefs(
   tenant: { mspId: string; clientId: string },
   userHash: string,
-  patch: { displayName?: string; publicSlug?: string | null; publicDims?: Dimension[] },
+  patch: SavePrefsPatch,
 ): Promise<ProfilePrefs> {
   if (!HASH_RE.test(userHash)) throw new ZipaxError("Invalid user hash.");
   const displayName = typeof patch.displayName === "string" ? patch.displayName.slice(0, 120) : null;
@@ -848,8 +877,14 @@ export async function savePrefs(
     if (publicSlug === "") publicSlug = null;
   }
   const publicDims = (patch.publicDims ?? []).filter((d) => DIMENSION_SET.has(d));
+  const leaderboardOptIn = patch.leaderboardOptIn === undefined ? null : Boolean(patch.leaderboardOptIn);
+  const showDisplayName = patch.showDisplayName === undefined ? null : Boolean(patch.showDisplayName);
+  const showMeanScore = patch.showMeanScore === undefined ? null : Boolean(patch.showMeanScore);
+  const showSessions = patch.showSessions === undefined ? null : Boolean(patch.showSessions);
   return withTenant(tenant, async (db) => {
-    // Upsert. Keep existing fields when the patch doesn't name them.
+    // Upsert. Keep existing fields when the patch doesn't name them. The
+    // boolean toggles use their own `has_*` flags so a null patch leaves
+    // the stored row's value alone, instead of being coerced to false.
     const r = (
       await db.query<{
         msp_id: string;
@@ -858,16 +893,31 @@ export async function savePrefs(
         display_name: string;
         public_slug: string | null;
         public_dims: string[];
+        leaderboard_opt_in: boolean;
+        show_display_name: boolean;
+        show_mean_score: boolean;
+        show_sessions: boolean;
       }>(
-        `insert into zipax_profile_prefs (msp_id, client_id, user_hash, display_name, public_slug, public_dims)
-         values ($1, $2, $3, coalesce($4, ''), $5, $6::text[])
+        `insert into zipax_profile_prefs (
+           msp_id, client_id, user_hash, display_name, public_slug, public_dims,
+           leaderboard_opt_in, show_display_name, show_mean_score, show_sessions
+         )
+         values (
+           $1, $2, $3, coalesce($4, ''), $5, $6::text[],
+           coalesce($7, false), coalesce($8, true), coalesce($9, true), coalesce($10, true)
+         )
          on conflict (msp_id, user_hash) do update set
-           client_id    = excluded.client_id,
-           display_name = coalesce($4, zipax_profile_prefs.display_name),
-           public_slug  = case when $7::boolean then excluded.public_slug else zipax_profile_prefs.public_slug end,
-           public_dims  = case when $8::boolean then excluded.public_dims else zipax_profile_prefs.public_dims end,
-           updated_at   = now()
-         returning msp_id, client_id, user_hash, display_name, public_slug, public_dims`,
+           client_id          = excluded.client_id,
+           display_name       = coalesce($4, zipax_profile_prefs.display_name),
+           public_slug        = case when $11::boolean then excluded.public_slug else zipax_profile_prefs.public_slug end,
+           public_dims        = case when $12::boolean then excluded.public_dims else zipax_profile_prefs.public_dims end,
+           leaderboard_opt_in = case when $13::boolean then excluded.leaderboard_opt_in else zipax_profile_prefs.leaderboard_opt_in end,
+           show_display_name  = case when $14::boolean then excluded.show_display_name  else zipax_profile_prefs.show_display_name  end,
+           show_mean_score    = case when $15::boolean then excluded.show_mean_score    else zipax_profile_prefs.show_mean_score    end,
+           show_sessions      = case when $16::boolean then excluded.show_sessions      else zipax_profile_prefs.show_sessions      end,
+           updated_at         = now()
+         returning msp_id, client_id, user_hash, display_name, public_slug, public_dims,
+                   leaderboard_opt_in, show_display_name, show_mean_score, show_sessions`,
         [
           tenant.mspId,
           tenant.clientId,
@@ -875,8 +925,16 @@ export async function savePrefs(
           displayName,
           publicSlug ?? null,
           publicDims,
+          leaderboardOptIn,
+          showDisplayName,
+          showMeanScore,
+          showSessions,
           publicSlug !== undefined,
           patch.publicDims !== undefined,
+          leaderboardOptIn !== null,
+          showDisplayName !== null,
+          showMeanScore !== null,
+          showSessions !== null,
         ],
       )
     ).rows[0];
@@ -887,6 +945,10 @@ export async function savePrefs(
       displayName: r.display_name,
       publicSlug: r.public_slug,
       publicDims: r.public_dims.filter((d): d is Dimension => DIMENSION_SET.has(d)),
+      leaderboardOptIn: r.leaderboard_opt_in,
+      showDisplayName: r.show_display_name,
+      showMeanScore: r.show_mean_score,
+      showSessions: r.show_sessions,
     };
   });
 }
@@ -896,6 +958,7 @@ export async function savePrefs(
 export interface PublicProfileView {
   displayName: string;
   dims: DimensionAggregate[];
+  showSessions: boolean;
 }
 
 /** Reads a public profile by slug. Returns null for unknown or empty. */
@@ -907,15 +970,24 @@ export async function readPublicProfile(slug: string, days = 30, now = new Date(
     user_hash: string;
     display_name: string;
     public_dims: string[];
+    show_display_name: boolean;
+    show_mean_score: boolean;
+    show_sessions: boolean;
   }>("select * from zipax_public_profile($1)", [slug]);
   if (!owner) return null;
   const allowed = new Set(owner.public_dims.filter((d) => DIMENSION_SET.has(d)));
   if (allowed.size === 0) return null;
   const reading = await userProfile(owner.msp_id, owner.user_hash, days, now);
   if (!reading) return null;
+  // When the dev hid their display name we never reveal userLabel (which
+  // the scanner uploaded, so it may be a real username).
+  const displayName = owner.show_display_name
+    ? owner.display_name || reading.userLabel
+    : ANONYMOUS_LABEL;
   return {
-    displayName: owner.display_name || reading.userLabel,
+    displayName,
     dims: reading.dims.filter((d) => allowed.has(d.dimension)),
+    showSessions: owner.show_sessions,
   };
 }
 
@@ -987,6 +1059,11 @@ export interface LeaderboardRow {
   dimScores: Partial<Record<Dimension, number>>;
   meanScore: number;
   sessions: number;
+  // Per-row toggles the public page honours. The cross-tenant leaderboard
+  // only ever includes rows the dev opted in to; these decide which
+  // columns the row surfaces.
+  showMeanScore: boolean;
+  showSessions: boolean;
 }
 
 /**
@@ -1002,12 +1079,31 @@ export async function readPublicLeaderboard(days = 30, limit = 100): Promise<Lea
       display_name: string;
       public_slug: string | null;
       public_dims: string[];
+      show_display_name: boolean;
+      show_mean_score: boolean;
+      show_sessions: boolean;
       dim_scores: Record<string, number> | null;
       mean_score: number;
       sessions_counted: number;
     }>("select * from zipax_public_leaderboard($1, $2)", [days, limit])
   ).rows;
-  return rows.map((r) => shapeLeaderboardRow(r));
+  return rows.map((r) =>
+    shapeLeaderboardRow({
+      user_hash: r.user_hash,
+      // The server returns the stored display_name; swap for the anonymous
+      // label when the dev chose not to reveal it. We never pass through
+      // user_label on the cross-tenant leaderboard — it is uploaded by the
+      // scanner and may be the dev's actual username.
+      display_name: r.show_display_name ? r.display_name : ANONYMOUS_LABEL,
+      public_slug: r.public_slug,
+      public_dims: r.public_dims,
+      dim_scores: r.dim_scores,
+      mean_score: r.mean_score,
+      sessions_counted: r.sessions_counted,
+      show_mean_score: r.show_mean_score,
+      show_sessions: r.show_sessions,
+    }),
+  );
 }
 
 /**
@@ -1034,6 +1130,8 @@ export async function readCompanyLeaderboard(
         public_slug: string | null;
         display_name: string | null;
         public_dims: string[] | null;
+        show_mean_score: boolean | null;
+        show_sessions: boolean | null;
       }>(
         `with scored as (
            select user_hash,
@@ -1061,7 +1159,9 @@ export async function readCompanyLeaderboard(
                 p.sessions_counted,
                 pr.public_slug,
                 pr.display_name,
-                pr.public_dims
+                pr.public_dims,
+                pr.show_mean_score,
+                pr.show_sessions
            from per_user p
            left join zipax_profile_prefs pr on pr.user_hash = p.user_hash
           order by p.mean_score desc, p.sessions_counted desc, p.user_hash asc
@@ -1078,6 +1178,11 @@ export async function readCompanyLeaderboard(
         dim_scores: r.dim_scores,
         mean_score: r.mean_score,
         sessions_counted: r.sessions_counted,
+        // On the internal company view the dev's privacy toggles do not
+        // apply — the MSP/client is already allowed to see this data by
+        // RLS. We hand `true` through so the row renders every column.
+        show_mean_score: true,
+        show_sessions: true,
       }),
     );
   });
@@ -1091,6 +1196,8 @@ function shapeLeaderboardRow(r: {
   dim_scores: Record<string, number> | null;
   mean_score: number;
   sessions_counted: number;
+  show_mean_score: boolean;
+  show_sessions: boolean;
 }): LeaderboardRow {
   const dimScores: Partial<Record<Dimension, number>> = {};
   for (const [k, v] of Object.entries(r.dim_scores ?? {})) {
@@ -1104,6 +1211,8 @@ function shapeLeaderboardRow(r: {
     dimScores,
     meanScore: clampScore(Number(r.mean_score)),
     sessions: Number(r.sessions_counted) || 0,
+    showMeanScore: r.show_mean_score,
+    showSessions: r.show_sessions,
   };
 }
 
