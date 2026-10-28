@@ -76,6 +76,7 @@ create table cp_tasks (
  description text not null default '' check(length(description)<=2000),
  status text not null default 'queued' check(status in ('queued','claimed','done','failed')),
  assigned_agent_id uuid references cp_agents(id) on delete set null,
+ target_agent_id uuid references cp_agents(id) on delete set null,
  claimed_at timestamptz,
  lease_until timestamptz,
  budget_usd numeric(12,6) not null default 1 check(budget_usd>=0),
