@@ -15,6 +15,8 @@ import {
   DIMENSION_LABEL,
   DIMENSIONS,
   getPrefs,
+  SLUG_MAX,
+  SLUG_MIN,
   ZIPAX_DEV_COOKIE,
   type ProfilePrefs,
   readDevIdentity,
@@ -29,7 +31,12 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-export default async function ZipaxSettings() {
+export default async function ZipaxSettings({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string }>;
+}) {
+  const { error } = await searchParams;
   const jar = await cookies();
   const dev = readDevIdentity(jar.get(ZIPAX_DEV_COOKIE)?.value);
   if (!dev) return <NotClaimed />;
@@ -48,6 +55,7 @@ export default async function ZipaxSettings() {
 
   const displayName = prefs?.displayName || profile?.userLabel || dev.userHash.slice(0, 10);
   const publicUrl = prefs?.publicSlug ? `/p/${prefs.publicSlug}` : null;
+  const publicUrlAbsolute = prefs?.publicSlug ? `https://zipax.zinloop.com/p/${prefs.publicSlug}` : null;
 
   return (
     <div className="wrap narrow">
@@ -72,15 +80,16 @@ export default async function ZipaxSettings() {
         />
       </section>
 
-      <ShareForm initial={prefs} fallbackName={displayName} />
+      <ShareForm initial={prefs} fallbackName={displayName} error={error} />
 
       {publicUrl ? (
         <section className="panel">
           <div className="panel-head"><h2>Your public URL</h2></div>
           <div className="panel-body">
             <p>
-              <a href={publicUrl}>{publicUrl}</a> — anyone with this link can view what you've ticked
-              below. No tokens, cost, projects or messages are shown there.
+              <a href={publicUrlAbsolute ?? publicUrl}>{publicUrlAbsolute ?? publicUrl}</a> — anyone
+              with this link can view what you've ticked below. No tokens, cost, projects or messages
+              are shown there.
             </p>
             <p className="muted small">
               You'll appear on the <a href="/leaderboard">public leaderboard</a> only when "List me on
@@ -109,7 +118,15 @@ export default async function ZipaxSettings() {
   );
 }
 
-function ShareForm({ initial, fallbackName }: { initial: ProfilePrefs | null; fallbackName: string }) {
+function ShareForm({
+  initial,
+  fallbackName,
+  error,
+}: {
+  initial: ProfilePrefs | null;
+  fallbackName: string;
+  error?: string;
+}) {
   const chosen = new Set(initial?.publicDims ?? []);
   const isOn = Boolean(initial?.publicSlug) && chosen.size > 0;
   // Defaults for a brand-new publish: show the display name, show overall
@@ -130,6 +147,11 @@ function ShareForm({ initial, fallbackName }: { initial: ProfilePrefs | null; fa
           ticked and you save. Everything you leave unticked stays private to you and your
           company.
         </p>
+        {error ? (
+          <p className="form-error" role="alert">
+            {error}
+          </p>
+        ) : null}
         <form action={saveZipaxSettingsAction} className="form">
           <label>
             <span>Display name</span>
@@ -137,6 +159,26 @@ function ShareForm({ initial, fallbackName }: { initial: ProfilePrefs | null; fa
             <span className="muted small">
               Shown on your public page and the leaderboard only when "Show my display name" is on
               below.
+            </span>
+          </label>
+
+          <label>
+            <span>Public URL slug</span>
+            <input
+              name="publicSlug"
+              defaultValue={initial?.publicSlug ?? ""}
+              placeholder="pick-a-handle"
+              minLength={SLUG_MIN}
+              maxLength={SLUG_MAX}
+              pattern={`[a-z0-9]{${SLUG_MIN},${SLUG_MAX}}`}
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+            />
+            <span className="muted small">
+              {SLUG_MIN}-{SLUG_MAX} lowercase letters or digits. Your public URL is{" "}
+              <code>https://zipax.zinloop.com/p/&lt;slug&gt;</code>. Leave blank to keep the current
+              slug (one is auto-generated on first publish).
             </span>
           </label>
 
