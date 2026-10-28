@@ -110,3 +110,18 @@
   .download-code pre {padding-right:18px;padding-top:62px}
 }
 @media(prefers-reduced-motion:reduce) {.console-nav a {transition:none}}
+
+/* Agent governance forms — reuse Zinloop console surfaces and typography. */
+.cp-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.cp-form{padding:20px;display:flex;flex-direction:column;gap:14px}
+.cp-form label{display:flex;flex-direction:column;gap:6px;color:var(--ink);font-size:.84rem;font-weight:650;min-width:0}
+.cp-form input,.cp-form select,.cp-form textarea{width:100%;min-width:0;padding:10px 12px;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:8px;font:inherit;font-weight:400}
+.cp-form input:focus,.cp-form textarea:focus,.cp-form select:focus{outline:2px solid var(--accent);outline-offset:1px}
+.cp-form textarea{resize:vertical}
+.cp-form-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.cp-form .btn{align-self:flex-start}
+.cp-form .token-once{background:#0c1b16;border:1px solid #4e9d7d;border-radius:8px;padding:14px;max-width:100%}
+.cp-form .token-once pre{overflow-wrap:anywhere;white-space:pre-wrap;color:#c9ff3b;font:600 .75rem ui-monospace,Consolas,monospace}
+.cp-form .form-error{color:var(--high);font-size:.84rem}
+@media(max-width:1000px){.cp-form-grid{grid-template-columns:1fr}}
+@media(max-width:650px){.cp-form-row{grid-template-columns:1fr}}
