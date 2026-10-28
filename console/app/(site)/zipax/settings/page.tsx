@@ -1,9 +1,12 @@
 // /zipax/settings — the self-serve home for a Zipax developer. Only the
 // zipax_dev cookie decides who you are here: no MSP or portal login is
 // required (the dev may not be a user in the console at all). From this
-// page a dev can turn their public profile on or off, pick the dimensions
-// to publish, change their display name, see the public URL, and sign out
-// of this browser's claim.
+// page a dev picks every bit of public exposure: whether a public profile
+// exists, under which URL, which dimension scores show on it, whether
+// they appear on the leaderboard, whether their display name is shown or
+// an anonymous label, whether the overall mean and session counts are
+// shown. Private-by-default: everything the dev doesn't tick stays
+// internal to their tenant.
 
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
@@ -76,13 +79,13 @@ export default async function ZipaxSettings() {
           <div className="panel-head"><h2>Your public URL</h2></div>
           <div className="panel-body">
             <p>
-              <a href={publicUrl}>{publicUrl}</a> — anyone with this link can view the dimensions you
-              ticked. No tokens, cost, projects or messages are shown there.
+              <a href={publicUrl}>{publicUrl}</a> — anyone with this link can view what you've ticked
+              below. No tokens, cost, projects or messages are shown there.
             </p>
             <p className="muted small">
-              You'll also appear on the <a href="/leaderboard">public leaderboard</a> once your
-              scores land. To stop sharing, untick every dimension and save, or press "Turn off
-              public profile".
+              You'll appear on the <a href="/leaderboard">public leaderboard</a> only when "List me on
+              the public leaderboard" is on and at least one dimension score is published. To stop
+              sharing entirely, press "Turn off public profile".
             </p>
           </div>
         </section>
@@ -109,6 +112,13 @@ export default async function ZipaxSettings() {
 function ShareForm({ initial, fallbackName }: { initial: ProfilePrefs | null; fallbackName: string }) {
   const chosen = new Set(initial?.publicDims ?? []);
   const isOn = Boolean(initial?.publicSlug) && chosen.size > 0;
+  // Defaults for a brand-new publish: show the display name, show overall
+  // and sessions, and stay off the leaderboard. Everything the dev leaves
+  // untouched is explicitly private.
+  const leaderboardOptIn = initial?.leaderboardOptIn ?? false;
+  const showDisplayName = initial?.showDisplayName ?? true;
+  const showMeanScore = initial?.showMeanScore ?? true;
+  const showSessions = initial?.showSessions ?? true;
   return (
     <section className="panel">
       <div className="panel-head">
@@ -116,17 +126,22 @@ function ShareForm({ initial, fallbackName }: { initial: ProfilePrefs | null; fa
       </div>
       <div className="panel-body">
         <p className="muted small">
-          Pick which dimensions to show on your public page. Nothing is published until at least one
-          is ticked and you save. Toggle them all off (or press "Turn off public profile") to
-          unpublish.
+          Pick exactly what shows publicly. Nothing is published until at least one dimension is
+          ticked and you save. Everything you leave unticked stays private to you and your
+          company.
         </p>
         <form action={saveZipaxSettingsAction} className="form">
           <label>
-            <span>Display name on the public page</span>
+            <span>Display name</span>
             <input name="displayName" defaultValue={initial?.displayName || fallbackName} maxLength={120} />
+            <span className="muted small">
+              Shown on your public page and the leaderboard only when "Show my display name" is on
+              below.
+            </span>
           </label>
+
           <fieldset className="dim-fieldset">
-            <legend>Dimensions to show publicly</legend>
+            <legend>Dimension scores to show publicly</legend>
             {DIMENSIONS.map((d) => (
               <label key={d} className="check">
                 <input type="checkbox" name="dim" value={d} defaultChecked={chosen.has(d)} />
@@ -134,6 +149,55 @@ function ShareForm({ initial, fallbackName }: { initial: ProfilePrefs | null; fa
               </label>
             ))}
           </fieldset>
+
+          <fieldset className="dim-fieldset">
+            <legend>What else shows</legend>
+            <label className="check">
+              <input
+                type="checkbox"
+                name="leaderboardOptIn"
+                defaultChecked={leaderboardOptIn}
+              />
+              <span>
+                List me on the public leaderboard
+                <span className="muted small"> — off by default. When off, your /p/{"{slug}"} page still works for people with the link.</span>
+              </span>
+            </label>
+            <label className="check">
+              <input
+                type="checkbox"
+                name="showDisplayName"
+                defaultChecked={showDisplayName}
+              />
+              <span>
+                Show my display name
+                <span className="muted small"> — off replaces it with "Anonymous developer" on both the profile page and the leaderboard.</span>
+              </span>
+            </label>
+            <label className="check">
+              <input
+                type="checkbox"
+                name="showMeanScore"
+                defaultChecked={showMeanScore}
+              />
+              <span>
+                Show my overall score
+                <span className="muted small"> — off hides the Overall column on the leaderboard for your row.</span>
+              </span>
+            </label>
+            <label className="check">
+              <input
+                type="checkbox"
+                name="showSessions"
+                defaultChecked={showSessions}
+              />
+              <span>
+                Show my sessions count
+                <span className="muted small"> — off hides "N sessions over the last 30 days" on the profile page and the Sessions column on the leaderboard.</span>
+              </span>
+            </label>
+          </fieldset>
+
           <div className="form-actions">
             <button type="submit">Save &amp; publish</button>
             <button type="submit" name="action" value="disable" className="link-btn">

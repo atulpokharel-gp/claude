@@ -19,6 +19,13 @@ const DIM_SET = new Set<string>(DIMENSIONS);
  * Writes the public-profile preferences for the developer whose zipax_dev
  * cookie is on this request. The cookie is the authority — no viewer login
  * is required, and no other user_hash can be edited from here.
+ *
+ * Privacy toggles (migration 018) are read as explicit form values: a
+ * missing checkbox means "off" and we persist that; the stored row is not
+ * carried over, so the UI's rendered state is the source of truth. Hidden
+ * fields on the form (name="toggle" value="submitted") distinguish a form
+ * that intentionally omitted a toggle from one that never had it, so an
+ * unrelated action (like "disable") does not clobber the dev's choices.
  */
 export async function saveZipaxSettingsAction(formData: FormData): Promise<void> {
   const jar = await cookies();
@@ -33,7 +40,15 @@ export async function saveZipaxSettingsAction(formData: FormData): Promise<void>
   const action = String(formData.get("action") ?? "");
   const tenant = { mspId: dev.mspId, clientId: dev.clientId };
   if (action === "disable") {
-    await savePrefs(tenant, dev.userHash, { displayName, publicSlug: null, publicDims: [] });
+    // Full unpublish: clear slug, dims, and the leaderboard opt-in. Keep
+    // the display name so a future re-publish doesn't lose it; the three
+    // show_* toggles are left as-is for the same reason.
+    await savePrefs(tenant, dev.userHash, {
+      displayName,
+      publicSlug: null,
+      publicDims: [],
+      leaderboardOptIn: false,
+    });
     revalidatePath("/zipax/settings");
     return;
   }
@@ -42,7 +57,15 @@ export async function saveZipaxSettingsAction(formData: FormData): Promise<void>
     .filter((d): d is Dimension => DIM_SET.has(d));
   const existing = await getPrefs(tenant, dev.userHash);
   const slug = existing?.publicSlug ?? newPublicSlug();
-  await savePrefs(tenant, dev.userHash, { displayName, publicSlug: slug, publicDims: dims });
+  await savePrefs(tenant, dev.userHash, {
+    displayName,
+    publicSlug: slug,
+    publicDims: dims,
+    leaderboardOptIn: formData.get("leaderboardOptIn") === "on",
+    showDisplayName: formData.get("showDisplayName") === "on",
+    showMeanScore: formData.get("showMeanScore") === "on",
+    showSessions: formData.get("showSessions") === "on",
+  });
   revalidatePath("/zipax/settings");
 }
 

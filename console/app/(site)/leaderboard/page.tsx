@@ -103,7 +103,9 @@ function LeaderboardTable({
                 <span>{r.displayName}</span>
               )}
             </td>
-            <td className="num"><ScorePill n={r.meanScore} /></td>
+            <td className="num">
+              {r.showMeanScore ? <ScorePill n={r.meanScore} /> : <span className="muted" title="Hidden by the developer">—</span>}
+            </td>
             {DIMENSIONS.map((d) => {
               const isPublic = r.publicDims.includes(d);
               const s = r.dimScores[d];
@@ -113,7 +115,9 @@ function LeaderboardTable({
                 </td>
               );
             })}
-            <td className="num">{r.sessions}</td>
+            <td className="num">
+              {r.showSessions ? r.sessions : <span className="muted" title="Hidden by the developer">—</span>}
+            </td>
           </tr>
         ))}
       </tbody>
