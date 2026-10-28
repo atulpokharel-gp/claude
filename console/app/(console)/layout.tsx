@@ -5,44 +5,34 @@ import { hasDatabase } from "@/lib/db.ts";
 import { currentSession } from "@/lib/session.ts";
 import { signOutAction } from "@/app/(site)/login/actions.ts";
 import { Logo } from "@/components/Logo.tsx";
+import { ConsoleNavigation } from "@/components/ConsoleNavigation.tsx";
+import "./console-shell.css";
 
-export const metadata: Metadata = { title: "Console" };
-// Pages depend on the session and on DATABASE_URL at run time, never at build time.
-export const dynamic = "force-dynamic";
+export const metadata: Metadata = {title:"Zinloop Security Console"};
+export const dynamic="force-dynamic";
 
-export default async function ConsoleLayout({ children }: { children: React.ReactNode }) {
-  const demo = !hasDatabase();
-  const session = demo ? null : await currentSession();
-  return (
-    <>
-      {demo && <div className="demo-banner">Demo with made-up sample data. Nothing here connects to a real company.</div>}
-      <header className="topbar">
-        <div className="topbar-inner">
-          <Link href="/app" className="brand">
-            <Logo size={22} />
-            Zinloop
-          </Link>
-          {(demo || session) && (
-            <nav className="nav" aria-label="Main">
-              <Link href="/app">Clients</Link>
-              <Link href="/app/people">People</Link>
-              <Link href="/app/tools">AI tools</Link>
-              <Link href="/app/zipax">Zipax</Link>
-              <Link href="/app/zipax/team">Team profile</Link>
-              <Link href="/app/import">Open a scan file</Link>
-              {session && <Link href="/app/settings">Settings</Link>}
-            </nav>
-          )}
-          {demo && <span className="msp">Signed in as {MSP_NAME}</span>}
-          {session && (
-            <form action={signOutAction} className="msp">
-              {session.mspName} · {session.email}{" "}
-              <button type="submit" className="link-btn">Sign out</button>
-            </form>
-          )}
-        </div>
-      </header>
-      <main className="console-main">{children}</main>
-    </>
-  );
+export default async function ConsoleLayout({children}:{children:React.ReactNode}) {
+  const demo=!hasDatabase();
+  const session=demo?null:await currentSession();
+  return <>
+    {demo&&<div className="demo-banner">Demo workspace with synthetic data. No live customer systems are connected.</div>}
+    <div className="console-shell">
+      <aside className="console-sidebar">
+        <Link href="/app" className="brand"><Logo size={30}/><span>Zinloop <span style={{color:"#c9ff3b"}}>Security</span></span></Link>
+        {(demo||session)&&<ConsoleNavigation settingsVisible={Boolean(session)}/>}
+        <div className="console-sidebar-bottom"><Link href="/app/downloads">Get endpoint scanner →</Link><p>Windows · macOS · Linux<br/>Local-first security scanning</p></div>
+      </aside>
+      <div className="console-workspace">
+        <header className="console-topbar">
+          <span className="console-topbar-title">MSP / Security operations</span>
+          <div className="console-topbar-right">
+            {demo&&<span className="msp">{MSP_NAME} · Demo</span>}
+            {session&&<span className="msp">{session.mspName} · {session.email}</span>}
+            {session&&<form action={signOutAction}><button type="submit" className="link-btn">Sign out</button></form>}
+          </div>
+        </header>
+        <main className="console-main">{children}</main>
+      </div>
+    </div>
+  </>;
 }

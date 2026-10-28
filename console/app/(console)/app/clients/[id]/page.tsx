@@ -33,7 +33,7 @@ export default async function ClientPage({
   return (
     <>
       <p className="small">
-        <Link href="/app">← All clients</Link>
+        <Link href="/app">← All clients</Link>{" · "}<Link href={"/app/clients/"+id+"/devices"}>Devices & scan details</Link>
         {!detail.demo && (
           <>
             {" "}·{" "}

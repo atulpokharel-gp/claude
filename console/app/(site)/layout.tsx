@@ -106,6 +106,7 @@ export default async function SiteLayout({ children }: { children: React.ReactNo
             <Link className="hide-sm" href="/security">Security</Link>
             <Link className="hide-sm" href="/pricing">Pricing</Link>
             <Link className="hide-sm" href="/docs">Docs</Link>
+            <Link href="/download">Download</Link>
             <Link href="/login">Sign in</Link>
             <Link className="zbtn zbtn-main" href="/free-scan">Get a free scan</Link>
           </nav>
@@ -122,6 +123,7 @@ export default async function SiteLayout({ children }: { children: React.ReactNo
             <Link href="/security">Security</Link>
             <Link href="/pricing">Pricing</Link>
             <Link href="/docs">Docs</Link>
+            <Link href="/download">Download</Link>
             <Link href="/privacy">Privacy</Link>
             <Link href="/terms">Terms</Link>
           </nav>

@@ -4,20 +4,25 @@ import { useState } from "react";
 import type { Client } from "@/lib/types.ts";
 import { importScan, ScanImportError } from "@/lib/scan-import.ts";
 import { ClientView } from "@/components/ClientView.tsx";
+import { LocalScanDetails } from "@/components/LocalScanDetails.tsx";
 
 const MAX_BYTES = 5 * 1024 * 1024;
 
 export default function ImportPage() {
   const [client, setClient] = useState<Client | null>(null);
+  const [rawReport, setRawReport] = useState<unknown>(null);
   const [error, setError] = useState<string | null>(null);
   const [over, setOver] = useState(false);
 
   function load(text: string) {
     try {
-      setClient(importScan(JSON.parse(text)));
+      const json = JSON.parse(text);
+      setClient(importScan(json));
+      setRawReport(json);
       setError(null);
     } catch (e) {
       setClient(null);
+      setRawReport(null);
       setError(e instanceof ScanImportError ? e.message : "This file isn't valid JSON. Choose the file zinloop wrote with --out.");
     }
   }
@@ -40,9 +45,10 @@ export default function ImportPage() {
     return (
       <>
         <p className="small">
-          <button type="button" className="btn" onClick={() => setClient(null)}>Upload a different scan</button>
+          <button type="button" className="btn" onClick={() => {setClient(null);setRawReport(null);}}>Upload a different scan</button>
         </p>
         <ClientView client={client} />
+        <LocalScanDetails report={rawReport} />
       </>
     );
   }
