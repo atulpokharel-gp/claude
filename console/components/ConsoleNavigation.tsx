@@ -6,6 +6,7 @@ const GROUPS=[
     {label:"Overview",href:"/app",glyph:"⌂"},
     {label:"Clients",href:"/app",glyph:"▦"},
     {label:"Devices",href:"/app/devices",glyph:"▣"},
+    {label:"Findings",href:"/app/findings",glyph:"⚑"},
     {label:"AI tools",href:"/app/tools",glyph:"◇"},
     {label:"People",href:"/app/people",glyph:"♙"},
     {label:"Scan file explorer",href:"/app/import",glyph:"◎"}
