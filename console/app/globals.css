@@ -281,3 +281,33 @@ table.data { min-width: 480px; }
 .dim-fieldset legend { padding: 0 6px; font-size: 0.85rem; color: var(--muted); }
 .form-actions { display: flex; gap: 10px; align-items: center; }
 .wrap.narrow { max-width: 720px; margin: 32px auto; padding: 0 16px; display: flex; flex-direction: column; gap: 18px; }
+
+/* First-run onboarding panel. */
+.onboarding { border: 2px solid var(--accent); }
+.onboarding .panel-head { background: var(--accent-soft); border-bottom-color: var(--accent); }
+.onboarding-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.onboarding-steps > li { display: flex; gap: 16px; align-items: flex-start; padding: 18px 20px; border-bottom: 1px solid var(--line); }
+.onboarding-steps > li:last-child { border-bottom: 0; }
+.onboarding-steps h3 { font-size: 1rem; margin: 0 0 4px; }
+.onboarding-steps li.done h3 { text-decoration: line-through; color: var(--muted); font-weight: 500; }
+.onboarding-steps li.done .onb-mark { background: var(--clean); border-color: var(--clean); color: #fff; }
+.onboarding-steps li.active .onb-mark { background: var(--accent); border-color: var(--accent); color: #fff; }
+.onb-mark { width: 32px; height: 32px; border-radius: 50%; border: 2px solid var(--line); background: var(--surface); color: var(--muted); display: inline-flex; align-items: center; justify-content: center; font-weight: 700; font-variant-numeric: tabular-nums; flex: none; }
+.onb-mark svg { display: block; }
+.onboarding-steps li p { margin: 0 0 6px; }
+.onboarding-steps li p:last-child { margin-bottom: 0; }
+
+/* Install panel on the client page. */
+.install .install-steps { list-style: none; margin: 0 0 4px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.install .install-steps li { padding-left: 22px; position: relative; counter-increment: inst; }
+.install .install-steps { counter-reset: inst; }
+.install .install-steps li::before { content: counter(inst); position: absolute; left: 0; top: 1px; width: 16px; height: 16px; border-radius: 50%; background: var(--line); color: var(--ink); font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
+.os-tabs { display: flex; gap: 0; border-bottom: 1px solid var(--line); margin-top: 4px; }
+.os-tab { background: none; border: 0; border-bottom: 2px solid transparent; padding: 8px 14px; font: inherit; font-size: 0.9rem; color: var(--muted); cursor: pointer; font-weight: 600; }
+.os-tab:hover { color: var(--ink); }
+.os-tab.on { color: var(--ink); border-bottom-color: var(--accent); }
+.install-cmd { position: relative; }
+.install-cmd pre { margin: 0; background: var(--ink); color: #eef1fb; border-radius: 8px; padding: 14px 56px 14px 16px; font-family: var(--mono); font-size: 0.85rem; line-height: 1.55; overflow-x: auto; white-space: pre; }
+.install-cmd pre code { background: transparent; color: inherit; padding: 0; font-size: inherit; }
+.install-cmd .copy { position: absolute; top: 10px; right: 10px; background: var(--surface); color: var(--ink); border: 1px solid var(--line); }
+.install-cmd .copy:hover { background: var(--accent-soft); }

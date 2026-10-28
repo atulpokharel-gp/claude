@@ -4,6 +4,7 @@ import { attention } from "@/lib/insights.ts";
 import { TrendChart } from "@/components/TrendChart.tsx";
 import { clientScore, countRisk, keyCounts } from "@/lib/risk.ts";
 import { RiskPill } from "@/components/RiskPill.tsx";
+import { GetStarted } from "@/components/GetStarted.tsx";
 
 function scoreColor(s: number): string {
   if (s >= 50) return "var(--high)";
@@ -20,8 +21,9 @@ function timeAgo(iso: string, now: Date): string {
 
 export const dynamic = "force-dynamic";
 
-export default async function Overview() {
+export default async function Overview({ searchParams }: { searchParams: Promise<{ welcome?: string }> }) {
   const [{ demo, mspName, clients }, trend] = await Promise.all([loadOverview(), loadTrend(90)]);
+  const welcome = (await searchParams).welcome === "1";
   const rows = clients
     .map((c) => ({ c, r: countRisk(c.agents), score: clientScore(c) }))
     .sort((a, b) => b.score - a.score);
@@ -47,19 +49,16 @@ export default async function Overview() {
         {!demo && <Link className="btn" href="/app/clients/new">Add a client</Link>}
       </div>
 
-      {!demo && clients.length === 0 && (
-        <section className="panel">
-          <h2>No clients yet</h2>
-          <p className="muted">Add your first client, then connect its laptops so their scans show up here.</p>
+      {!demo && <GetStarted clients={clients} showAlways={welcome} />}
+
+      {clients.length > 0 && (
+        <section className="tiles" aria-label="Summary">
+          <div className="tile"><b>{totals.total}</b><span>AI agents and MCP servers found</span></div>
+          <div className="tile high"><b>{totals.high}</b><span>high-risk, need action</span></div>
+          <div className="tile"><b>{revocable}</b><span>high-risk ones you can revoke in one click</span></div>
+          <div className="tile"><b>{devices > 0 ? Math.round((scanned / devices) * 100) : 0}%</b><span>of {devices.toLocaleString("en-US")} devices scanned</span></div>
         </section>
       )}
-
-      <section className="tiles" aria-label="Summary">
-        <div className="tile"><b>{totals.total}</b><span>AI agents and MCP servers found</span></div>
-        <div className="tile high"><b>{totals.high}</b><span>high-risk, need action</span></div>
-        <div className="tile"><b>{revocable}</b><span>high-risk ones you can revoke in one click</span></div>
-        <div className="tile"><b>{devices > 0 ? Math.round((scanned / devices) * 100) : 0}%</b><span>of {devices.toLocaleString("en-US")} devices scanned</span></div>
-      </section>
 
       {clients.length > 0 && (
         <div className="split">
@@ -92,6 +91,7 @@ export default async function Overview() {
         </div>
       )}
 
+      {clients.length > 0 && (
       <section className="panel">
         <div className="panel-head">
           <h2>Passwords and keys in AI tools</h2>
@@ -103,7 +103,9 @@ export default async function Overview() {
           <div><b className="good">{keys.done}</b><span>servers with all keys protected and replaced</span><small>Nothing to do</small></div>
         </div>
       </section>
+      )}
 
+      {clients.length > 0 && (
       <section className="panel">
         <div className="panel-head">
           <h2>Clients by risk</h2>
@@ -152,6 +154,7 @@ export default async function Overview() {
           </table>
         </div>
       </section>
+      )}
     </>
   );
 }
