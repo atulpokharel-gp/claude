@@ -46,7 +46,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
         <p className="muted">
           {mspName} · {clients.length} clients · AI agents and MCP servers found in Microsoft 365 and on laptops
         </p>
-        {!demo && <Link className="btn" href="/app/clients/new">Add a client</Link>}
+        <div className="actions">{!demo && <Link className="btn" href="/app/clients/new">Add a client</Link>}<Link className="btn" href="/app/devices">View devices</Link><Link className="btn" href="/app/downloads">Get scanner</Link></div>
       </div>
 
       {!demo && <GetStarted clients={clients} showAlways={welcome} />}
