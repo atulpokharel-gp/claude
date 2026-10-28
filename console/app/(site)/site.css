@@ -1,23 +1,27 @@
-/* Marketing site. Ink navy + signal amber, Archivo display over IBM Plex. */
+/* Marketing site. Midnight + electric cobalt + acid lime, Archivo display over IBM Plex. */
 .site {
   --z-bg: #f2f4f1;
   --z-band: #e6ebe7;
   --z-card: #ffffff;
-  --z-ink: #10202f;
+  --z-ink: #06080f;
   --z-body: #3a4c5c;
   --z-muted: #4a5a68;
   --z-line: #d3dad8;
-  --z-amber: #f2a93b;
-  --z-amber-hover: #f7bd62;
+  --z-cobalt: #3b5bff;
+  --z-cobalt-hover: #2d4ae6;
+  --z-lime: #a4d41a;
+  --z-lime-ink: #0d1a00;
+  --z-amber: #3b5bff;        /* legacy alias → cobalt */
+  --z-amber-hover: #2d4ae6;  /* legacy alias → cobalt hover */
   --z-code: #eef1ee;
-  --z-dark: #10202f;
-  --z-dark-ink: #f2f4f1;
+  --z-dark: #06080f;
+  --z-dark-ink: #eef1fb;
   --z-dark-body: #c9d4dc;
   --z-high-bg: #fbe3dd;
   --z-high: #8e2a15;
   --z-med-bg: #fcefd6;
   --z-med: #7a4b00;
-  --z-shadow: #10202f;
+  --z-shadow: #3b5bff;
   --z-display: "Archivo", "Arial Narrow", system-ui, sans-serif;
   --z-sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --z-mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
@@ -30,20 +34,23 @@
 }
 @media (prefers-color-scheme: dark) {
   .site {
-    --z-bg: #0d1822;
-    --z-band: #12202c;
-    --z-card: #162634;
-    --z-ink: #eef2f0;
+    --z-bg: #06080f;
+    --z-band: #0d1322;
+    --z-card: #11162a;
+    --z-ink: #eef1fb;
     --z-body: #c3cfd8;
-    --z-muted: #a3b3bf;
-    --z-line: #2a3d4d;
-    --z-code: #0f1d29;
-    --z-dark: #0a131b;
+    --z-muted: #9aa3c2;
+    --z-line: #262d4a;
+    --z-cobalt: #6b84ff;
+    --z-cobalt-hover: #8fa2ff;
+    --z-lime: #c9ff3b;
+    --z-code: #0d1322;
+    --z-dark: #06080f;
     --z-high-bg: #3d1d16;
     --z-high: #f4a08c;
     --z-med-bg: #3a2c12;
     --z-med: #f2c46d;
-    --z-shadow: #f2a93b;
+    --z-shadow: #c9ff3b;
     color-scheme: dark;
   }
 }
@@ -62,8 +69,8 @@
 .small { font-size: 14px; color: var(--z-muted); }
 
 .zbtn { display: inline-flex; align-items: center; justify-content: center; min-height: 48px; padding: 0 22px; border-radius: 6px; font: inherit; font-weight: 600; font-size: 16px; text-decoration: none; cursor: pointer; }
-.site .zbtn-main { background: var(--z-amber); color: #10202f; border: 2px solid #10202f; }
-.site .zbtn-main:hover { background: var(--z-amber-hover); }
+.site .zbtn-main { background: var(--z-cobalt); color: #fff; border: 2px solid var(--z-cobalt); }
+.site .zbtn-main:hover { background: var(--z-cobalt-hover); border-color: var(--z-cobalt-hover); }
 .site .zbtn-ghost { background: transparent; color: var(--z-ink); border: 2px solid var(--z-ink); }
 .site .zbtn-ghost:hover { background: var(--z-band); }
 .zbtn:disabled { opacity: 0.6; cursor: default; }
@@ -102,7 +109,7 @@
 .ruled h3 { font-size: 20px; }
 .card { background: var(--z-card); border: 1px solid var(--z-line); border-radius: 10px; padding: 26px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .card.strong { border: 2px solid var(--z-ink); }
-.card.lifted { border: 2px solid var(--z-ink); box-shadow: 6px 6px 0 var(--z-amber); }
+.card.lifted { border: 2px solid var(--z-ink); box-shadow: 6px 6px 0 var(--z-lime); }
 .card h3 { font-size: 20px; }
 .step { font-family: var(--z-mono); font-size: 14px; font-weight: 600; color: var(--z-muted); }
 .site pre, .codeline { font-family: var(--z-mono); font-size: 13px; background: var(--z-code); color: var(--z-ink); padding: 10px 12px; border-radius: 6px; overflow-x: auto; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -111,7 +118,7 @@
 .list { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; color: var(--z-body); }
 
 .finding-card { margin: 0; background: var(--z-card); border: 2px solid var(--z-ink); border-radius: 10px; box-shadow: 8px 8px 0 var(--z-shadow); overflow: hidden; }
-.finding-card .bar { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 14px 18px; background: #10202f; color: #f2f4f1; font-family: var(--z-mono); font-size: 13px; }
+.finding-card .bar { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 14px 18px; background: #06080f; color: #eef1fb; font-family: var(--z-mono); font-size: 13px; }
 .finding-card .bar span:last-child { color: #b9c6d1; }
 .finding-card .items { padding: 18px; display: flex; flex-direction: column; gap: 16px; }
 .finding-card .item { display: flex; gap: 12px; align-items: flex-start; }
@@ -130,7 +137,7 @@
 .price small { font-family: var(--z-sans); font-size: 16px; font-weight: 500; color: var(--z-muted); }
 .card .zbtn { margin-top: auto; }
 
-.feature h3 { font-size: 17px; color: var(--z-amber); }
+.feature h3 { font-size: 17px; color: var(--z-lime); }
 .dark .feature p { color: var(--z-dark-body); font-size: 15px; }
 
 .zform { display: flex; flex-wrap: wrap; gap: 18px; }
@@ -215,4 +222,4 @@
 .pulse-cnt { min-width: 72px; text-align: right; }
 .pulse-days { list-style: none; margin: 0; padding: 0; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 6px; align-items: end; height: 180px; border-bottom: 1px solid var(--z-line); padding-bottom: 6px; }
 .pulse-days li { display: flex; flex-direction: column; align-items: center; gap: 4px; height: 100%; justify-content: flex-end; }
-.pulse-day-bar { width: 100%; background: var(--z-amber); border-radius: 4px 4px 0 0; }
+.pulse-day-bar { width: 100%; background: var(--z-lime); border-radius: 4px 4px 0 0; }
