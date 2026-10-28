@@ -28,7 +28,7 @@ export function GET(req: Request) {
         )}
         <div style={{ display: "flex", justifyContent: "space-between", fontSize: 30 }}>
           <span>Free · 10 seconds · nothing leaves your browser</span>
-          <span style={{ background: "#f2a93b", padding: "6px 16px", borderRadius: 8, fontWeight: 700 }}>Check yours</span>
+          <span style={{ background: "#c9ff3b", color: "#0d1a00", padding: "6px 16px", borderRadius: 8, fontWeight: 700 }}>Check yours</span>
         </div>
       </div>
     ),

@@ -5,8 +5,11 @@
   --ink: #15202b;
   --muted: #5b6b79;
   --line: #dbe2e8;
-  --accent: #0b6e7a;
-  --accent-soft: #e0f0f2;
+  --accent: #3b5bff;
+  --accent-soft: #e4e8ff;
+  --lime: #a4d41a;
+  --lime-soft: #eff8d1;
+  --lime-ink: #0d1a00;
   --high: #b3372d;
   --high-soft: #fbe9e7;
   --medium: #9a6200;
@@ -20,16 +23,19 @@
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #0d151b;
-    --surface: #152029;
-    --ink: #e3ebf0;
-    --muted: #97a9b6;
-    --line: #283946;
-    --accent: #4cc3cf;
-    --accent-soft: #15383e;
-    --high: #f0857a;
+    --bg: #06080f;
+    --surface: #11162a;
+    --ink: #eef1fb;
+    --muted: #9aa3c2;
+    --line: #262d4a;
+    --accent: #6b84ff;
+    --accent-soft: #1a2250;
+    --lime: #c9ff3b;
+    --lime-soft: #2a3400;
+    --lime-ink: #0d1a00;
+    --high: #ff7a6c;
     --high-soft: #3a1d1a;
-    --medium: #e6ad4e;
+    --medium: #ffc766;
     --medium-soft: #3a2c12;
     --low: #8db6e6;
     --low-soft: #1a2a3d;
@@ -99,7 +105,7 @@ tbody tr.link-row:hover { background: var(--bg); }
 
 .filters { display: flex; gap: 6px; flex-wrap: wrap; }
 .chip { border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 999px; padding: 4px 12px; font: inherit; font-size: 0.85rem; cursor: pointer; }
-.chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--surface); }
+.chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
 
 .agents { display: flex; flex-direction: column; }
 .agent { border-bottom: 1px solid var(--line); }
@@ -123,8 +129,8 @@ tbody tr.link-row:hover { background: var(--bg); }
 .rule { font-family: var(--mono); font-size: 0.72rem; color: var(--muted); }
 .actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .btn { font: inherit; font-size: 0.88rem; font-weight: 600; padding: 7px 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; }
-.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--surface); }
-.btn.danger { background: var(--high); border-color: var(--high); color: var(--surface); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn.danger { background: var(--high); border-color: var(--high); color: #fff; }
 .btn:disabled { opacity: 0.6; cursor: default; }
 .empty { padding: 32px 16px; text-align: center; color: var(--muted); }
 
