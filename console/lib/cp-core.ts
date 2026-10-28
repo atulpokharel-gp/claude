@@ -80,7 +80,9 @@ export async function reserve(p:AgentPrincipal,args:{taskId?:string;requestedMod
       if(!task)return bad("Task not claimed by agent or lease expired",403);
       if(Number(task.spent_usd)+Number(task.reserved_usd)+amount>Number(task.budget_usd))return bad("Task budget exceeded",403);
     }
-    const model=short(args.requestedModel,120)||task?.preferred_model||budget.preferred_model;
+    if(task?.preferred_model && args.requestedModel && short(args.requestedModel,120)!==task.preferred_model)
+      return bad("Task model is pinned; requested model differs",403);
+    const model=task?.preferred_model||short(args.requestedModel,120)||budget.preferred_model;
     if(!model)return bad("No model selected; configure a preferred model or pass requestedModel");
     if(budget.allowed_models.length&&!budget.allowed_models.includes(model))return bad("Model not allowed for this agent",403);
     if(Number(budget.spent_usd)+Number(budget.reserved_usd)+amount>Number(budget.limit_usd))return bad("Agent budget exceeded",403);
@@ -114,6 +116,7 @@ export async function claimTask(p:AgentPrincipal,taskId?:string){
       "with next_task as (select id from cp_tasks "+
       "where (status='queued' or (status='claimed' and lease_until<now())) "+
       "and ($1::uuid is null or id=$1::uuid) and ($2::uuid is null or client_id=$2::uuid) "+
+      "and (target_agent_id is null or target_agent_id=$3) "+
       "order by created_at for update skip locked limit 1) "+
       "update cp_tasks t set status='claimed',assigned_agent_id=$3,claimed_at=now(),lease_until=now()+interval '15 minutes' "+
       "from next_task n where t.id=n.id returning t.id,t.title,t.description,t.budget_usd,t.preferred_model",
@@ -154,8 +157,8 @@ export async function listTasks(p:AgentPrincipal){
   return withTenant(p.mspId,async db=>{
     const rows=(await db.query<{id:string;title:string;status:string;assigned_agent_id:string|null;preferred_model:string;budget_usd:string}>(
       "select id,title,status,assigned_agent_id,preferred_model,budget_usd from cp_tasks "+
-      "where ($1::uuid is null or client_id=$1::uuid) order by created_at desc limit 100",
-      [p.clientId])).rows;
+      "where ($1::uuid is null or client_id=$1::uuid) and (target_agent_id is null or target_agent_id=$2) order by created_at desc limit 100",
+      [p.clientId,p.agentId])).rows;
     return {tasks:rows.map(r=>({id:r.id,title:r.title,status:r.status,claimedBy:r.assigned_agent_id,
       preferredModel:r.preferred_model,budgetUsd:Number(r.budget_usd)}))};
   });
