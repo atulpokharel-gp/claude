@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/atulpokharel-gp/claude/scanner/internal/fix"
+	"github.com/atulpokharel-gp/zinloop-zipax/scanner/internal/fix"
 )
 
 func TestRevertListAndRun(t *testing.T) {

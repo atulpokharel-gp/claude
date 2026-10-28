@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/atulpokharel-gp/claude/scanner/internal/discover"
-	"github.com/atulpokharel-gp/claude/scanner/internal/rules"
-	"github.com/atulpokharel-gp/claude/scanner/internal/vault"
+	"github.com/atulpokharel-gp/zinloop-zipax/scanner/internal/discover"
+	"github.com/atulpokharel-gp/zinloop-zipax/scanner/internal/rules"
+	"github.com/atulpokharel-gp/zinloop-zipax/scanner/internal/vault"
 )
 
 // copyFixtures copies testdata/home into a temp dir so tests can change files.

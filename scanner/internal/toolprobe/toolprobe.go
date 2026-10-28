@@ -22,7 +22,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/atulpokharel-gp/claude/scanner/internal/discover"
+	"github.com/atulpokharel-gp/zinloop-zipax/scanner/internal/discover"
 )
 
 // maxToolReply caps the bytes the probe will read from one JSON-RPC reply.

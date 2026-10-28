@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/atulpokharel-gp/claude/scanner/internal/fix"
+	"github.com/atulpokharel-gp/zinloop-zipax/scanner/internal/fix"
 )
 
 // runRevert restores a config from its ~/.zinloop/backups/ copy, deletes the

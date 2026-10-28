@@ -9,8 +9,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/atulpokharel-gp/claude/scanner/internal/discover"
-	"github.com/atulpokharel-gp/claude/scanner/internal/skillscan"
+	"github.com/atulpokharel-gp/zinloop-zipax/scanner/internal/discover"
+	"github.com/atulpokharel-gp/zinloop-zipax/scanner/internal/skillscan"
 )
 
 // Severity ranks how urgent a finding is.

@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/atulpokharel-gp/claude/scanner/internal/vault"
+	"github.com/atulpokharel-gp/zinloop-zipax/scanner/internal/vault"
 )
 
 // countingStore fails the Nth Set call. It records every Set and Delete so

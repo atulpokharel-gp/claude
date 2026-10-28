@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/atulpokharel-gp/claude/scanner/internal/discover"
-	"github.com/atulpokharel-gp/claude/scanner/internal/rules"
-	"github.com/atulpokharel-gp/claude/scanner/internal/skillscan"
+	"github.com/atulpokharel-gp/zinloop-zipax/scanner/internal/discover"
+	"github.com/atulpokharel-gp/zinloop-zipax/scanner/internal/rules"
+	"github.com/atulpokharel-gp/zinloop-zipax/scanner/internal/skillscan"
 )
 
 // SchemaVersion changes when the JSON shape changes in a breaking way.

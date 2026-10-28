@@ -17,7 +17,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/atulpokharel-gp/claude/scanner/internal/discover"
+	"github.com/atulpokharel-gp/zinloop-zipax/scanner/internal/discover"
 )
 
 // maxSkillSize caps SKILL.md reads so one huge file can't stall a scan.

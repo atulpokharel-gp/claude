@@ -13,7 +13,7 @@ export const DOWNLOAD_FILES = new Set([
   "install-unix.sh",
 ]);
 
-const DEFAULT_BASE = "https://github.com/atulpokharel-gp/claude/releases/latest/download";
+const DEFAULT_BASE = "https://github.com/atulpokharel-gp/zinloop-zipax/releases/latest/download";
 
 export function downloadUrl(file: string, base = process.env.DOWNLOAD_BASE_URL || DEFAULT_BASE): string | null {
   if (!DOWNLOAD_FILES.has(file)) return null;

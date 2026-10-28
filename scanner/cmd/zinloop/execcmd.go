@@ -8,8 +8,8 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/atulpokharel-gp/claude/scanner/internal/discover"
-	"github.com/atulpokharel-gp/claude/scanner/internal/vault"
+	"github.com/atulpokharel-gp/zinloop-zipax/scanner/internal/discover"
+	"github.com/atulpokharel-gp/zinloop-zipax/scanner/internal/vault"
 )
 
 // runExec is the launcher an AI app calls instead of the MCP server itself:

@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/atulpokharel-gp/claude/scanner/internal/discover"
+	"github.com/atulpokharel-gp/zinloop-zipax/scanner/internal/discover"
 )
 
 func writeSkill(t *testing.T, root, name, body string) {

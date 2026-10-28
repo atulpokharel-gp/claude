@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/atulpokharel-gp/claude/scanner/internal/discover"
-	"github.com/atulpokharel-gp/claude/scanner/internal/skillscan"
+	"github.com/atulpokharel-gp/zinloop-zipax/scanner/internal/discover"
+	"github.com/atulpokharel-gp/zinloop-zipax/scanner/internal/skillscan"
 )
 
 // fakeGitHubToken is built at runtime so no token-shaped string sits in the repo.

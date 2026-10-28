@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/atulpokharel-gp/claude/scanner/internal/zipax"
+	"github.com/atulpokharel-gp/zinloop-zipax/scanner/internal/zipax"
 )
 
 // runZipax reads this laptop's AI coding tool session logs and either prints
