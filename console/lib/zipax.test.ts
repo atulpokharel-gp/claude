@@ -278,6 +278,51 @@ test("newPublicSlug returns a 14+ char lowercase alnum string", () => {
   assert.notEqual(newPublicSlug(), newPublicSlug());
 });
 
+test("SLUG_MIN / SLUG_MAX are the authoritative range and match the DB check", async () => {
+  const { SLUG_MIN, SLUG_MAX } = await import("./zipax.ts");
+  // The DB check constraint in migration 019 pins {3,32}; if either side
+  // changes, the other has to move too or Save will 500 on a value the UI
+  // accepted. This test is the tripwire.
+  assert.equal(SLUG_MIN, 3);
+  assert.equal(SLUG_MAX, 32);
+});
+
+test("canonicalPublicProfileRedirect sends /p/<slug> from zinloop.com to zipax.zinloop.com", async () => {
+  const { canonicalPublicProfileRedirect } = await import("./public-host.ts");
+  // The common case: a shared link on the MSP host.
+  assert.equal(
+    canonicalPublicProfileRedirect("zinloop.com", "/p/atul"),
+    "https://zipax.zinloop.com/p/atul",
+  );
+  // Query strings are preserved so UTM and tracking params survive.
+  assert.equal(
+    canonicalPublicProfileRedirect("zinloop.com", "/p/atul", "?utm=share"),
+    "https://zipax.zinloop.com/p/atul?utm=share",
+  );
+  // A 14-char default slug still works.
+  assert.equal(
+    canonicalPublicProfileRedirect("zinloop.com", "/p/n5h369x61thok8"),
+    "https://zipax.zinloop.com/p/n5h369x61thok8",
+  );
+  // Already on the Zipax host: let it through.
+  assert.equal(canonicalPublicProfileRedirect("zipax.zinloop.com", "/p/atul"), null);
+  // Non-profile paths pass through.
+  assert.equal(canonicalPublicProfileRedirect("zinloop.com", "/leaderboard"), null);
+  assert.equal(canonicalPublicProfileRedirect("zinloop.com", "/"), null);
+  // Bare /p and /p/ are not slugs; a Next 404 handles them.
+  assert.equal(canonicalPublicProfileRedirect("zinloop.com", "/p"), null);
+  assert.equal(canonicalPublicProfileRedirect("zinloop.com", "/p/"), null);
+  // Malformed slugs (uppercase, too short) are left to Next; they'd 404
+  // either way, but we avoid redirecting junk off the host.
+  assert.equal(canonicalPublicProfileRedirect("zinloop.com", "/p/AB"), null);
+  assert.equal(canonicalPublicProfileRedirect("zinloop.com", "/p/A"), null);
+  // Case-insensitive host match.
+  assert.equal(
+    canonicalPublicProfileRedirect("ZINLOOP.COM", "/p/atul"),
+    "https://zipax.zinloop.com/p/atul",
+  );
+});
+
 test("parseUpload reads a claim block", () => {
   const token = newClaimToken();
   const got = parseUpload({

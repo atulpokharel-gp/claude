@@ -1,27 +1,55 @@
 import { NextRequest, NextResponse } from "next/server";
+import { canonicalPublicProfileRedirect } from "@/lib/public-host.ts";
 
 /**
- * Zipax split-host.
+ * Split-host routing for the marketing site.
  *
- * The marketing site runs under the `(site)` route group. When it is served
- * from `zipax.zinloop.com` instead of `zinloop.com`, we switch its branding
- * to Zipax (public developer face, dark-only) by setting an `x-zinloop-face`
- * request header the (site) layout reads via `headers()`.
+ * The marketing site runs under the `(site)` route group. We decide its
+ * "face" from the request host and tell the (site) layout via the
+ * `x-zinloop-face` request header, which it reads with `headers()`:
  *
- * We also rewrite `/` on the Zipax host to `/leaderboard` so the landing
- * page there is the public dev leaderboard rather than the MSP home.
+ *   - `zipax.*`    → Zipax (public developer face, dark-only); `/` is
+ *                    rewritten to `/leaderboard`.
+ *   - `founder.*`  → Founder (dark, single page); `/` is rewritten to
+ *                    `/founder` so a visit to founder.zinloop.com lands
+ *                    on the About / story page.
+ *   - anything else → the default Zinloop Security face.
+ *
+ * `/p/<slug>` is a public developer page. Its canonical home is
+ * zipax.zinloop.com; a hit on zinloop.com (or any non-Zipax alias) is a 308
+ * redirect to the matching URL on zipax.zinloop.com so that a shared link
+ * ends up on the Zipax-branded host regardless of where it was pasted from.
+ * The redirect decision lives in `canonicalPublicProfileRedirect` so it can
+ * be unit-tested without faking a NextRequest.
  */
 export function middleware(req: NextRequest) {
   const host = (req.headers.get("host") ?? "").toLowerCase();
   const isZipax = host.startsWith("zipax.");
+  const isFounder = host.startsWith("founder.");
 
+  const face = isZipax ? "zipax" : isFounder ? "founder" : "security";
   const requestHeaders = new Headers(req.headers);
-  requestHeaders.set("x-zinloop-face", isZipax ? "zipax" : "security");
+  requestHeaders.set("x-zinloop-face", face);
 
   if (isZipax && req.nextUrl.pathname === "/") {
     const url = req.nextUrl.clone();
     url.pathname = "/leaderboard";
     return NextResponse.rewrite(url, { request: { headers: requestHeaders } });
+  }
+
+  if (isFounder && req.nextUrl.pathname === "/") {
+    const url = req.nextUrl.clone();
+    url.pathname = "/founder";
+    return NextResponse.rewrite(url, { request: { headers: requestHeaders } });
+  }
+
+  const canonical = canonicalPublicProfileRedirect(
+    host,
+    req.nextUrl.pathname,
+    req.nextUrl.search,
+  );
+  if (canonical) {
+    return NextResponse.redirect(canonical, 308);
   }
 
   return NextResponse.next({ request: { headers: requestHeaders } });

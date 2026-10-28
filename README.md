@@ -92,6 +92,4 @@ CI runs all of these on every pull request.
 
 ## What's next
 
-Payments (Stripe), email delivery for invites, alerts when a new risky agent
-appears, Google Workspace, and a live gateway that checks agent actions as they
-happen.
+BIG O(0^0)

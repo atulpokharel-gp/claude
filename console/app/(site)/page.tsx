@@ -5,22 +5,25 @@ import { CtaBand } from "@/components/site/CtaBand.tsx";
 export default function Home() {
   return (
     <>
-      <section className="section">
+      <section className="section hero">
         <div className="wrap row center">
-          <div className="col stack" style={{ gap: 24, flexBasis: 480 }}>
+          <div className="col stack" style={{ gap: 24, flexBasis: 520 }}>
             <p className="eyebrow">For managed service providers</p>
-            <h1 className="disp h1">Your clients' staff plugged AI into the business. Can you see it?</h1>
+            <h1 className="disp h1">See every AI connector your clients&apos; staff plugged in.</h1>
             <p className="lead">
-              Zinloop finds every AI assistant connector on your clients' laptops, flags passwords left in plain text,
-              and moves them into the operating system's keychain. Read-only by default. Rolled out through your RMM
-              in about 15 minutes.
+              Zinloop finds AI assistants and MCP connectors across your clients&apos; laptops, flags the ones with
+              passwords in plain text, and shows you a plain-English report in one console. Read-only until you decide
+              to fix something.
             </p>
             <div className="buttons">
-              <Link className="zbtn zbtn-main" href="/free-scan">Get a free exposure scan</Link>
+              <Link className="zbtn zbtn-main" href="/free-scan">Start a free scan</Link>
               <Link className="zbtn zbtn-ghost" href="/how-it-works">See how it works</Link>
-              <Link className="zbtn zbtn-ghost" href="/check">Grade your own AI setup</Link>
             </div>
-            <p className="small">Works with Claude Desktop, Claude Code, Cursor, VS Code and Windsurf on Windows, macOS and Linux.</p>
+            <ul className="trust" aria-label="At a glance">
+              <li><b>15 min</b><span>From sign-up to first finding</span></li>
+              <li><b>Read-only</b><span>Nothing changes on a laptop until you say so</span></li>
+              <li><b>Keys stay local</b><span>Values are masked on the laptop before sending</span></li>
+            </ul>
           </div>
           <div className="col" style={{ flexBasis: 440 }}>
             <FindingCard />
@@ -41,11 +44,11 @@ export default function Home() {
             </div>
             <div className="ruled">
               <h3>Code nobody vetted</h3>
-              <p className="body">Connectors install from npm or GitHub with one line and run with the user's full access. Many pull a new version every time they start.</p>
+              <p className="body">Connectors install from npm or GitHub with one line and run with the user&apos;s full access. Many pull a new version every time they start.</p>
             </div>
             <div className="ruled">
               <h3>No list, no owner</h3>
-              <p className="body">Your RMM and antivirus see a process, not an AI agent with access to payroll. When a client asks how they control AI, there's nothing to show them.</p>
+              <p className="body">Your RMM and antivirus see a process, not an AI agent with access to payroll. When a client asks how they control AI, there&apos;s nothing to show them.</p>
             </div>
           </div>
         </div>
@@ -54,27 +57,40 @@ export default function Home() {
       <section className="section">
         <div className="wrap stack" style={{ gap: 40 }}>
           <div className="head">
-            <p className="eyebrow">How it works</p>
-            <h2 className="disp h2">From zero to a client report in an afternoon</h2>
+            <p className="eyebrow">Your first 15 minutes</p>
+            <h2 className="disp h2">Sign up, add a client, run the scanner. Findings land in your console.</h2>
           </div>
-          <ol className="grid3" style={{ listStyle: "none", margin: 0, padding: 0 }}>
-            <li className="card">
-              <span className="step">Step 1</span>
-              <h3>Deploy through your RMM</h3>
-              <p className="body">Push one small scanner with a per-client upload token. Scripts are ready for NinjaOne, Datto RMM, N-able and ConnectWise Automate.</p>
+          <ol className="steps">
+            <li>
+              <span className="step-num">1</span>
+              <div>
+                <h3>Create your account</h3>
+                <p className="body">Work email and a password. No card. You&apos;re the owner of the workspace; invite techs later.</p>
+              </div>
             </li>
-            <li className="card">
-              <span className="step">Step 2</span>
-              <h3>See every agent, every client</h3>
-              <p className="body">One console lists each AI app, connector and stored key across all your clients, with a risk score per client and the laptops that haven't checked in.</p>
+            <li>
+              <span className="step-num">2</span>
+              <div>
+                <h3>Add a client, grab its upload token</h3>
+                <p className="body">The token is scoped to that one client. Put it in your RMM as an environment variable alongside your console URL.</p>
+              </div>
             </li>
-            <li className="card">
-              <span className="step">Step 3</span>
-              <h3>Fix it and show the client</h3>
-              <p className="body">Move keys into Windows Credential Manager or macOS Keychain with one command, rotate the exposed ones, and hand the client a plain-English report.</p>
+            <li>
+              <span className="step-num">3</span>
+              <div>
+                <h3>Install the scanner on a laptop</h3>
+                <p className="body">One line of PowerShell on Windows, one line of shell on macOS or Linux. Scripts are signed and the binaries are checksummed.</p>
+              </div>
+            </li>
+            <li>
+              <span className="step-num">4</span>
+              <div>
+                <h3>Read the first findings</h3>
+                <p className="body">The console groups them by severity, points at the exact config file, and shows a one-command fix. You decide what to apply.</p>
+              </div>
             </li>
           </ol>
-          <p><Link href="/how-it-works">Read the details →</Link></p>
+          <p><Link href="/how-it-works">Read the full walkthrough →</Link></p>
         </div>
       </section>
 
@@ -82,10 +98,10 @@ export default function Home() {
         <div className="wrap row">
           <div className="col stack">
             <p className="eyebrow">Built for MSPs</p>
-            <h2 className="disp h2">A new security line item your clients will understand</h2>
+            <h2 className="disp h2">A new line item that pays for itself at one client</h2>
             <p className="body">
-              Clients are already asking about AI risk, and so are their insurers. Zinloop gives you something concrete to
-              sell: a scan, a fix, and a report that shows exposed keys going down month after month.
+              Clients are already asking about AI risk, and so are their insurers. Zinloop gives you something concrete
+              to sell: a scan, a fix, and a monthly report that shows exposed keys going down.
             </p>
             <p><Link href="/msps">See the partner program →</Link></p>
           </div>
@@ -105,13 +121,18 @@ export default function Home() {
         <div className="wrap row">
           <div className="col stack">
             <p className="eyebrow">Security</p>
-            <h2 className="disp h2">We never see your clients' keys</h2>
-            <p className="body">The scanner reports where a secret is and what kind it is. The value is masked on the laptop before anything is sent.</p>
+            <h2 className="disp h2">We never see your clients&apos; keys</h2>
+            <p className="body">
+              The scanner reports where a secret is and what kind it is. The value is masked on the laptop before
+              anything is sent. Read-only by default — nothing changes on a laptop until a technician runs a fix.
+            </p>
             <p><Link href="/security">How we handle data →</Link></p>
           </div>
           <div className="col grid2">
-            <div className="ruled"><h3>Read-only by default</h3><p className="body">Nothing changes on a laptop until a technician runs a fix.</p></div>
-            <div className="ruled"><h3>Walled off per MSP</h3><p className="body">The database itself stops one MSP's data from reaching another.</p></div>
+            <div className="ruled"><h3>Per-client upload tokens</h3><p className="body">Scoped and revocable. One leaked token exposes one client, not the fleet.</p></div>
+            <div className="ruled"><h3>Walled off per MSP</h3><p className="body">Database-level isolation. One MSP never sees another&apos;s data.</p></div>
+            <div className="ruled"><h3>Open-source scanner</h3><p className="body">Read what it does before you run it. Builds are checksummed.</p></div>
+            <div className="ruled"><h3>No agent on the laptop</h3><p className="body">It runs on a schedule and exits. Nothing listens on a port.</p></div>
           </div>
         </div>
       </section>
