@@ -5,7 +5,56 @@ import "./site.css";
 
 export default async function SiteLayout({ children }: { children: React.ReactNode }) {
   const h = await headers();
-  const face = h.get("x-zinloop-face") === "zipax" ? "zipax" : "security";
+  const raw = h.get("x-zinloop-face");
+  const face = raw === "zipax" ? "zipax" : raw === "founder" ? "founder" : "security";
+
+  if (face === "founder") {
+    return (
+      <div className="site" data-face="founder">
+        <header className="site-header">
+          <div className="wrap">
+            <Link href="/" className="site-brand">
+              <Logo />
+              <span className="disp">Atul Pokharel</span>
+            </Link>
+            <nav className="site-nav" aria-label="Main">
+              <Link href="#story">Story</Link>
+              <Link className="hide-sm" href="#now">Now</Link>
+              <Link
+                className="hide-sm"
+                href="https://www.linkedin.com/in/atul-pokharel-372509308/"
+                rel="noopener noreferrer"
+                target="_blank"
+              >
+                LinkedIn ↗
+              </Link>
+              <Link href="https://zinloop.com">Zinloop ↗</Link>
+            </nav>
+          </div>
+        </header>
+        <main>{children}</main>
+        <footer className="site-footer">
+          <div className="wrap">
+            <span>© 2026 Atul Pokharel · Founder, Zinloop Security</span>
+            <nav aria-label="Footer">
+              <Link
+                href="https://www.linkedin.com/in/atul-pokharel-372509308/"
+                rel="noopener noreferrer"
+                target="_blank"
+              >
+                LinkedIn
+              </Link>
+              <Link href="https://github.com/atulpokharel-gp" rel="noopener noreferrer" target="_blank">
+                GitHub
+              </Link>
+              <Link href="https://zinloop.com">Zinloop Security ↗</Link>
+              <Link href="https://zipax.zinloop.com">Zipax ↗</Link>
+            </nav>
+          </div>
+        </footer>
+      </div>
+    );
+  }
 
   if (face === "zipax") {
     return (
