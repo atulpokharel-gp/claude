@@ -44,8 +44,6 @@ export default function FounderPage() {
             GitHub
           </a>
           <span className="dot">·</span>
-          <a href="mailto:admin@smart365guide.com">admin@smart365guide.com</a>
-          <span className="dot">·</span>
           <a href="https://zinloop.com">zinloop.com</a>
         </div>
         <div className="cta-row">
@@ -174,10 +172,9 @@ export default function FounderPage() {
             target="_blank"
           >
             LinkedIn
-          </a>{" "}
-          or{" "}
-          <a href="mailto:admin@smart365guide.com">email</a>. If you&rsquo;re a developer,
-          take a look at <a href="https://zipax.zinloop.com">Zipax</a>. If you want to see
+          </a>
+          . If you&rsquo;re a developer, take a look at{" "}
+          <a href="https://zipax.zinloop.com">Zipax</a>. If you want to see
           the product, start with a{" "}
           <a href="https://zinloop.com/free-scan">free scan</a>.
         </p>
