@@ -6,7 +6,7 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/atulpokharel-gp/claude/scanner/internal/discover"
+	"github.com/atulpokharel-gp/zinloop-zipax/scanner/internal/discover"
 )
 
 // TestClaudeConfigDirRedirectsSkills checks that $CLAUDE_CONFIG_DIR moves the

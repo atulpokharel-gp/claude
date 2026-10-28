@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/atulpokharel-gp/claude/scanner/internal/discover"
-	"github.com/atulpokharel-gp/claude/scanner/internal/rules"
+	"github.com/atulpokharel-gp/zinloop-zipax/scanner/internal/discover"
+	"github.com/atulpokharel-gp/zinloop-zipax/scanner/internal/rules"
 )
 
 // The MCP mock server is implemented inside the test binary itself: TestMain

@@ -8,8 +8,8 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/atulpokharel-gp/claude/scanner/internal/discover"
-	"github.com/atulpokharel-gp/claude/scanner/internal/vault"
+	"github.com/atulpokharel-gp/zinloop-zipax/scanner/internal/discover"
+	"github.com/atulpokharel-gp/zinloop-zipax/scanner/internal/vault"
 )
 
 // TestRealPasswordStore runs the key fix against the operating system's own

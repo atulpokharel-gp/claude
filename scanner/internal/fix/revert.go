@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/atulpokharel-gp/claude/scanner/internal/vault"
+	"github.com/atulpokharel-gp/zinloop-zipax/scanner/internal/vault"
 )
 
 // Backup is one backup directory as listed by Revertable.

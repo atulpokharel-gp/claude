@@ -1,4 +1,4 @@
-module github.com/atulpokharel-gp/claude/scanner
+module github.com/atulpokharel-gp/zinloop-zipax/scanner
 
 go 1.24.7
 

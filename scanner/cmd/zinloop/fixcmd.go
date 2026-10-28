@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/atulpokharel-gp/claude/scanner/internal/discover"
-	"github.com/atulpokharel-gp/claude/scanner/internal/fix"
-	"github.com/atulpokharel-gp/claude/scanner/internal/vault"
+	"github.com/atulpokharel-gp/zinloop-zipax/scanner/internal/discover"
+	"github.com/atulpokharel-gp/zinloop-zipax/scanner/internal/fix"
+	"github.com/atulpokharel-gp/zinloop-zipax/scanner/internal/vault"
 	"golang.org/x/term"
 )
 

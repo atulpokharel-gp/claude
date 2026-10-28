@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/atulpokharel-gp/claude/scanner/internal/report"
+	"github.com/atulpokharel-gp/zinloop-zipax/scanner/internal/report"
 )
 
 func copyTree(t *testing.T, src, dst string) {
