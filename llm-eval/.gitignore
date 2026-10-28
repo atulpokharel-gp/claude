@@ -1,0 +1,5 @@
+# Runtime data: runs are generated, keep the directory but not its contents
+data/runs/*.json
+# Local, possibly secret-bearing config overrides
+.env
+*.local.json

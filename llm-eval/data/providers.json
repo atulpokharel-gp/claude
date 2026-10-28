@@ -1,0 +1,29 @@
+[
+  {
+    "id": "prov_openai",
+    "name": "OpenAI",
+    "kind": "openai",
+    "baseUrl": "https://api.openai.com/v1",
+    "apiKeyEnv": "OPENAI_API_KEY",
+    "apiKey": null,
+    "models": ["gpt-4o", "gpt-4o-mini"]
+  },
+  {
+    "id": "prov_anthropic",
+    "name": "Anthropic",
+    "kind": "anthropic",
+    "baseUrl": "https://api.anthropic.com",
+    "apiKeyEnv": "ANTHROPIC_API_KEY",
+    "apiKey": null,
+    "models": ["claude-opus-4-8", "claude-sonnet-5-5", "claude-haiku-5-5"]
+  },
+  {
+    "id": "prov_ollama",
+    "name": "Ollama (local)",
+    "kind": "ollama",
+    "baseUrl": "http://localhost:11434",
+    "apiKeyEnv": null,
+    "apiKey": null,
+    "models": ["llama3.1", "qwen2.5", "deepseek-r1"]
+  }
+]

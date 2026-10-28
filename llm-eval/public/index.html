@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>LLM Eval — model leaderboard</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header>
+    <h1>LLM&nbsp;Eval</h1>
+    <nav id="tabs">
+      <button data-tab="run" class="active">Run</button>
+      <button data-tab="results">Results</button>
+      <button data-tab="prompts">Prompts</button>
+      <button data-tab="providers">Providers</button>
+    </nav>
+  </header>
+
+  <main>
+    <!-- RUN -->
+    <section id="tab-run" class="tab active">
+      <h2>New evaluation</h2>
+      <label>Run name <input id="run-name" placeholder="nightly comparison" /></label>
+
+      <fieldset>
+        <legend>Target models <small>(what you're scoring)</small></legend>
+        <div id="target-list"></div>
+        <button id="add-target" class="ghost">+ add target</button>
+      </fieldset>
+
+      <fieldset>
+        <legend>Judge model</legend>
+        <select id="judge-provider"></select>
+        <input id="judge-model" placeholder="model name" list="judge-models" />
+        <datalist id="judge-models"></datalist>
+      </fieldset>
+
+      <fieldset>
+        <legend>Prompts</legend>
+        <div class="row"><button id="select-all-prompts" class="ghost">all</button><button id="select-no-prompts" class="ghost">none</button></div>
+        <div id="prompt-checklist"></div>
+      </fieldset>
+
+      <button id="start-run" class="primary">Run evaluation</button>
+
+      <div id="progress" hidden>
+        <div class="bar"><div id="bar-fill"></div></div>
+        <p id="progress-text"></p>
+        <ul id="progress-log"></ul>
+      </div>
+    </section>
+
+    <!-- RESULTS -->
+    <section id="tab-results" class="tab">
+      <h2>Runs</h2>
+      <div class="split">
+        <ul id="run-list" class="list"></ul>
+        <div id="run-detail"><p class="muted">Select a run to inspect its leaderboard and per-prompt judgements.</p></div>
+      </div>
+    </section>
+
+    <!-- PROMPTS -->
+    <section id="tab-prompts" class="tab">
+      <h2>Prompts</h2>
+      <div class="split">
+        <div>
+          <form id="prompt-form" class="card">
+            <input type="hidden" id="prompt-id" />
+            <label>Title <input id="prompt-title" required /></label>
+            <label>Category <input id="prompt-category" placeholder="reasoning" /></label>
+            <label>User message
+              <textarea id="prompt-user" rows="4" placeholder="Ask the model something…"></textarea>
+            </label>
+            <label>Rubric (0-3)
+              <textarea id="prompt-rubric" rows="4" placeholder="0 = wrong&#10;1 = partly&#10;2 = good&#10;3 = excellent"></textarea>
+            </label>
+            <div class="row">
+              <button type="submit" class="primary">Save prompt</button>
+              <button type="button" id="prompt-reset" class="ghost">clear</button>
+            </div>
+          </form>
+          <div class="card">
+            <h3>Draft with an LLM</h3>
+            <label>Brief <input id="draft-brief" placeholder="a tricky unit-conversion word problem" /></label>
+            <label>Using
+              <select id="draft-provider"></select>
+            </label>
+            <input id="draft-model" placeholder="model name" />
+            <button id="draft-btn" class="ghost">Draft prompt →</button>
+          </div>
+        </div>
+        <ul id="prompt-list" class="list"></ul>
+      </div>
+    </section>
+
+    <!-- PROVIDERS -->
+    <section id="tab-providers" class="tab">
+      <h2>Providers</h2>
+      <div class="split">
+        <div>
+          <form id="provider-form" class="card">
+            <input type="hidden" id="provider-id" />
+            <label>Name <input id="provider-name" placeholder="OpenAI" required /></label>
+            <label>Kind
+              <select id="provider-kind">
+                <option value="openai">openai-compatible</option>
+                <option value="anthropic">anthropic</option>
+                <option value="ollama">ollama</option>
+              </select>
+            </label>
+            <label>Base URL <input id="provider-baseurl" placeholder="https://api.openai.com/v1" /></label>
+            <label>API key env var <input id="provider-keyenv" placeholder="OPENAI_API_KEY" /></label>
+            <p class="muted">Keys are read from the named environment variable — they're never stored in the browser.</p>
+            <button type="submit" class="primary">Save provider</button>
+          </form>
+          <div class="card">
+            <h3>Discover local servers</h3>
+            <button id="discover-btn" class="ghost">Scan this machine</button>
+            <ul id="discovery-list"></ul>
+          </div>
+        </div>
+        <ul id="provider-list" class="list"></ul>
+      </div>
+    </section>
+  </main>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

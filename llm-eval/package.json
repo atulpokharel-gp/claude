@@ -1,0 +1,18 @@
+{
+  "name": "llm-eval",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Score local and cloud LLMs against a prompt suite, then rank them by quality and speed.",
+  "bin": {
+    "llm-eval": "src/cli.js"
+  },
+  "scripts": {
+    "serve": "node src/cli.js serve",
+    "discover": "node src/cli.js discover",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
