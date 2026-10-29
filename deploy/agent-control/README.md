@@ -1,77 +1,65 @@
-# Agent Control server (upstream, run alongside Zinloop)
+# Agent Control server (upstream, part of the main stack)
 
-This directory runs the open-source [Agent Control](https://github.com/agentcontrol/agent-control)
-server next to the Zinloop stack. It is the real project, pulled as its published
-Docker Hub images (`galileoai/agent-control-server`, Postgres). We deliberately do
-**not** fork or copy its Python source into this repo: running it upstream means
-security fixes arrive with a `docker compose pull`, and there's no divergent fork
-to maintain.
+The open-source [Agent Control](https://github.com/agentcontrol/agent-control)
+server (Apache-2.0) runs as two services in the root `docker-compose.yml`:
 
-## What you get
+- `agent-control` — the server + dashboard, pulled from its published Docker Hub
+  image `galileoai/agent-control-server` (not forked or vendored).
+- `agent-control-db` — its **own** Postgres with a dedicated volume
+  (`agent_control_pgdata`), separate from the tenant `db` so none of its tables
+  touch Zinloop's RLS-protected data.
 
-- **Agent Control server + dashboard** at `http://localhost:8000` (configurable).
-- Its own **Postgres** on host port `15432` by default, with a dedicated volume
-  (`agent_control_pgdata`) that is separate from the Zinloop database.
-- Centralized runtime controls, pluggable evaluators (regex / list / JSON / SQL
-  plus bring-your-own), framework adapters (LangChain, CrewAI, Google ADK, AWS
-  Strands) and observability sinks — all from upstream, unchanged.
+It comes up with everything else on `docker compose up -d`, and the production
+deploy pulls and starts it like the other services.
+
+## Config
+
+All settings live in the **root** `.env` (see `.env.example`), not here:
+
+- `AGENT_CONTROL_POSTGRES_PASSWORD` — password for `agent-control-db`.
+- `AGENT_CONTROL_API_KEYS`, `AGENT_CONTROL_ADMIN_API_KEYS` — required; keys stay on.
+- `AGENT_CONTROL_SESSION_SECRET` — signs dashboard sessions.
+- `AGENT_CONTROL_SERVER_HOST_PORT` (default `8000`) and `AGENT_CONTROL_BIND`
+  (default `127.0.0.1`) — where the dashboard/API is published.
+
+## Reaching the dashboard
+
+By default the port binds to `127.0.0.1`, so the dashboard is reachable only on
+the server itself (safe default for production):
+
+```bash
+curl http://localhost:8000/health        # {"status":"healthy","version":"..."}
+```
+
+To expose it, either set `AGENT_CONTROL_BIND=0.0.0.0` (then set
+`AGENT_CONTROL_CORS_ORIGINS` to the real origin and put your own TLS in front),
+or add a Caddy route beside the console. Point an agent at it with the upstream
+SDK (`AGENT_CONTROL_URL`, `AGENT_CONTROL_API_KEY`).
 
 ## How this relates to Zinloop's own Agent Control Plane
 
-Zinloop already ships a native control plane built on our Next.js/TypeScript +
-Postgres stack: migration `console/db/migrations/020_agent_control_plane.sql`, the
-`/app/agents` console page, and the TypeScript SDK in `sdk/typescript/`. It covers
-the same core ideas (evaluators, input/output/tool phases, block/warn, enrollment
-tokens, an OpenTelemetry callback) and adds per-agent **budgets** and a **task
-channel** that upstream doesn't have.
+Zinloop ships a native control plane on its own stack: migration
+`console/db/migrations/020_agent_control_plane.sql`, the `/app/agents` console
+page, and the TypeScript SDK in `sdk/typescript/`. It covers the same core ideas
+(evaluators, input/output/tool phases, block/warn, enrollment tokens, an
+OpenTelemetry callback) and adds per-agent budgets and a task channel.
 
-These are **two independent control planes**. This directory stands the upstream
-one up so you can use its Python SDK and framework adapters directly. What is
-**not** built yet, and should not be assumed working:
+These remain **two independent control planes** sharing one deployment. There is
+no automatic sharing of agents, controls, or events between the upstream server
+and the Zinloop console yet, and no single-pane view. A follow-up could forward
+upstream control events into the console via a custom observability sink
+(upstream supports `register_control_event_sink`); that is separate work.
 
-- No automatic sharing of agents, controls, or events between the upstream server
-  and the Zinloop console. They have separate databases and separate dashboards.
-- No single-pane-of-glass view in the Zinloop console of upstream-server activity.
+## Security notes
 
-A follow-up could forward upstream control events into the Zinloop console via a
-custom observability sink (upstream supports `register_control_event_sink`). That
-integration is a separate piece of work, not part of standing up the server.
-
-## Run it
-
-```bash
-cd deploy/agent-control
-cp .env.example .env          # then fill in every CHANGE_ME
-docker compose up -d
-curl http://localhost:8000/health
-```
-
-Open `http://localhost:8000` for the dashboard. Point an agent at it with the
-upstream SDK:
-
-```bash
-uv pip install agent-control-sdk
-export AGENT_CONTROL_URL=http://localhost:8000
-export AGENT_CONTROL_API_KEY=<one of AGENT_CONTROL_API_KEYS>
-```
-
-Stop it with `docker compose down` (add `-v` to also wipe its database volume).
-
-## Security must-dos
-
-- **Keep API keys enabled.** `.env.example` ships with `AGENT_CONTROL_API_KEY_ENABLED=true`
-  and required keys. With keys off, the server trusts any caller — fine only for a
-  throwaway local demo, never for anything reachable.
-- The dashboard/API are **not** behind Zinloop's Caddy or auth. If you expose this
-  beyond localhost, put it behind your own TLS + auth and set
-  `AGENT_CONTROL_CORS_ORIGINS` to the real origin.
-- The upstream runtime **sees agent inputs/outputs in transit** for evaluation,
-  same caveat as Zinloop's online runtime (see `sdk/typescript/README.md`). This is
-  different from the offline laptop scanner, which keeps content local.
+- Keep API keys enabled. Keyless means any caller is trusted.
+- The upstream runtime sees agent inputs/outputs in transit for evaluation, same
+  caveat as Zinloop's online runtime (`sdk/typescript/README.md`). The offline
+  laptop scanner keeps content local; this does not.
 
 ## Attribution
 
-Agent Control is licensed under **Apache License 2.0**, Copyright its authors. This
-directory redistributes only configuration that references their published images;
-it contains none of their source. See the upstream `LICENSE` and `NOTICE` at
-https://github.com/agentcontrol/agent-control for the full terms.
+Agent Control is licensed under **Apache License 2.0**, Copyright its authors.
+This repo redistributes only configuration that references their published image;
+it contains none of their source. See the upstream `LICENSE`/`NOTICE` at
+https://github.com/agentcontrol/agent-control.
