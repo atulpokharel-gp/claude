@@ -108,7 +108,60 @@ services:
         condition: service_healthy
     logging: *logging
 
+  # Upstream Agent Control server (Apache-2.0, github.com/agentcontrol/agent-control),
+  # pulled as its published image. It has its OWN Postgres so none of its tables
+  # ever touch the RLS-protected tenant database in `db`. See deploy/agent-control/
+  # README.md for how it relates to Zinloop's native control plane and the security
+  # notes. The dashboard binds to localhost by default: set AGENT_CONTROL_BIND to
+  # 0.0.0.0 (or add a Caddy route) to expose it.
+  #
+  # Both services are gated behind the "agent-control" compose profile, so a
+  # normal `docker compose up -d` (and the deploy) leaves them off. To run them
+  # on a server, set COMPOSE_PROFILES=agent-control in that server's .env and
+  # fill in the AGENT_CONTROL_* secrets below. Defaults exist only so an
+  # unconfigured stack still parses and deploys; override them wherever enabled.
+  agent-control-db:
+    image: postgres:16-alpine
+    profiles: ["agent-control"]
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: agent_control
+      POSTGRES_USER: agent_control
+      POSTGRES_PASSWORD: ${AGENT_CONTROL_POSTGRES_PASSWORD:-agent_control}
+    volumes:
+      - agent_control_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agent_control -d agent_control"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    logging: *logging
+
+  agent-control:
+    platform: linux/amd64
+    image: galileoai/agent-control-server:latest
+    profiles: ["agent-control"]
+    restart: unless-stopped
+    ports:
+      - "${AGENT_CONTROL_BIND:-127.0.0.1}:${AGENT_CONTROL_SERVER_HOST_PORT:-8000}:8000"
+    environment:
+      AGENT_CONTROL_DB_URL: "postgresql+psycopg://agent_control:${AGENT_CONTROL_POSTGRES_PASSWORD:-agent_control}@agent-control-db:5432/agent_control"
+      AGENT_CONTROL_HOST: 0.0.0.0
+      AGENT_CONTROL_PORT: 8000
+      # Keep API keys on. Keyless means any caller is trusted. Set real keys in
+      # the server's .env before enabling the profile anywhere reachable.
+      AGENT_CONTROL_API_KEY_ENABLED: ${AGENT_CONTROL_API_KEY_ENABLED:-true}
+      AGENT_CONTROL_API_KEYS: ${AGENT_CONTROL_API_KEYS:-}
+      AGENT_CONTROL_ADMIN_API_KEYS: ${AGENT_CONTROL_ADMIN_API_KEYS:-}
+      AGENT_CONTROL_SESSION_SECRET: ${AGENT_CONTROL_SESSION_SECRET:-}
+      AGENT_CONTROL_CORS_ORIGINS: ${AGENT_CONTROL_CORS_ORIGINS:-http://localhost:8000}
+    depends_on:
+      agent-control-db:
+        condition: service_healthy
+    logging: *logging
+
 volumes:
   db:
   caddy:
   backups:
+  agent_control_pgdata:

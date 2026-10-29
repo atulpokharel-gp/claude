@@ -1,0 +1,3 @@
+{
+  "defaultJudge": { "providerId": "prov_openai", "model": "gpt-4o" }
+}

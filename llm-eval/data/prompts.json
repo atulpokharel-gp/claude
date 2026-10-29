@@ -1,0 +1,61 @@
+[
+  {
+    "id": "prm_sum",
+    "title": "Two-step word problem",
+    "category": "reasoning",
+    "rubric": "0 = wrong final number\n1 = right approach, arithmetic slip\n2 = correct answer, thin explanation\n3 = correct answer with clear, concise working",
+    "messages": [
+      { "role": "user", "content": "A train leaves at 09:15 and arrives at 13:40. It stopped twice for 8 minutes each. How many minutes was it actually moving? Show your working and give the final number." }
+    ],
+    "tools": null,
+    "toolResponses": null
+  },
+  {
+    "id": "prm_json",
+    "title": "Strict JSON extraction",
+    "category": "format",
+    "rubric": "0 = not valid JSON\n1 = valid JSON, wrong fields\n2 = correct fields, extra prose around it\n3 = exactly the requested JSON, nothing else",
+    "messages": [
+      { "role": "user", "content": "Extract name and age as JSON with keys \"name\" and \"age\". Text: 'Dana is 34 and lives in Oslo.' Return only the JSON object." }
+    ],
+    "tools": null,
+    "toolResponses": null
+  },
+  {
+    "id": "prm_multiturn",
+    "title": "Multi-turn follow-up",
+    "category": "conversation",
+    "rubric": "0 = ignores the correction\n1 = acknowledges but repeats error\n2 = corrects with minor issues\n3 = cleanly incorporates the correction",
+    "messages": [
+      { "role": "user", "content": "Suggest a name for a privacy-first note-taking app." },
+      { "role": "assistant", "content": "How about \"CloudNotes\"?" },
+      { "role": "user", "content": "That implies the opposite of privacy. Try again with something that signals local-only storage." }
+    ],
+    "tools": null,
+    "toolResponses": null
+  },
+  {
+    "id": "prm_tool",
+    "title": "Tool use: weather lookup",
+    "category": "tools",
+    "rubric": "0 = no tool call\n1 = wrong arguments\n2 = correct call, weak final answer\n3 = correct call and a clear answer using the tool result",
+    "messages": [
+      { "role": "user", "content": "What is the temperature in Paris right now? Use the get_weather tool, then answer in one sentence." }
+    ],
+    "tools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "get_weather",
+          "description": "Get the current temperature for a city",
+          "parameters": {
+            "type": "object",
+            "properties": { "city": { "type": "string" } },
+            "required": ["city"]
+          }
+        }
+      }
+    ],
+    "toolResponses": { "get_weather": { "city": "Paris", "temp_c": 14, "conditions": "cloudy" } }
+  }
+]

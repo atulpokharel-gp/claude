@@ -28,6 +28,8 @@ export const AUDIT_ACTIONS = {
   client_viewer_joined: "Client viewer joined",
   microsoft_linked: "Linked a Microsoft account",
   microsoft_unlinked: "Unlinked a Microsoft account",
+  google_linked: "Linked a Google account",
+  google_unlinked: "Unlinked a Google account",
   remediation_proposed: "Proposed a remediation",
   remediation_approved: "Approved a remediation",
   remediation_rejected: "Rejected a remediation",
