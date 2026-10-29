@@ -5,15 +5,17 @@ import { requireViewer } from "@/lib/session.ts";
 import { ChangePassword, EmailPrefsForm, TwoFactor } from "@/app/(console)/app/settings/SettingsForms.tsx";
 import { SessionsPanel } from "@/components/SessionsPanel.tsx";
 import { MicrosoftLinkPanel } from "@/components/MicrosoftLinkPanel.tsx";
-import { getMicrosoftLink } from "@/lib/identities.ts";
+import { GoogleLinkPanel } from "@/components/GoogleLinkPanel.tsx";
+import { getGoogleLink, getMicrosoftLink } from "@/lib/identities.ts";
 import { hasSso } from "@/lib/microsoft-sso.ts";
+import { hasGoogleSso } from "@/lib/google-sso.ts";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Your account" };
 
 export default async function PortalAccount({ searchParams }: { searchParams: Promise<{ sso?: string }> }) {
   const s = await requireViewer({ mfaSetup: true });
-  const [sessions, prefs, msLink] = await Promise.all([listSessions(s), getEmailPrefs(s.mspId, s.userId), getMicrosoftLink(s)]);
+  const [sessions, prefs, msLink, gLink] = await Promise.all([listSessions(s), getEmailPrefs(s.mspId, s.userId), getMicrosoftLink(s), getGoogleLink(s)]);
   const { sso } = await searchParams;
   return (
     <>
@@ -33,6 +35,7 @@ export default async function PortalAccount({ searchParams }: { searchParams: Pr
       </section>
       <SessionsPanel sessions={sessions} />
       <MicrosoftLinkPanel link={msLink} available={hasSso()} notice={sso} />
+      <GoogleLinkPanel link={gLink} available={hasGoogleSso()} notice={sso} />
       <section className="panel">
         <div className="panel-head"><h2>Email</h2></div>
         <div className="panel-body"><EmailPrefsForm alerts={false} weekly={prefs.weekly} viewer /></div>
