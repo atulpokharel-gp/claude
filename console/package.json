@@ -11,6 +11,7 @@
     "test": "node --test --experimental-strip-types lib/*.test.ts scripts/*.test.ts",
     "db:migrate": "node --experimental-strip-types scripts/migrate.ts",
     "db:create-msp": "node --experimental-strip-types scripts/create-msp.ts",
+    "db:create-superadmin": "node --experimental-strip-types scripts/create-superadmin.ts",
     "db:set-plan": "node --experimental-strip-types scripts/set-plan.ts",
     "db:cleanup": "node --experimental-strip-types scripts/cleanup.ts",
     "m365:sync": "node --experimental-strip-types scripts/m365-sync.ts",
