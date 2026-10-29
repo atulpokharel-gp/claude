@@ -9,8 +9,9 @@ const securityHeaders = [
   { key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" },
   {
     key: "Content-Security-Policy",
-    // form-action allows the hop to Microsoft's consent screen.
-    value: "frame-ancestors 'none'; base-uri 'self'; object-src 'none'; form-action 'self' https://login.microsoftonline.com",
+    // form-action allows the hop to the Microsoft and Google consent screens
+    // (the sign-in buttons POST to /api/auth/*/start, which 303-redirects there).
+    value: "frame-ancestors 'none'; base-uri 'self'; object-src 'none'; form-action 'self' https://login.microsoftonline.com https://accounts.google.com",
   },
 ];
 
