@@ -5,6 +5,7 @@ import { audit } from "./audit.ts";
 import { createSession, endAllSessions, type ClientInfo } from "./auth.ts";
 import { decrypt, encrypt } from "./crypto.ts";
 import { lookup, withTenant } from "./db.ts";
+import { consumerDomains } from "./email-domains.ts";
 import { type AccountType, classifyAccount } from "./email-kind.ts";
 import { allow } from "./ratelimit.ts";
 import { hashPassword, newToken, tokenHash, verifyPassword } from "./secrets.ts";
@@ -70,7 +71,7 @@ export async function signUp(input: SignUp, ip: string | null = null): Promise<s
   const name = input.name.trim();
   if (!name || name.length > 200) throw new AccountError("Enter your name.");
   const email = checkEmail(input.email);
-  const accountType = classifyAccount(email);
+  const accountType = classifyAccount(email, await consumerDomains());
   let mspName = input.mspName.trim();
   if (mspName.length > 200) throw new AccountError("That company name is too long.");
   if (accountType === "organization") {

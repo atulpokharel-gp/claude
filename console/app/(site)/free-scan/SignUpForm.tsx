@@ -5,22 +5,25 @@ import { useActionState, useMemo, useState } from "react";
 import { classifyAccount, orgNameFromDomain } from "@/lib/email-kind.ts";
 import { signUpAction } from "./actions.ts";
 
-export function SignUpForm({ partner }: { partner: boolean }) {
+export function SignUpForm({ partner, domains }: { partner: boolean; domains: string[] }) {
   const [state, action, pending] = useActionState(signUpAction, {});
   const v = state.values;
   const [email, setEmail] = useState(v?.email ?? "");
   const [mspName, setMspName] = useState(v?.mspName ?? "");
   const [mspTouched, setMspTouched] = useState(Boolean(v?.mspName));
 
+  // The consumer-domain list comes from the DB (passed by the page); same source the server classifies with.
+  const consumer = useMemo(() => new Set(domains), [domains]);
+  const looksLikeEmail = (s: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
   // Detected only once there's a plausible address, so we don't flash "organization" mid-typing.
-  const kind = useMemo(() => (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? classifyAccount(email) : null), [email]);
+  const kind = useMemo(() => (looksLikeEmail(email) ? classifyAccount(email, consumer) : null), [email, consumer]);
   const isIndividual = kind === "individual";
 
   function onEmail(next: string) {
     setEmail(next);
     if (mspTouched) return;
     // Autofill a company suggestion for org domains; clear it for individuals.
-    const suggestion = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(next) ? orgNameFromDomain(next) : "";
+    const suggestion = looksLikeEmail(next) ? orgNameFromDomain(next, consumer) : "";
     setMspName(suggestion);
   }
 

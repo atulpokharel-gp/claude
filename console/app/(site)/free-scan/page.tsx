@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { hasDatabase } from "@/lib/db.ts";
+import { consumerDomains } from "@/lib/email-domains.ts";
 import { currentSession, homeFor } from "@/lib/session.ts";
 import { SignUpForm } from "./SignUpForm.tsx";
 
@@ -14,6 +15,7 @@ export default async function FreeScan({ searchParams }: { searchParams: Promise
     if (s) redirect(homeFor(s));
   }
   const { partner } = await searchParams;
+  const domains = hasDatabase() ? [...(await consumerDomains())] : [];
   return (
     <section className="section">
       <div className="wrap row">
@@ -49,7 +51,7 @@ export default async function FreeScan({ searchParams }: { searchParams: Promise
             <>
               <h2 className="disp h2" style={{ fontSize: 24, marginBottom: 4 }}>Create your account</h2>
               <p className="small" style={{ marginBottom: 10 }}>Takes about a minute. No card.</p>
-              <SignUpForm partner={partner === "1"} />
+              <SignUpForm partner={partner === "1"} domains={domains} />
             </>
           ) : (
             <p className="body">Sign-up is turned off in this demo. <Link href="/app">Open the demo console</Link> to look around.</p>
