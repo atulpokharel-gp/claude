@@ -34,7 +34,7 @@ jobs:
       console: ${{ steps.names.outputs.console }}
       backup: ${{ steps.names.outputs.backup }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
       - id: names
@@ -63,7 +63,7 @@ jobs:
       contents: read
       packages: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
       - name: Deploy to staging
@@ -89,7 +89,7 @@ jobs:
       contents: read
       packages: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Find this commit's tested images
         id: names
         env:
