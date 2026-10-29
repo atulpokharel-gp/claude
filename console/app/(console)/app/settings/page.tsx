@@ -54,6 +54,7 @@ export default async function Settings({ searchParams }: { searchParams: Promise
               ? ` · up to ${limits.clients} client and ${limits.devices} laptops. Email hello@zinloop.com to upgrade.`
               : " · no client or laptop limits."}
           </p>
+          <p className="muted">Account type: {team.accountType === "individual" ? "Individual" : "Organization"}</p>
         </div>
       </section>
 

@@ -73,7 +73,7 @@ export interface PlatformStats {
   companies: number; users: number; devices: number; scans: number; signups_30d: number; new_companies_30d: number;
 }
 export interface CompanyRow {
-  id: string; name: string; plan: string; created_at: string; users: number; devices: number; last_scan_at: string | null;
+  id: string; name: string; plan: string; account_type: string; created_at: string; users: number; devices: number; last_scan_at: string | null;
 }
 export interface PlatformUserRow {
   id: string; email: string; name: string | null; role: string; msp_id: string; company: string; created_at: string;
@@ -93,7 +93,8 @@ export async function platformStats(): Promise<PlatformStats> {
 export async function listCompanies(): Promise<CompanyRow[]> {
   const rows = (await getPool().query("select * from superadmin_companies()")).rows;
   return rows.map((r) => ({
-    id: r.id, name: r.name, plan: r.plan, created_at: r.created_at?.toISOString?.() ?? String(r.created_at),
+    id: r.id, name: r.name, plan: r.plan, account_type: r.account_type ?? "organization",
+    created_at: r.created_at?.toISOString?.() ?? String(r.created_at),
     users: num(r.users), devices: num(r.devices),
     last_scan_at: r.last_scan_at ? (r.last_scan_at.toISOString?.() ?? String(r.last_scan_at)) : null,
   }));
