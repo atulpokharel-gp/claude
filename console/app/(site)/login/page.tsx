@@ -9,14 +9,15 @@ import { cancelMfaAction } from "./actions.ts";
 import { MFA_COOKIE } from "@/lib/session.ts";
 import { LoginForm, MfaForm } from "./LoginForm.tsx";
 import { hasSso } from "@/lib/microsoft-sso.ts";
+import { hasGoogleSso } from "@/lib/google-sso.ts";
 
 const SSO_NOTICE: Record<string, string> = {
-  "not-linked": "That Microsoft account isn't linked to a Zinloop login yet. Sign in with your password, then link it in your settings.",
-  failed: "Microsoft sign-in didn't work. Try again, or sign in with your password.",
+  "not-linked": "That account isn't linked to a Zinloop login yet. Sign in with your password, then link it in your settings.",
+  failed: "That sign-in didn't work. Try again, or sign in with your password.",
   expired: "That sign-in took too long or was already used. Try again.",
-  cancelled: "Microsoft sign-in was cancelled.",
+  cancelled: "That sign-in was cancelled.",
   limited: "Too many attempts. Wait 15 minutes and try again.",
-  unavailable: "Sign in with Microsoft isn't set up on this server.",
+  unavailable: "That sign-in option isn't set up on this server.",
 };
 
 export const dynamic = "force-dynamic";
@@ -48,6 +49,12 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
               <form method="post" action="/api/auth/microsoft/start" className="sso">
                 <input type="hidden" name="mode" value="signin" />
                 <button type="submit" className="zbtn zbtn-ghost">Sign in with Microsoft</button>
+              </form>
+            )}
+            {hasGoogleSso() && hasAppSecret() && (
+              <form method="post" action="/api/auth/google/start" className="sso">
+                <input type="hidden" name="mode" value="signin" />
+                <button type="submit" className="zbtn zbtn-ghost">Sign in with Google</button>
               </form>
             )}
             <p className="small">New to Zinloop? <Link href="/free-scan">Create a free account</Link></p>

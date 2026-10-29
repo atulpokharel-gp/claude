@@ -16,7 +16,7 @@ test("prompt injection and SQL checks are phase-aware",()=>{
   assert.equal(evaluateControls(rules,"input","Normal text").decision,"allow");
 });
 test("unsafe regex patterns rejected",()=>{
-  assert.throws(()=>validateControl("regex",{pattern:"(a+)+"}),/simple patterns/);
+  assert.throws(()=>validateControl("regex",{pattern:"(a+)+"}),/literal text/);
   assert.equal(evaluateControls([{id:"x",name:"pattern",phase:"all",evaluator:"regex",effect:"block",config:{pattern:"forbidden"}}],"input","forbidden document").decision,"block");
 });
 test("JSON key controls check top-level properties",()=>{

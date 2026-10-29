@@ -1,15 +1,19 @@
 import Link from "next/link";
-import { FindingCard } from "@/components/site/FindingCard.tsx";
+import { ScanConsole } from "@/components/site/ScanConsole.tsx";
 import { CtaBand } from "@/components/site/CtaBand.tsx";
 
 export default function Home() {
   return (
     <>
-      <section className="section hero">
-        <div className="wrap row center">
+      {/* Product-forward dark hero: the scan is the hero. */}
+      <section className="hero-dark">
+        <div className="hero-glow" aria-hidden="true" />
+        <div className="wrap row center hero-grid">
           <div className="col stack" style={{ gap: 24, flexBasis: 520 }}>
             <p className="eyebrow">For managed service providers</p>
-            <h1 className="disp h1">See every AI connector your clients&apos; staff plugged in.</h1>
+            <h1 className="disp h1">
+              See every AI connector your clients&apos; staff plugged in<span className="accent">.</span>
+            </h1>
             <p className="lead">
               Zinloop finds AI assistants and MCP connectors across your clients&apos; laptops, flags the ones with
               passwords in plain text, and shows you a plain-English report in one console. Read-only until you decide
@@ -25,9 +29,19 @@ export default function Home() {
               <li><b>Keys stay local</b><span>Values are masked on the laptop before sending</span></li>
             </ul>
           </div>
-          <div className="col" style={{ flexBasis: 440 }}>
-            <FindingCard />
+          <div className="col" style={{ flexBasis: 460 }}>
+            <ScanConsole />
           </div>
+        </div>
+
+        {/* Live-readout strip: what one scan surfaces. */}
+        <div className="wrap">
+          <ul className="readout" aria-label="What one scan surfaces">
+            <li><b>11</b><span>AI connectors found on a typical laptop</span></li>
+            <li><b className="hot">9</b><span>high-risk, with a one-command fix</span></li>
+            <li><b>3</b><span>apps checked: Claude, Cursor, VS Code</span></li>
+            <li><b>0</b><span>key values ever sent to us</span></li>
+          </ul>
         </div>
       </section>
 
@@ -105,7 +119,7 @@ export default function Home() {
             </p>
             <p><Link href="/msps">See the partner program →</Link></p>
           </div>
-          <div className="col card strong">
+          <div className="col card lifted">
             <p className="eyebrow">Margin example · 50-laptop client</p>
             <div className="money">
               <span>Your cost</span><span className="r">$100 / month</span>

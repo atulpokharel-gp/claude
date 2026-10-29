@@ -78,6 +78,15 @@ export class ZinloopAgent {
   async claim(taskId?:string){
     return this.runtime<{task:{id:string;title:string;description:string;budgetUsd:number;preferredModel:string}|null}>({action:"claim",taskId});
   }
+  async tasks(){
+    return this.runtime<{tasks:{id:string;title:string;status:string;claimedBy:string|null;preferredModel:string;budgetUsd:number}[]}>({action:"tasks"});
+  }
+  async heartbeat(taskId:string){
+    return this.runtime<{ok:boolean;leaseMinutes:number}>({action:"heartbeat",taskId});
+  }
+  async finish(taskId:string,status:"done"|"failed"="done"){
+    return this.runtime<{ok:boolean;status:string}>({action:"finish",taskId,status});
+  }
   async message(taskId:string,body:string,kind:"progress"|"handoff"|"result"|"question"="progress"){
     return this.runtime<{messageId:string}>({action:"message",taskId,body,kind});
   }

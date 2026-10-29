@@ -9,8 +9,10 @@ import { revokeInviteAction } from "./actions.ts";
 import { ChangePassword, EmailPrefsForm, InviteForm, RemoveMember, RequireMfa, TwoFactor } from "./SettingsForms.tsx";
 import { SessionsPanel } from "@/components/SessionsPanel.tsx";
 import { MicrosoftLinkPanel } from "@/components/MicrosoftLinkPanel.tsx";
-import { getMicrosoftLink } from "@/lib/identities.ts";
+import { GoogleLinkPanel } from "@/components/GoogleLinkPanel.tsx";
+import { getGoogleLink, getMicrosoftLink } from "@/lib/identities.ts";
 import { hasSso } from "@/lib/microsoft-sso.ts";
+import { hasGoogleSso } from "@/lib/google-sso.ts";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Settings" };
@@ -21,7 +23,7 @@ export default async function Settings({ searchParams }: { searchParams: Promise
   if (!hasDatabase()) redirect("/app");
   const s = await requireSession({ mfaSetup: true });
   const sp = await searchParams;
-  const [team, sessions, prefs, msLink] = await Promise.all([getTeam(s.mspId), listSessions(s), getEmailPrefs(s.mspId, s.userId), getMicrosoftLink(s)]);
+  const [team, sessions, prefs, msLink, gLink] = await Promise.all([getTeam(s.mspId), listSessions(s), getEmailPrefs(s.mspId, s.userId), getMicrosoftLink(s), getGoogleLink(s)]);
   const isOwner = s.role === "owner";
   const me = team.members.find((m) => m.id === s.userId);
   const limits = PLAN_LIMITS[team.plan];
@@ -69,6 +71,7 @@ export default async function Settings({ searchParams }: { searchParams: Promise
 
       <SessionsPanel sessions={sessions} />
       <MicrosoftLinkPanel link={msLink} available={hasSso()} notice={sp.sso} />
+      <GoogleLinkPanel link={gLink} available={hasGoogleSso()} notice={sp.sso} />
 
       <section className="panel">
         <div className="panel-head"><h2>Email</h2></div>

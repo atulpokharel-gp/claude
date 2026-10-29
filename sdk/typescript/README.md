@@ -48,12 +48,15 @@ Decorator-style wrapping of existing tool calls:
 
 Shared task channel:
 
+    const {tasks} = await agent.tasks(); // discover eligible tasks
     const {task} = await agent.claim();
     if (task) {
       await agent.message(task.id, "Schema reviewed; assigning tests.", "handoff");
       const {messages} = await agent.poll(task.id);
       const cursor = Number(messages.at(-1)?.id || 0);
       await agent.poll(task.id, cursor);
+      await agent.heartbeat(task.id); // renew the 15-minute lease
+      await agent.finish(task.id, "done");
     }
 
 Additional locally enforced evaluator:
@@ -74,7 +77,7 @@ Optional OpenTelemetry: supply an onTelemetry callback to construct spans using 
 
 - POST /api/control-plane/register with {enrollmentToken,name,framework}.
 - POST /api/control-plane/runtime with Authorization: Bearer zla_... and actions:
-  evaluate (phase, content), reserve (maxUsd, requestedModel, taskId), settle (reservationId, actualUsd, status), claim (taskId), message (taskId, kind, body), poll (taskId, after).
+  evaluate (phase, content), reserve (maxUsd, requestedModel, taskId), settle (reservationId, actualUsd, status), claim (taskId), tasks, heartbeat (taskId), finish (taskId, status), message (taskId, kind, body), poll (taskId, after).
 
 ## Explicit v1 limitations
 

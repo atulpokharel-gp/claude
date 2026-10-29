@@ -17,8 +17,8 @@ export function validateControl(evaluator: Evaluator, config:Record<string,unkno
   if (JSON.stringify(config).length>4000) throw Error("Control configuration is too large");
   if(evaluator==="regex"){
     const pattern=textValue(config.pattern);
-    if(!pattern||pattern.length>160 || /[()[\]{}\\]/.test(pattern) || /\*\*|\+\+|\*\+|\+\*/.test(pattern))
-      throw Error("Regex v1 supports simple patterns only (no groups, escapes, character classes or repetition nesting).");
+    if(!pattern||pattern.length>160 || /[()[\]{}\\*+?|]/.test(pattern))
+      throw Error("Regex v1 supports literal text with anchors and dots only; no groups, quantifiers, alternatives or escapes.");
     try {new RegExp(pattern,"i");}catch{throw Error("Invalid regex");}
   }
   if(evaluator==="list" && (!stringList(config.terms).length || stringList(config.terms).some(x=>x.length>100))) throw Error("List needs 1–150 terms, each <=100 characters.");

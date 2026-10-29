@@ -15,7 +15,7 @@ import {
   startTotp,
 } from "@/lib/accounts.ts";
 import { endOtherSessions } from "@/lib/auth.ts";
-import { unlinkMicrosoft } from "@/lib/identities.ts";
+import { unlinkGoogle, unlinkMicrosoft } from "@/lib/identities.ts";
 import { requestInfo } from "@/lib/request-audit.ts";
 import { hasAppSecret } from "@/lib/crypto.ts";
 import { requireSession, setSessionCookie } from "@/lib/session.ts";
@@ -148,5 +148,11 @@ export async function emailPrefsAction(_prev: FormState, form: FormData): Promis
 export async function unlinkMicrosoftAction(): Promise<void> {
   const s = await requireSession({ viewer: true, mfaSetup: true });
   await unlinkMicrosoft(s, (await requestInfo()).ip);
+  refreshAccount();
+}
+
+export async function unlinkGoogleAction(): Promise<void> {
+  const s = await requireSession({ viewer: true, mfaSetup: true });
+  await unlinkGoogle(s, (await requestInfo()).ip);
   refreshAccount();
 }

@@ -1,5 +1,5 @@
 import { hasDatabase } from "@/lib/db.ts";
-import { authenticateAgent, evaluate, reserve, settle, claimTask, sendMessage, pollChannel, CpError } from "@/lib/cp-core.ts";
+import { authenticateAgent, evaluate, reserve, settle, claimTask, sendMessage, pollChannel, listTasks, heartbeatTask, finishTask, CpError } from "@/lib/cp-core.ts";
 import type { Phase } from "@/lib/cp-rules.ts";
 export const runtime="nodejs";
 export const dynamic="force-dynamic";
@@ -29,6 +29,9 @@ export async function POST(req:Request){
     if(action==="settle")return respond(200,await settle(principal,String(x.reservationId||""),x.actualUsd,
       x.status==="cancelled"?"cancelled":"completed"));
     if(action==="claim")return respond(200,{task:await claimTask(principal,typeof x.taskId==="string"?x.taskId:undefined)});
+    if(action==="tasks")return respond(200,await listTasks(principal));
+    if(action==="heartbeat")return respond(200,await heartbeatTask(principal,String(x.taskId||"")));
+    if(action==="finish")return respond(200,await finishTask(principal,String(x.taskId||""),x.status==="failed"?"failed":"done"));
     if(action==="message")return respond(200,await sendMessage(principal,{
       taskId:String(x.taskId||""),kind:String(x.kind||"progress"),body:String(x.body||"")
     }));

@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import Script from "next/script";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -20,11 +19,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body>
         {children}
-        <Script
-          src="https://www.smart365guide.com/sdk/smart365guide.js"
-          data-license-key="lk_8o4Qz7XxuRw0nQZmD71N4SocRPO3xuqikaoVakgK9tmVfCSBhW2YhOEEiSBMbDK7AHlq9P4zue8gx4FU1pbprBrN1Z6wzzTHQtKS14axK-57cJHqp-ShBrkytANwHZRHZeL5752myOYKD1hQfIY8Uv8z-8N9P_j684IAF-vmOX0Pb_CYbABQ"
-          strategy="afterInteractive"
-        />
+        {/* Smart365Guide SDK removed for now (CORS-failed on localhost). */}
       </body>
     </html>
   );
