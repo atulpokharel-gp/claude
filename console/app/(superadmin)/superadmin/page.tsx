@@ -44,13 +44,14 @@ export default async function SuperadminDashboard() {
       <div className="sa-card">
         <table>
           <thead>
-            <tr><th>Company</th><th>Plan</th><th className="num">Users</th><th className="num">Devices</th><th>Last scan</th><th>Created</th></tr>
+            <tr><th>Company</th><th>Type</th><th>Plan</th><th className="num">Users</th><th className="num">Devices</th><th>Last scan</th><th>Created</th></tr>
           </thead>
           <tbody>
-            {companies.length === 0 && <tr><td colSpan={6} className="muted">No companies yet.</td></tr>}
+            {companies.length === 0 && <tr><td colSpan={7} className="muted">No companies yet.</td></tr>}
             {companies.map((c) => (
               <tr key={c.id}>
                 <td>{c.name}</td>
+                <td><span className="pill">{c.account_type === "individual" ? "Individual" : "Organization"}</span></td>
                 <td><span className="pill">{c.plan}</span></td>
                 <td className="num">{c.users}</td>
                 <td className="num">{c.devices}</td>

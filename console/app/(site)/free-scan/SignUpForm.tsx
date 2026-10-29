@@ -1,12 +1,29 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState } from "react";
+import { useActionState, useMemo, useState } from "react";
+import { classifyAccount, orgNameFromDomain } from "@/lib/email-kind.ts";
 import { signUpAction } from "./actions.ts";
 
 export function SignUpForm({ partner }: { partner: boolean }) {
   const [state, action, pending] = useActionState(signUpAction, {});
   const v = state.values;
+  const [email, setEmail] = useState(v?.email ?? "");
+  const [mspName, setMspName] = useState(v?.mspName ?? "");
+  const [mspTouched, setMspTouched] = useState(Boolean(v?.mspName));
+
+  // Detected only once there's a plausible address, so we don't flash "organization" mid-typing.
+  const kind = useMemo(() => (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? classifyAccount(email) : null), [email]);
+  const isIndividual = kind === "individual";
+
+  function onEmail(next: string) {
+    setEmail(next);
+    if (mspTouched) return;
+    // Autofill a company suggestion for org domains; clear it for individuals.
+    const suggestion = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(next) ? orgNameFromDomain(next) : "";
+    setMspName(suggestion);
+  }
+
   return (
     <form action={action} className="zform" key={state.error}>
       <div className="zfield">
@@ -14,12 +31,25 @@ export function SignUpForm({ partner }: { partner: boolean }) {
         <input id="name" name="name" autoComplete="name" required defaultValue={v?.name} />
       </div>
       <div className="zfield">
-        <label htmlFor="mspName">Company name</label>
-        <input id="mspName" name="mspName" autoComplete="organization" required defaultValue={v?.mspName} />
+        <label htmlFor="email">Work email</label>
+        <input id="email" name="email" type="email" autoComplete="email" required value={email} onChange={(e) => onEmail(e.target.value)} />
+        {kind && (
+          <span className="hint">
+            {isIndividual ? "We'll set this up as an individual account." : "We'll set this up as an organization account."}
+          </span>
+        )}
       </div>
       <div className="zfield">
-        <label htmlFor="email">Work email</label>
-        <input id="email" name="email" type="email" autoComplete="email" required defaultValue={v?.email} />
+        <label htmlFor="mspName">{isIndividual ? "Company name (optional)" : "Company name"}</label>
+        <input
+          id="mspName"
+          name="mspName"
+          autoComplete="organization"
+          required={!isIndividual}
+          value={mspName}
+          onChange={(e) => { setMspName(e.target.value); setMspTouched(true); }}
+          placeholder={isIndividual ? "Leave blank for a personal account" : ""}
+        />
       </div>
       <div className="zfield">
         <label htmlFor="clients">Number of clients you manage</label>

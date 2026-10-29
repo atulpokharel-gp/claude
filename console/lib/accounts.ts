@@ -5,6 +5,7 @@ import { audit } from "./audit.ts";
 import { createSession, endAllSessions, type ClientInfo } from "./auth.ts";
 import { decrypt, encrypt } from "./crypto.ts";
 import { lookup, withTenant } from "./db.ts";
+import { type AccountType, classifyAccount } from "./email-kind.ts";
 import { allow } from "./ratelimit.ts";
 import { hashPassword, newToken, tokenHash, verifyPassword } from "./secrets.ts";
 import { checkCode, newTotpSecret } from "./totp.ts";
@@ -58,13 +59,25 @@ export interface SignUp {
   wantsPartner?: boolean;
 }
 
-/** Creates an MSP on the free plan and its owner, and signs them in. Returns a session token. */
+/**
+ * Creates an MSP on the free plan and its owner, and signs them in. The account
+ * type is derived from the email: a free/consumer mailbox (gmail, outlook, …)
+ * signs up as an "individual" and doesn't need a company name (their own name is
+ * used); a company domain signs up as an "organization" and does. Returns a
+ * session token.
+ */
 export async function signUp(input: SignUp, ip: string | null = null): Promise<string> {
   const name = input.name.trim();
-  const mspName = input.mspName.trim();
   if (!name || name.length > 200) throw new AccountError("Enter your name.");
-  if (!mspName || mspName.length > 200) throw new AccountError("Enter your company's name.");
   const email = checkEmail(input.email);
+  const accountType = classifyAccount(email);
+  let mspName = input.mspName.trim();
+  if (mspName.length > 200) throw new AccountError("That company name is too long.");
+  if (accountType === "organization") {
+    if (!mspName) throw new AccountError("Enter your company's name.");
+  } else if (!mspName) {
+    mspName = name; // Individual: company name is optional, fall back to their own name.
+  }
   checkPassword(input.password);
   if (ip && !(await allow("signUpIp", ip))) throw new AccountError("Too many sign-ups from your network. Try again in an hour.");
   const estimate = Math.min(Math.max(Math.floor(Number(input.clientEstimate) || 0), 0), 100_000);
@@ -73,17 +86,18 @@ export async function signUp(input: SignUp, ip: string | null = null): Promise<s
   const hash = await hashPassword(input.password);
   try {
     await withTenant(mspId, async (db) => {
-      await db.query("insert into msps (id, name, client_estimate, wants_partner) values ($1, $2, $3, $4)", [
+      await db.query("insert into msps (id, name, client_estimate, wants_partner, account_type) values ($1, $2, $3, $4, $5)", [
         mspId,
         mspName,
         estimate,
         Boolean(input.wantsPartner),
+        accountType,
       ]);
       await db.query(
         "insert into users (id, msp_id, email, password_hash, name, role) values ($1, $2, $3, $4, $5, 'owner')",
         [userId, mspId, email, hash, name],
       );
-      await audit(mspId, { userId, email, ip }, "signed_up", mspName, {}, db);
+      await audit(mspId, { userId, email, ip }, "signed_up", mspName, { accountType }, db);
     });
   } catch (err) {
     if (isUniqueViolation(err)) throw new AccountError("There's already an account for that email. Sign in instead.");
@@ -111,6 +125,7 @@ export interface PendingInvite {
 
 export interface Team {
   plan: Plan;
+  accountType: AccountType;
   requireMfa: boolean;
   members: Member[];
   invites: PendingInvite[];
@@ -118,7 +133,7 @@ export interface Team {
 
 export async function getTeam(mspId: string): Promise<Team> {
   return withTenant(mspId, async (db) => {
-    const msp = (await db.query<{ plan: Plan; require_mfa: boolean }>("select plan, require_mfa from msps")).rows[0];
+    const msp = (await db.query<{ plan: Plan; require_mfa: boolean; account_type: AccountType }>("select plan, require_mfa, account_type from msps")).rows[0];
     const plan = msp?.plan ?? "free";
     const members = (
       await db.query<{ id: string; name: string; email: string; role: TeamRole; mfa: boolean; created_at: Date }>(
@@ -130,7 +145,7 @@ export async function getTeam(mspId: string): Promise<Team> {
         "select id, email, expires_at from invites where role in ('member', 'technician') and accepted_at is null and expires_at > now() order by created_at",
       )
     ).rows.map((i) => ({ id: i.id, email: i.email, expiresAt: i.expires_at.toISOString() }));
-    return { plan, requireMfa: Boolean(msp?.require_mfa), members, invites };
+    return { plan, accountType: msp?.account_type ?? "organization", requireMfa: Boolean(msp?.require_mfa), members, invites };
   });
 }
 
