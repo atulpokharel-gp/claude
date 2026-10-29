@@ -9,8 +9,16 @@ server (Apache-2.0) runs as two services in the root `docker-compose.yml`:
   (`agent_control_pgdata`), separate from the tenant `db` so none of its tables
   touch Zinloop's RLS-protected data.
 
-It comes up with everything else on `docker compose up -d`, and the production
-deploy pulls and starts it like the other services.
+Both sit behind the **`agent-control` compose profile**, so a normal
+`docker compose up -d` (and the staging/production deploy) leaves them off. They
+start only where an operator opts in — so merging this never breaks a deploy that
+hasn't set the secrets yet.
+
+Enable it:
+
+- Locally: `docker compose --profile agent-control up -d`
+- On a server: add `COMPOSE_PROFILES=agent-control` to that server's `.env` (plus
+  the secrets below). The next deploy then brings it up with the rest of the stack.
 
 ## Config
 

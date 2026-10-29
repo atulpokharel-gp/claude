@@ -64,7 +64,7 @@ rollback() {
 export CONSOLE_IMAGE="$new_console" BACKUP_IMAGE="$new_backup"
 if [ "${SKIP_PULL:-}" != 1 ]; then
   log "pulling $new_console and $new_backup"
-  docker compose pull --quiet migrate console maintenance backup agent-control
+  docker compose pull --quiet migrate console maintenance backup
 fi
 
 log "starting the database"
