@@ -26,6 +26,7 @@ import {
   listClientViewers,
   removeClientViewer,
   removeMember,
+  revokeInvite,
   getEmailPrefs,
   setEmailPrefs,
   unsubscribe,
@@ -505,15 +506,22 @@ describe("database", { skip: !adminUrl && "set TEST_DATABASE_ADMIN_URL to run" }
     const token = await createUploadToken(s.mspId, clientId, "");
     await ingestScan(token, sample);
     let mail = await outbox();
-    assert.deepEqual(mail.map((m) => [m.kind, m.to_email]), [["alert", "owner@mail.example"]], "only the team member with alerts on; never viewers");
-    assert.match(mail[0].subject, /new high-risk AI tool problems at Mail Co/);
-    assert.match(mail[0].body_text, /https:\/\/app\.example\/app\/clients\//);
-    assert.ok(mail[0].unsubscribe_url.startsWith("https://app.example/unsubscribe?t="));
+    // Inviting the two people above emailed each a one-time join link (no unsubscribe).
+    assert.deepEqual(mail.filter((m) => m.kind === "invite").map((m) => m.to_email).sort(), ["boss@mailco.example", "quiet@mail.example"]);
+    const inviteRow = mail.find((m) => m.kind === "invite" && m.to_email === "boss@mailco.example")!;
+    assert.match(inviteRow.body_text, /https:\/\/app\.example\/join\//);
+    assert.equal(inviteRow.unsubscribe_url, "", "invites are transactional: no unsubscribe");
+    // The scan's new high-risk tools alert the team member with alerts on; never viewers.
+    assert.deepEqual(mail.filter((m) => m.kind === "alert").map((m) => m.to_email), ["owner@mail.example"]);
+    const alertRow = mail.find((m) => m.kind === "alert")!;
+    assert.match(alertRow.subject, /new high-risk AI tool problems at Mail Co/);
+    assert.match(alertRow.body_text, /https:\/\/app\.example\/app\/clients\//);
+    assert.ok(alertRow.unsubscribe_url.startsWith("https://app.example/unsubscribe?t="));
 
-    // The same findings again: no new email. Checking twice at once: still one.
+    // The same findings again: no new alert. Checking twice at once: still one.
     await ingestScan(token, sample);
     await Promise.all([checkAlerts(s.mspId, clientId), checkAlerts(s.mspId, clientId)]);
-    assert.equal((await outbox()).length, 1);
+    assert.equal((await outbox()).filter((m) => m.kind === "alert").length, 1);
     // Viewers can't read the outbox.
     assert.equal((await withTenant({ mspId: s.mspId, clientId }, (db) => db.query("select * from outbox"))).rowCount, 0);
 
@@ -540,10 +548,11 @@ describe("database", { skip: !adminUrl && "set TEST_DATABASE_ADMIN_URL to run" }
     const admin = new pg.Client({ connectionString: ownerUrl });
     await admin.connect();
     await admin.query("update outbox set next_try_at = now()");
-    const pending = Number((await admin.query("select count(*) from outbox where sent_at is null")).rows[0].count);
+    // The accepted invites' emails stay queued but are never delivered, so count the rest.
+    const pending = Number((await admin.query("select count(*) from outbox where sent_at is null and kind <> 'invite'")).rows[0].count);
     const r2 = await sendPending(ownerUrl, ok, "Zinloop <alerts@zinloop.example>");
     assert.equal(r2.sent, pending);
-    assert.equal(Number((await admin.query("select count(*) from outbox where sent_at is null")).rows[0].count), 0);
+    assert.equal(Number((await admin.query("select count(*) from outbox where sent_at is null and kind <> 'invite'")).rows[0].count), 0);
     await admin.end();
     const alert = sent.find((m) => m.subject.includes("Mail Co") && m.to === "owner@mail.example" && !m.subject.startsWith("Weekly"))!;
     assert.match(alert.headers!["List-Unsubscribe"], /^<https:\/\/app\.example\/api\/unsubscribe\?t=/);
@@ -555,7 +564,7 @@ describe("database", { skip: !adminUrl && "set TEST_DATABASE_ADMIN_URL to run" }
       db.query("insert into outbox (msp_id, dedupe_key, kind, user_id, to_email, subject, body_text, body_html) values ($1, 'test:leaver', 'weekly', $2, 'leaver@mail.example', 's', 't', 'h')", [s.mspId, gone.userId]),
     );
     await removeMember(s.mspId, s.userId, gone.userId);
-    assert.ok(!(await outbox()).some((m) => m.to_email === "leaver@mail.example"));
+    assert.ok(!(await outbox()).some((m) => m.to_email === "leaver@mail.example" && m.kind === "weekly"), "removing a member drops their unsent team mail");
 
     // Unsubscribe turns off one kind of email for that person only.
     assert.equal(await unsubscribe(viewer.userId, "weekly"), "boss@mailco.example");
@@ -575,6 +584,24 @@ describe("database", { skip: !adminUrl && "set TEST_DATABASE_ADMIN_URL to run" }
     assert.equal((await sendPending(ownerUrl, ok, "Zinloop <alerts@zinloop.example>")).sent, 1);
     assert.deepEqual(sent.map((m) => m.subject), ["still wanted"]);
     assert.ok(!(await outbox()).some((m) => m.subject === "late weekly"), "dropped, not just skipped");
+
+    // An invite is emailed to the invitee, who has no account yet, and is sent
+    // regardless of the alert/weekly preferences and with no unsubscribe header.
+    sent.length = 0;
+    await createInvite(s.mspId, s.userId, "newhire@mail.example");
+    const queuedInvite = (await outbox()).find((m) => m.to_email === "newhire@mail.example" && m.kind === "invite")!;
+    assert.ok(queuedInvite, "the invite link was queued");
+    assert.match(queuedInvite.body_text, /https:\/\/app\.example\/join\//);
+    assert.equal((await sendPending(ownerUrl, ok, "Zinloop <alerts@zinloop.example>")).sent, 1);
+    assert.deepEqual(sent.map((m) => m.to), ["newhire@mail.example"]);
+    assert.ok(!sent[0].headers?.["List-Unsubscribe"], "invites carry no unsubscribe header");
+
+    // Revoking an invite drops its unsent email (the outbox row cascades away).
+    await createInvite(s.mspId, s.userId, "temp@mail.example");
+    const tempInvite = (await getTeam(s.mspId)).invites.find((v) => v.email === "temp@mail.example")!;
+    assert.ok((await outbox()).some((m) => m.to_email === "temp@mail.example"));
+    await revokeInvite(s.mspId, s.userId, tempInvite.id);
+    assert.ok(!(await outbox()).some((m) => m.to_email === "temp@mail.example"), "revoking drops the queued invite email");
     delete process.env.CONSOLE_URL;
   });
 

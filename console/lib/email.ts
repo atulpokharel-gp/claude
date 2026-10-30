@@ -265,3 +265,37 @@ ${
 ${o.portalUrl ? button(o.portalUrl, "See the full report") : ""}`;
   return { subject, text: text.replace(/\n{3,}/g, "\n\n"), html: page(subject, body, f.html) };
 }
+
+/**
+ * The invite link, emailed to the person being invited. Transactional: no
+ * unsubscribe, since turning it off would mean they couldn't be invited. A
+ * client-viewer invite (clientName set) is worded for an outside client; a
+ * team invite is worded for a teammate.
+ */
+export function inviteEmail(o: {
+  mspName: string;
+  inviterName: string | null;
+  /** Set for a client-viewer invite; null for a team invite. */
+  clientName: string | null;
+  role: "member" | "technician" | "viewer";
+  joinUrl: string;
+  expiresDays: number;
+}): Email {
+  const msp = oneLine(o.mspName, 120) || "your team";
+  const who = o.inviterName ? `${oneLine(o.inviterName, 120)} invited you` : "You've been invited";
+  const viewer = o.role === "viewer";
+  const client = oneLine(o.clientName ?? "", 120);
+  const subject = viewer
+    ? `${msp} shared ${client || "a security report"} with you on Zinloop Security`
+    : `You're invited to join ${msp} on Zinloop Security`;
+  const lead = viewer
+    ? `${who} to see ${client ? `${client}'s` : "your company's"} AI security results. ${msp} checks the AI tools in use with Zinloop Security and has given you a read-only login to the results and reports.`
+    : `${who} to join the ${msp} console on Zinloop Security, where ${msp} checks the AI tools in use across its clients.`;
+  const days = o.expiresDays === 1 ? "1 day" : `${o.expiresDays} days`;
+  const reason = `This link works once and expires in ${days}. If you weren't expecting it, you can ignore this email.`;
+  const text = [lead, "", "Open this link to set your password and sign in:", o.joinUrl, "", "--", reason].join("\n");
+  const body = `<p style="margin:0 0 16px;line-height:1.5;font-size:16px">${esc(lead)}</p>
+${button(o.joinUrl, viewer ? "See the report" : "Join the team")}
+<p style="margin:16px 0 0;font-size:13px;color:#5b6475">Or open this link: <a href="${esc(o.joinUrl)}" style="color:#0f6e6e">${esc(o.joinUrl)}</a></p>`;
+  return { subject: oneLine(subject), text, html: page(viewer ? "You've been given a login" : `Join ${msp}`, body, esc(reason)) };
+}

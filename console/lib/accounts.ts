@@ -7,6 +7,7 @@ import { decrypt, encrypt } from "./crypto.ts";
 import { lookup, withTenant } from "./db.ts";
 import { consumerDomains } from "./email-domains.ts";
 import { type AccountType, classifyAccount } from "./email-kind.ts";
+import { inviteEmail } from "./email.ts";
 import { allow } from "./ratelimit.ts";
 import { hashPassword, newToken, tokenHash, verifyPassword } from "./secrets.ts";
 import { checkCode, newTotpSecret } from "./totp.ts";
@@ -180,13 +181,37 @@ async function makeInvite(mspId: string, invitedBy: string, email: string, ip: s
       if (!c) throw new AccountError("That client wasn't found.");
       clientName = c.name;
     }
-    await db.query(
-      `insert into invites (msp_id, email, token_hash, invited_by, expires_at, role, client_id)
-       values ($1, $2, $3, $4, now() + make_interval(days => $5), $6, $7)`,
-      [mspId, addr, tokenHash(token), invitedBy, INVITE_DAYS, inviteRole, clientId],
-    );
+    const inviteId = (
+      await db.query<{ id: string }>(
+        `insert into invites (msp_id, email, token_hash, invited_by, expires_at, role, client_id)
+         values ($1, $2, $3, $4, now() + make_interval(days => $5), $6, $7) returning id`,
+        [mspId, addr, tokenHash(token), invitedBy, INVITE_DAYS, inviteRole, clientId],
+      )
+    ).rows[0].id;
     if (clientId) await audit(mspId, { ...who, ip }, "client_login_created", addr, { clientId, client: clientName }, db);
     else await audit(mspId, { ...who, ip }, "invite_created", addr, { role: inviteRole }, db);
+
+    // Email the invite link through the outbox (scripts/send-mail.ts delivers
+    // it). Only with CONSOLE_URL set can we build an absolute link; without it
+    // (local dev) the owner uses the copy-link the action shows instead.
+    const base = process.env.CONSOLE_URL?.trim().replace(/\/+$/, "");
+    if (base) {
+      const mspName = (await db.query<{ name: string }>("select name from msps")).rows[0]?.name ?? "";
+      const inviterName = (await db.query<{ name: string }>("select name from users where id = $1", [invitedBy])).rows[0]?.name ?? null;
+      const mail = inviteEmail({
+        mspName,
+        inviterName,
+        clientName: clientId ? clientName : null,
+        role: inviteRole,
+        joinUrl: `${base}/join/${token}`,
+        expiresDays: INVITE_DAYS,
+      });
+      await db.query(
+        `insert into outbox (msp_id, dedupe_key, kind, invite_id, user_id, to_email, subject, body_text, body_html, unsubscribe_url)
+         values ($1, $2, 'invite', $3, null, $4, $5, $6, $7, '') on conflict (dedupe_key) do nothing`,
+        [mspId, `invite:${inviteId}`, inviteId, addr, mail.subject.slice(0, 300), mail.text, mail.html],
+      );
+    }
   });
   return token;
 }

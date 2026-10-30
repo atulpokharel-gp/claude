@@ -6,7 +6,7 @@ import { AccountError, createClientViewerInvite, removeClientViewer, revokeInvit
 import { requestInfo } from "@/lib/request-audit.ts";
 import { requireOwner } from "@/lib/session.ts";
 
-export type ViewerInviteState = { error?: string; link?: string; email?: string };
+export type ViewerInviteState = { error?: string; link?: string; email?: string; emailed?: boolean };
 
 export async function inviteViewerAction(clientId: string, _prev: ViewerInviteState, form: FormData): Promise<ViewerInviteState> {
   const s = await requireOwner();
@@ -16,7 +16,8 @@ export async function inviteViewerAction(clientId: string, _prev: ViewerInviteSt
     const h = await headers();
     const base = process.env.CONSOLE_URL ?? `${h.get("x-forwarded-proto") ?? "https"}://${h.get("host")}`;
     revalidatePath(`/app/clients/${clientId}`);
-    return { link: `${base.replace(/\/+$/, "")}/join/${token}`, email: email.trim().toLowerCase() };
+    const emailed = Boolean(process.env.CONSOLE_URL && process.env.SMTP_URL);
+    return { link: `${base.replace(/\/+$/, "")}/join/${token}`, email: email.trim().toLowerCase(), emailed };
   } catch (err) {
     if (err instanceof AccountError) return { error: err.message, email };
     throw err;
