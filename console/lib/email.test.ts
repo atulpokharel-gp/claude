@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { alertEmail, clientWeeklyEmail, esc, inviteEmail, oneLine, weeklyEmail } from "./email.ts";
+import { alertEmail, clientWeeklyEmail, esc, inviteEmail, oneLine, passwordResetEmail, weeklyEmail } from "./email.ts";
 import { highRiskFindings, weekOf } from "./alerts.ts";
 import type { Agent, Client } from "./types.ts";
 
@@ -80,6 +80,15 @@ test("invite emails carry the join link, no unsubscribe, and can't be injected",
   assert.match(viewer.subject, /^Acme IT shared Contoso with you on Zinloop Security$/);
   assert.match(viewer.text, /expires in 1 day\b/);
   assert.match(viewer.text, /read-only login/);
+});
+
+test("password reset emails carry the single-use link and no unsubscribe", () => {
+  const m = passwordResetEmail({ mspName: "Acme IT", resetUrl: "https://app.example/reset/zlp_tok", expiresMinutes: 60 });
+  assert.equal(m.subject, "Reset your Zinloop Security password");
+  assert.match(m.text, /https:\/\/app\.example\/reset\/zlp_tok/);
+  assert.match(m.text, /works once and expires in 1 hour/);
+  assert.ok(m.html.includes("https://app.example/reset/zlp_tok"));
+  assert.ok(!/unsubscribe/i.test(m.text) && !/unsubscribe/i.test(m.html), "transactional: no unsubscribe");
 });
 
 test("weeks start on Monday (UTC)", () => {

@@ -47,6 +47,7 @@ export async function sendPending(adminUrl: string, transport: Transport, from: 
            where o.sent_at is null and o.attempts < $1 and o.next_try_at <= now()
              and (
                (o.kind = 'invite' and exists (select 1 from invites i where i.id = o.invite_id and i.accepted_at is null and i.expires_at > now()))
+               or (o.kind = 'reset' and exists (select 1 from password_resets r where r.id = o.reset_id and r.used_at is null and r.expires_at > now()))
                or (o.kind in ('alert', 'weekly') and u.id is not null
                    and case o.kind when 'alert' then u.alert_emails when 'weekly' then u.weekly_email else false end)
              )

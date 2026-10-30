@@ -7,7 +7,7 @@ import { decrypt, encrypt } from "./crypto.ts";
 import { lookup, withTenant } from "./db.ts";
 import { consumerDomains } from "./email-domains.ts";
 import { type AccountType, classifyAccount } from "./email-kind.ts";
-import { inviteEmail } from "./email.ts";
+import { inviteEmail, passwordResetEmail } from "./email.ts";
 import { allow } from "./ratelimit.ts";
 import { hashPassword, newToken, tokenHash, verifyPassword } from "./secrets.ts";
 import { checkCode, newTotpSecret } from "./totp.ts";
@@ -366,6 +366,80 @@ export async function changePassword(mspId: string, userId: string, current: str
   // Sign out everywhere else, then give this browser a fresh session.
   await endAllSessions(mspId, userId);
   return createSession(userId, mspId, info);
+}
+
+/** How long a "forgot password" link is good for. */
+export const RESET_MINUTES = 60;
+
+/**
+ * Starts a password reset: if the address has an account, emails a single-use
+ * link that expires in RESET_MINUTES and invalidates any earlier link. Says
+ * nothing either way (the page always shows the same message) so it can't be
+ * used to learn which addresses have accounts. Needs CONSOLE_URL to build the
+ * link; without it (local dev) nothing is sent.
+ */
+export async function requestPasswordReset(email: string, ip: string | null = null): Promise<void> {
+  const addr = email.trim().toLowerCase();
+  if (!EMAIL.test(addr) || addr.length > 320) return;
+  if (!(await allow("passwordReset", addr))) return;
+  if (ip && !(await allow("passwordResetIp", ip))) return;
+  const base = process.env.CONSOLE_URL?.trim().replace(/\/+$/, "");
+  if (!base) return;
+  const user = await lookup<{ user_id: string; msp_id: string }>("select user_id, msp_id from auth_find_user($1)", [addr]);
+  if (!user) return;
+  const token = newToken("zlp");
+  await withTenant(user.msp_id, async (db) => {
+    // Only the newest link works: drop this user's earlier resets (which
+    // cascades their unsent reset emails away).
+    await db.query("delete from password_resets where user_id = $1", [user.user_id]);
+    const resetId = (
+      await db.query<{ id: string }>(
+        "insert into password_resets (msp_id, user_id, token_hash, expires_at) values ($1, $2, $3, now() + make_interval(mins => $4)) returning id",
+        [user.msp_id, user.user_id, tokenHash(token), RESET_MINUTES],
+      )
+    ).rows[0].id;
+    const mspName = (await db.query<{ name: string }>("select name from msps")).rows[0]?.name ?? "";
+    const to = (await db.query<{ email: string }>("select email from users where id = $1", [user.user_id])).rows[0]?.email ?? addr;
+    const mail = passwordResetEmail({ mspName, resetUrl: `${base}/reset/${token}`, expiresMinutes: RESET_MINUTES });
+    await db.query(
+      `insert into outbox (msp_id, dedupe_key, kind, reset_id, user_id, to_email, subject, body_text, body_html, unsubscribe_url)
+       values ($1, $2, 'reset', $3, null, $4, $5, $6, $7, '') on conflict (dedupe_key) do nothing`,
+      [user.msp_id, `reset:${resetId}`, resetId, to, mail.subject.slice(0, 300), mail.text, mail.html],
+    );
+    await audit(user.msp_id, { userId: user.user_id, email: to, ip }, "password_reset_requested", "", {}, db);
+  });
+}
+
+/** What a reset link is for, if it's still valid: whose account it changes. */
+export async function checkResetToken(token: string | undefined): Promise<{ email: string; mspName: string } | null> {
+  if (!token || !token.startsWith("zlp_")) return null;
+  const row = await lookup<{ email: string; msp_name: string }>("select email, msp_name from reset_check($1)", [tokenHash(token)]);
+  return row ? { email: row.email, mspName: row.msp_name } : null;
+}
+
+/**
+ * Sets a new password from a reset link and signs the account out everywhere.
+ * The person then signs in again, so an account with two-factor sign-in still
+ * has to pass it. Never returns a session.
+ */
+export async function resetPassword(token: string, next: string, info: ClientInfo = {}): Promise<void> {
+  const expired = new AccountError("This reset link has expired or was already used. Ask for a new one.");
+  if (!token || !token.startsWith("zlp_")) throw expired;
+  checkPassword(next);
+  const row = await lookup<{ reset_id: string; user_id: string; msp_id: string; email: string }>(
+    "select reset_id, user_id, msp_id, email from reset_check($1)",
+    [tokenHash(token)],
+  );
+  if (!row) throw expired;
+  const hash = await hashPassword(next);
+  await withTenant(row.msp_id, async (db) => {
+    // Consume the token first; if a racing request used it, stop here.
+    const used = await db.query("update password_resets set used_at = now() where id = $1 and used_at is null", [row.reset_id]);
+    if (used.rowCount !== 1) throw expired;
+    await db.query("update users set password_hash = $2 where id = $1", [row.user_id, hash]);
+    await audit(row.msp_id, { userId: row.user_id, email: row.email, ip: info.ip }, "password_reset", "", {}, db);
+  });
+  await endAllSessions(row.msp_id, row.user_id);
 }
 
 /** Starts two-factor setup: stores a new secret (not yet active) and returns it for the QR code. */

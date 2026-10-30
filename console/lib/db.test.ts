@@ -27,6 +27,9 @@ import {
   removeClientViewer,
   removeMember,
   revokeInvite,
+  requestPasswordReset,
+  checkResetToken,
+  resetPassword,
   getEmailPrefs,
   setEmailPrefs,
   unsubscribe,
@@ -602,6 +605,58 @@ describe("database", { skip: !adminUrl && "set TEST_DATABASE_ADMIN_URL to run" }
     assert.ok((await outbox()).some((m) => m.to_email === "temp@mail.example"));
     await revokeInvite(s.mspId, s.userId, tempInvite.id);
     assert.ok(!(await outbox()).some((m) => m.to_email === "temp@mail.example"), "revoking drops the queued invite email");
+    delete process.env.CONSOLE_URL;
+  });
+
+  test("forgot password: a single-use link resets the password and ends sessions", async () => {
+    process.env.CONSOLE_URL = "https://app.example";
+    const ownerToken = await signUp({ name: "Reset Owner", mspName: "Reset IT", email: "reset-owner@mail.example", password: "original password here" });
+    const mspOf = (await checkSession(ownerToken))!.mspId;
+    const resetRows = () =>
+      withTenant(mspOf, async (db) => (await db.query<{ to_email: string; body_text: string }>("select to_email, body_text from outbox where kind = 'reset' order by id")).rows);
+    const tokenIn = (body: string) => body.match(/\/reset\/(zlp_[A-Za-z0-9_-]+)/)![1];
+
+    // Unknown address: nothing queued, and no error (accounts aren't enumerable).
+    await requestPasswordReset("nobody@mail.example");
+    assert.equal((await resetRows()).length, 0);
+
+    // Real address: one reset email with a link that says whose account it is.
+    await requestPasswordReset("reset-owner@mail.example");
+    let rows = await resetRows();
+    assert.deepEqual(rows.map((r) => r.to_email), ["reset-owner@mail.example"]);
+    const token1 = tokenIn(rows[0].body_text);
+    assert.deepEqual(await checkResetToken(token1), { email: "reset-owner@mail.example", mspName: "Reset IT" });
+
+    // Asking again invalidates the first link; only the newest one works.
+    await requestPasswordReset("reset-owner@mail.example");
+    assert.equal(await checkResetToken(token1), null, "the superseded link stops working");
+    rows = await resetRows();
+    assert.equal(rows.length, 1, "the superseded email was dropped too");
+    const token2 = tokenIn(rows[0].body_text);
+
+    await assert.rejects(resetPassword(token2, "short"), /at least 12/);
+
+    // Reset works, signs the account out everywhere, and the new password works.
+    await resetPassword(token2, "a brand new password");
+    assert.equal(await checkSession(ownerToken), null, "the old session ended");
+    assert.equal((await signIn("reset-owner@mail.example", "original password here")).kind, "wrong", "the old password no longer works");
+    assert.equal((await signIn("reset-owner@mail.example", "a brand new password")).kind, "session");
+
+    // The link is single-use.
+    assert.equal(await checkResetToken(token2), null);
+    await assert.rejects(resetPassword(token2, "yet another password"), /expired or was already used/);
+
+    // A reset email is sent whatever the email preferences say, with no unsubscribe.
+    await requestPasswordReset("reset-owner@mail.example");
+    const admin = new pg.Client({ connectionString: ownerUrl });
+    await admin.connect();
+    await admin.query("update outbox set next_try_at = now()");
+    await admin.end();
+    const sent: Mail[] = [];
+    await sendPending(ownerUrl, { sendMail: async (m: Mail) => { sent.push(m); } }, "Zinloop <alerts@zinloop.example>");
+    const delivered = sent.find((m) => m.to === "reset-owner@mail.example" && m.subject.includes("Reset"))!;
+    assert.ok(delivered, "the reset email was delivered");
+    assert.ok(!delivered.headers?.["List-Unsubscribe"], "no unsubscribe header on a reset email");
     delete process.env.CONSOLE_URL;
   });
 

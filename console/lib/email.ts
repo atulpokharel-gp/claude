@@ -299,3 +299,17 @@ ${button(o.joinUrl, viewer ? "See the report" : "Join the team")}
 <p style="margin:16px 0 0;font-size:13px;color:#5b6475">Or open this link: <a href="${esc(o.joinUrl)}" style="color:#0f6e6e">${esc(o.joinUrl)}</a></p>`;
   return { subject: oneLine(subject), text, html: page(viewer ? "You've been given a login" : `Join ${msp}`, body, esc(reason)) };
 }
+
+/** The "forgot password" link, emailed to the account's address. Transactional: single-use, no unsubscribe. */
+export function passwordResetEmail(o: { mspName: string; resetUrl: string; expiresMinutes: number }): Email {
+  const msp = oneLine(o.mspName, 120) || "Zinloop Security";
+  const mins = o.expiresMinutes === 60 ? "1 hour" : `${o.expiresMinutes} minutes`;
+  const subject = "Reset your Zinloop Security password";
+  const lead = `Someone asked to reset the password for your ${msp} login on Zinloop Security. If that was you, set a new password here:`;
+  const reason = `This link works once and expires in ${mins}. If you didn't ask for it, you can ignore this email and your password won't change.`;
+  const text = [lead, "", o.resetUrl, "", "--", reason].join("\n");
+  const body = `<p style="margin:0 0 16px;line-height:1.5;font-size:16px">${esc(lead)}</p>
+${button(o.resetUrl, "Reset password")}
+<p style="margin:16px 0 0;font-size:13px;color:#5b6475">Or open this link: <a href="${esc(o.resetUrl)}" style="color:#0f6e6e">${esc(o.resetUrl)}</a></p>`;
+  return { subject, text, html: page("Reset your password", body, esc(reason)) };
+}

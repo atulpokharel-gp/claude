@@ -23,13 +23,15 @@ const SSO_NOTICE: Record<string, string> = {
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Sign in" };
 
-export default async function LoginPage({ searchParams }: { searchParams: Promise<{ sso?: string }> }) {
+export default async function LoginPage({ searchParams }: { searchParams: Promise<{ sso?: string; reset?: string }> }) {
   if (!hasDatabase()) redirect("/app"); // demo mode has no accounts
   {
     const s = await currentSession({ viewer: true });
     if (s) redirect(homeFor(s));
   }
-  const sso = SSO_NOTICE[(await searchParams).sso ?? ""];
+  const params = await searchParams;
+  const sso = SSO_NOTICE[params.sso ?? ""];
+  const resetDone = params.reset === "1";
   const pending = (await cookies()).get(MFA_COOKIE)?.value;
   const waitingForCode = hasAppSecret() && verifySigned("mfa", pending) !== null;
   return (
@@ -43,8 +45,10 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
           </>
         ) : (
           <>
+            {resetDone && <p className="zok" role="status">Your password has been changed. Sign in with your new password.</p>}
             {sso && <p className="zerror" role="alert">{sso}</p>}
             <LoginForm />
+            <p className="small"><Link href="/forgot">Forgot your password?</Link></p>
             {hasSso() && hasAppSecret() && (
               <form method="post" action="/api/auth/microsoft/start" className="sso">
                 <input type="hidden" name="mode" value="signin" />
