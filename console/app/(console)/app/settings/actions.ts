@@ -81,7 +81,7 @@ export async function changePasswordAction(_prev: FormState, form: FormData): Pr
   return { ok: "Password changed. Other devices have been signed out." };
 }
 
-export type InviteState = FormState & { link?: string; email?: string };
+export type InviteState = FormState & { link?: string; email?: string; emailed?: boolean };
 
 export async function inviteAction(_prev: InviteState, form: FormData): Promise<InviteState> {
   const s = await requireSession();
@@ -91,7 +91,10 @@ export async function inviteAction(_prev: InviteState, form: FormData): Promise<
     const h = await headers();
     const base = process.env.CONSOLE_URL ?? `${h.get("x-forwarded-proto") ?? "https"}://${h.get("host")}`;
     revalidatePath("/app/settings");
-    return { link: `${base.replace(/\/+$/, "")}/join/${token}`, email: email.trim().toLowerCase() };
+    // createInvite queues the email when CONSOLE_URL is set; it actually
+    // leaves the queue only when a mail server is configured too.
+    const emailed = Boolean(process.env.CONSOLE_URL && process.env.SMTP_URL);
+    return { link: `${base.replace(/\/+$/, "")}/join/${token}`, email: email.trim().toLowerCase(), emailed };
   } catch (err) {
     return { ...fail(err), email };
   }

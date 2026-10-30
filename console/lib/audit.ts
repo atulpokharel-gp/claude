@@ -10,6 +10,8 @@ export const AUDIT_ACTIONS = {
   signed_out: "Signed out",
   sessions_ended: "Signed out other devices",
   password_changed: "Changed password",
+  password_reset_requested: "Requested a password reset",
+  password_reset: "Reset their password",
   mfa_enabled: "Turned on two-factor sign-in",
   mfa_disabled: "Turned off two-factor sign-in",
   require_mfa_changed: "Changed the two-factor rule for the team",

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { alertEmail, clientWeeklyEmail, esc, oneLine, weeklyEmail } from "./email.ts";
+import { alertEmail, clientWeeklyEmail, esc, inviteEmail, oneLine, passwordResetEmail, weeklyEmail } from "./email.ts";
 import { highRiskFindings, weekOf } from "./alerts.ts";
 import type { Agent, Client } from "./types.ts";
 
@@ -54,6 +54,41 @@ test("the weekly summary adds up clients and lists the riskiest first", () => {
   });
   assert.match(c.text, /No high-risk AI tools were found this week/);
   assert.match(c.text, /4 of 5/);
+});
+
+test("invite emails carry the join link, no unsubscribe, and can't be injected", () => {
+  const team = inviteEmail({
+    mspName: "Acme\r\nBcc: x@y.example IT",
+    inviterName: "Dana <b>Boss</b>",
+    clientName: null,
+    role: "member",
+    joinUrl: "https://app.example/join/zli_abc",
+    expiresDays: 7,
+  });
+  assert.ok(!/[\r\n]/.test(team.subject), "the subject is one line");
+  assert.match(team.subject, /^You're invited to join Acme Bcc: x@y\.example IT on Zinloop Security$/);
+  assert.match(team.text, /https:\/\/app\.example\/join\/zli_abc/);
+  assert.match(team.text, /works once and expires in 7 days/);
+  assert.ok(team.html.includes("https://app.example/join/zli_abc"));
+  assert.ok(!team.html.includes("<b>Boss</b>"), "inviter name is escaped");
+  assert.ok(!/unsubscribe/i.test(team.text) && !/unsubscribe/i.test(team.html), "transactional: no unsubscribe");
+
+  const viewer = inviteEmail({
+    mspName: "Acme IT", inviterName: null, clientName: "Contoso", role: "viewer",
+    joinUrl: "https://app.example/join/zli_xyz", expiresDays: 1,
+  });
+  assert.match(viewer.subject, /^Acme IT shared Contoso with you on Zinloop Security$/);
+  assert.match(viewer.text, /expires in 1 day\b/);
+  assert.match(viewer.text, /read-only login/);
+});
+
+test("password reset emails carry the single-use link and no unsubscribe", () => {
+  const m = passwordResetEmail({ mspName: "Acme IT", resetUrl: "https://app.example/reset/zlp_tok", expiresMinutes: 60 });
+  assert.equal(m.subject, "Reset your Zinloop Security password");
+  assert.match(m.text, /https:\/\/app\.example\/reset\/zlp_tok/);
+  assert.match(m.text, /works once and expires in 1 hour/);
+  assert.ok(m.html.includes("https://app.example/reset/zlp_tok"));
+  assert.ok(!/unsubscribe/i.test(m.text) && !/unsubscribe/i.test(m.html), "transactional: no unsubscribe");
 });
 
 test("weeks start on Monday (UTC)", () => {

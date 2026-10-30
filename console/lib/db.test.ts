@@ -26,6 +26,10 @@ import {
   listClientViewers,
   removeClientViewer,
   removeMember,
+  revokeInvite,
+  requestPasswordReset,
+  checkResetToken,
+  resetPassword,
   getEmailPrefs,
   setEmailPrefs,
   unsubscribe,
@@ -505,15 +509,22 @@ describe("database", { skip: !adminUrl && "set TEST_DATABASE_ADMIN_URL to run" }
     const token = await createUploadToken(s.mspId, clientId, "");
     await ingestScan(token, sample);
     let mail = await outbox();
-    assert.deepEqual(mail.map((m) => [m.kind, m.to_email]), [["alert", "owner@mail.example"]], "only the team member with alerts on; never viewers");
-    assert.match(mail[0].subject, /new high-risk AI tool problems at Mail Co/);
-    assert.match(mail[0].body_text, /https:\/\/app\.example\/app\/clients\//);
-    assert.ok(mail[0].unsubscribe_url.startsWith("https://app.example/unsubscribe?t="));
+    // Inviting the two people above emailed each a one-time join link (no unsubscribe).
+    assert.deepEqual(mail.filter((m) => m.kind === "invite").map((m) => m.to_email).sort(), ["boss@mailco.example", "quiet@mail.example"]);
+    const inviteRow = mail.find((m) => m.kind === "invite" && m.to_email === "boss@mailco.example")!;
+    assert.match(inviteRow.body_text, /https:\/\/app\.example\/join\//);
+    assert.equal(inviteRow.unsubscribe_url, "", "invites are transactional: no unsubscribe");
+    // The scan's new high-risk tools alert the team member with alerts on; never viewers.
+    assert.deepEqual(mail.filter((m) => m.kind === "alert").map((m) => m.to_email), ["owner@mail.example"]);
+    const alertRow = mail.find((m) => m.kind === "alert")!;
+    assert.match(alertRow.subject, /new high-risk AI tool problems at Mail Co/);
+    assert.match(alertRow.body_text, /https:\/\/app\.example\/app\/clients\//);
+    assert.ok(alertRow.unsubscribe_url.startsWith("https://app.example/unsubscribe?t="));
 
-    // The same findings again: no new email. Checking twice at once: still one.
+    // The same findings again: no new alert. Checking twice at once: still one.
     await ingestScan(token, sample);
     await Promise.all([checkAlerts(s.mspId, clientId), checkAlerts(s.mspId, clientId)]);
-    assert.equal((await outbox()).length, 1);
+    assert.equal((await outbox()).filter((m) => m.kind === "alert").length, 1);
     // Viewers can't read the outbox.
     assert.equal((await withTenant({ mspId: s.mspId, clientId }, (db) => db.query("select * from outbox"))).rowCount, 0);
 
@@ -540,10 +551,11 @@ describe("database", { skip: !adminUrl && "set TEST_DATABASE_ADMIN_URL to run" }
     const admin = new pg.Client({ connectionString: ownerUrl });
     await admin.connect();
     await admin.query("update outbox set next_try_at = now()");
-    const pending = Number((await admin.query("select count(*) from outbox where sent_at is null")).rows[0].count);
+    // The accepted invites' emails stay queued but are never delivered, so count the rest.
+    const pending = Number((await admin.query("select count(*) from outbox where sent_at is null and kind <> 'invite'")).rows[0].count);
     const r2 = await sendPending(ownerUrl, ok, "Zinloop <alerts@zinloop.example>");
     assert.equal(r2.sent, pending);
-    assert.equal(Number((await admin.query("select count(*) from outbox where sent_at is null")).rows[0].count), 0);
+    assert.equal(Number((await admin.query("select count(*) from outbox where sent_at is null and kind <> 'invite'")).rows[0].count), 0);
     await admin.end();
     const alert = sent.find((m) => m.subject.includes("Mail Co") && m.to === "owner@mail.example" && !m.subject.startsWith("Weekly"))!;
     assert.match(alert.headers!["List-Unsubscribe"], /^<https:\/\/app\.example\/api\/unsubscribe\?t=/);
@@ -555,7 +567,7 @@ describe("database", { skip: !adminUrl && "set TEST_DATABASE_ADMIN_URL to run" }
       db.query("insert into outbox (msp_id, dedupe_key, kind, user_id, to_email, subject, body_text, body_html) values ($1, 'test:leaver', 'weekly', $2, 'leaver@mail.example', 's', 't', 'h')", [s.mspId, gone.userId]),
     );
     await removeMember(s.mspId, s.userId, gone.userId);
-    assert.ok(!(await outbox()).some((m) => m.to_email === "leaver@mail.example"));
+    assert.ok(!(await outbox()).some((m) => m.to_email === "leaver@mail.example" && m.kind === "weekly"), "removing a member drops their unsent team mail");
 
     // Unsubscribe turns off one kind of email for that person only.
     assert.equal(await unsubscribe(viewer.userId, "weekly"), "boss@mailco.example");
@@ -575,6 +587,76 @@ describe("database", { skip: !adminUrl && "set TEST_DATABASE_ADMIN_URL to run" }
     assert.equal((await sendPending(ownerUrl, ok, "Zinloop <alerts@zinloop.example>")).sent, 1);
     assert.deepEqual(sent.map((m) => m.subject), ["still wanted"]);
     assert.ok(!(await outbox()).some((m) => m.subject === "late weekly"), "dropped, not just skipped");
+
+    // An invite is emailed to the invitee, who has no account yet, and is sent
+    // regardless of the alert/weekly preferences and with no unsubscribe header.
+    sent.length = 0;
+    await createInvite(s.mspId, s.userId, "newhire@mail.example");
+    const queuedInvite = (await outbox()).find((m) => m.to_email === "newhire@mail.example" && m.kind === "invite")!;
+    assert.ok(queuedInvite, "the invite link was queued");
+    assert.match(queuedInvite.body_text, /https:\/\/app\.example\/join\//);
+    assert.equal((await sendPending(ownerUrl, ok, "Zinloop <alerts@zinloop.example>")).sent, 1);
+    assert.deepEqual(sent.map((m) => m.to), ["newhire@mail.example"]);
+    assert.ok(!sent[0].headers?.["List-Unsubscribe"], "invites carry no unsubscribe header");
+
+    // Revoking an invite drops its unsent email (the outbox row cascades away).
+    await createInvite(s.mspId, s.userId, "temp@mail.example");
+    const tempInvite = (await getTeam(s.mspId)).invites.find((v) => v.email === "temp@mail.example")!;
+    assert.ok((await outbox()).some((m) => m.to_email === "temp@mail.example"));
+    await revokeInvite(s.mspId, s.userId, tempInvite.id);
+    assert.ok(!(await outbox()).some((m) => m.to_email === "temp@mail.example"), "revoking drops the queued invite email");
+    delete process.env.CONSOLE_URL;
+  });
+
+  test("forgot password: a single-use link resets the password and ends sessions", async () => {
+    process.env.CONSOLE_URL = "https://app.example";
+    const ownerToken = await signUp({ name: "Reset Owner", mspName: "Reset IT", email: "reset-owner@mail.example", password: "original password here" });
+    const mspOf = (await checkSession(ownerToken))!.mspId;
+    const resetRows = () =>
+      withTenant(mspOf, async (db) => (await db.query<{ to_email: string; body_text: string }>("select to_email, body_text from outbox where kind = 'reset' order by id")).rows);
+    const tokenIn = (body: string) => body.match(/\/reset\/(zlp_[A-Za-z0-9_-]+)/)![1];
+
+    // Unknown address: nothing queued, and no error (accounts aren't enumerable).
+    await requestPasswordReset("nobody@mail.example");
+    assert.equal((await resetRows()).length, 0);
+
+    // Real address: one reset email with a link that says whose account it is.
+    await requestPasswordReset("reset-owner@mail.example");
+    let rows = await resetRows();
+    assert.deepEqual(rows.map((r) => r.to_email), ["reset-owner@mail.example"]);
+    const token1 = tokenIn(rows[0].body_text);
+    assert.deepEqual(await checkResetToken(token1), { email: "reset-owner@mail.example", mspName: "Reset IT" });
+
+    // Asking again invalidates the first link; only the newest one works.
+    await requestPasswordReset("reset-owner@mail.example");
+    assert.equal(await checkResetToken(token1), null, "the superseded link stops working");
+    rows = await resetRows();
+    assert.equal(rows.length, 1, "the superseded email was dropped too");
+    const token2 = tokenIn(rows[0].body_text);
+
+    await assert.rejects(resetPassword(token2, "short"), /at least 12/);
+
+    // Reset works, signs the account out everywhere, and the new password works.
+    await resetPassword(token2, "a brand new password");
+    assert.equal(await checkSession(ownerToken), null, "the old session ended");
+    assert.equal((await signIn("reset-owner@mail.example", "original password here")).kind, "wrong", "the old password no longer works");
+    assert.equal((await signIn("reset-owner@mail.example", "a brand new password")).kind, "session");
+
+    // The link is single-use.
+    assert.equal(await checkResetToken(token2), null);
+    await assert.rejects(resetPassword(token2, "yet another password"), /expired or was already used/);
+
+    // A reset email is sent whatever the email preferences say, with no unsubscribe.
+    await requestPasswordReset("reset-owner@mail.example");
+    const admin = new pg.Client({ connectionString: ownerUrl });
+    await admin.connect();
+    await admin.query("update outbox set next_try_at = now()");
+    await admin.end();
+    const sent: Mail[] = [];
+    await sendPending(ownerUrl, { sendMail: async (m: Mail) => { sent.push(m); } }, "Zinloop <alerts@zinloop.example>");
+    const delivered = sent.find((m) => m.to === "reset-owner@mail.example" && m.subject.includes("Reset"))!;
+    assert.ok(delivered, "the reset email was delivered");
+    assert.ok(!delivered.headers?.["List-Unsubscribe"], "no unsubscribe header on a reset email");
     delete process.env.CONSOLE_URL;
   });
 

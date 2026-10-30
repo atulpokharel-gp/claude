@@ -8,6 +8,10 @@ export const LIMITS = {
   mfa: { window: 15 * 60, max: 10 },
   signUpIp: { window: 60 * 60, max: 5 },
   invite: { window: 60 * 60, max: 30 },
+  // Forgot-password requests: per email and per source IP, so a link can't be
+  // used to flood someone's inbox or to probe which addresses have accounts.
+  passwordReset: { window: 60 * 60, max: 5 },
+  passwordResetIp: { window: 60 * 60, max: 20 },
   // A laptop normally sends one scan a day; 60/hour per token still fits
   // --all-users and ad-hoc retries, but a leaked token can't flood.
   scanUploadToken: { window: 60 * 60, max: 60 },

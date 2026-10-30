@@ -17,7 +17,14 @@ export function InviteViewerForm({ clientId, clientName }: { clientId: string; c
       </form>
       {state.link && (
         <div className="token-once">
-          <p><b>Send this link to {state.email}.</b> It works once, for 7 days, and is shown only now. They&apos;ll see {clientName}&apos;s results and nothing else, and can&apos;t change anything.</p>
+          <p>
+            {state.emailed ? (
+              <><b>We emailed the login to {state.email}.</b> It works once and expires in 7 days. </>
+            ) : (
+              <><b>Send this link to {state.email}.</b> It works once, for 7 days, and is shown only now. </>
+            )}
+            They&apos;ll see {clientName}&apos;s results and nothing else, and can&apos;t change anything.{state.emailed ? " If it doesn't arrive, send them this link:" : ""}
+          </p>
           <code className="block">{state.link}</code>
         </div>
       )}

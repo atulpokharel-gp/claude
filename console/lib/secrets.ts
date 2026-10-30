@@ -30,7 +30,7 @@ export async function verifyPassword(password: string, stored: string): Promise<
 }
 
 /** A random token for a cookie or a laptop, with a prefix that says what it is. */
-export function newToken(prefix: "zls" | "zlu" | "zli"): string {
+export function newToken(prefix: "zls" | "zlu" | "zli" | "zlp"): string {
   return `${prefix}_${randomBytes(32).toString("base64url")}`;
 }
 

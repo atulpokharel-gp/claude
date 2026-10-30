@@ -112,7 +112,13 @@ export function InviteForm() {
       </form>
       {state.link && (
         <div className="token-once">
-          <p><b>Send this link to {state.email}.</b> It works once, for 7 days, and is shown only now.</p>
+          <p>
+            {state.emailed ? (
+              <><b>We emailed the invite to {state.email}.</b> It works once and expires in 7 days. If it doesn&apos;t arrive, send them this link:</>
+            ) : (
+              <><b>Send this link to {state.email}.</b> It works once, for 7 days, and is shown only now.</>
+            )}
+          </p>
           <code className="block">{state.link}</code>
         </div>
       )}
