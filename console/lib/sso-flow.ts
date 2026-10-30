@@ -16,7 +16,7 @@ export interface SsoFlow {
   s: string;
   n: string;
   v: string;
-  mode: "signin" | "link";
+  mode: "signin" | "link" | "signup";
   /** For "link": the user who started it. */
   u?: string;
 }

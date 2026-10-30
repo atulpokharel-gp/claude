@@ -40,7 +40,7 @@ import { snapshotAll } from "../scripts/snapshot.ts";
 import { queueAllWeekly } from "../scripts/weekly.ts";
 import { recordRun } from "../scripts/job-runs.ts";
 import { checkHealth } from "./health.ts";
-import { getMicrosoftLink, linkMicrosoft, signInWithMicrosoft, unlinkMicrosoft } from "./identities.ts";
+import { getMicrosoftLink, linkMicrosoft, signInWithGoogle, signInWithMicrosoft, signUpWithGoogle, unlinkMicrosoft } from "./identities.ts";
 import { sendPending, type Mail } from "../scripts/send-mail.ts";
 import { checkAlerts, unsubscribeUrl } from "./alerts.ts";
 import {
@@ -618,6 +618,39 @@ describe("database", { skip: !adminUrl && "set TEST_DATABASE_ADMIN_URL to run" }
     const actions = (await listAudit(s.mspId)).map((e) => e.action);
     for (const a of ["microsoft_linked", "microsoft_unlinked", "signed_in"]) assert.ok(actions.includes(a as never), a);
     assert.ok((await listAudit(s.mspId)).some((e) => e.action === "signed_in" && e.detail.method === "microsoft"));
+  });
+
+  test("signing up with Google creates a classified, password-less account and never adopts an existing email", async () => {
+    // An organization mailbox becomes an organization account named from the domain.
+    const acme = { sub: "100000000000000000001", label: "Ada@Acme-Corp.example", name: "Ada Lovelace" };
+    const r = await signUpWithGoogle(acme, { ip: "203.0.113.20" });
+    assert.equal(r.kind, "session");
+    const s = (await checkSession((r as { token: string }).token))!;
+    assert.equal(s.role, "owner");
+    assert.equal(s.email, "ada@acme-corp.example"); // stored lowercased so password sign-in can find it
+    assert.equal(s.mspName, "Acme Corp");
+    assert.equal((await getTeam(s.mspId)).accountType, "organization");
+    // The Google account can sign the owner back in.
+    assert.equal((await signInWithGoogle(acme)).kind, "session");
+    // No password was set: a password sign-in fails cleanly rather than erroring.
+    assert.equal((await signIn("ada@acme-corp.example", "not the password here")).kind, "wrong");
+    // Clicking "Sign up with Google" again signs the same owner in, not a second account.
+    const again = await signUpWithGoogle(acme, { ip: "203.0.113.20" });
+    assert.equal((await checkSession((again as { token: string }).token))?.userId, s.userId);
+
+    // A consumer mailbox becomes an individual account named after the person.
+    const g = await signUpWithGoogle({ sub: "100000000000000000002", label: "sam@gmail.com", name: "Sam Rivera" });
+    const gs = (await checkSession((g as { token: string }).token))!;
+    assert.equal((await getTeam(gs.mspId)).accountType, "individual");
+    assert.equal(gs.mspName, "Sam Rivera");
+
+    // An address that already has a password account is never taken over by Google.
+    await signUp({ name: "Existing", mspName: "Existing IT", email: "owner@existing.example", password: "long enough password" });
+    assert.deepEqual(await signUpWithGoogle({ sub: "100000000000000000003", label: "owner@existing.example", name: "Imposter" }), { kind: "exists" });
+
+    const actions = (await listAudit(s.mspId)).map((e) => e.action);
+    for (const a of ["signed_up", "google_linked", "signed_in"]) assert.ok(actions.includes(a as never), a);
+    assert.ok((await listAudit(s.mspId)).some((e) => e.action === "signed_up" && e.detail.method === "google"));
   });
 
   test("owners can require two-factor sign-in for the whole team", async () => {

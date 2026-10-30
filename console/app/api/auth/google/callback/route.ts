@@ -5,7 +5,7 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { MFA_PENDING_SECONDS } from "@/lib/auth.ts";
 import { finishSignIn, GoogleSsoError } from "@/lib/google-sso.ts";
-import { LinkError, linkGoogle, signInWithGoogle } from "@/lib/identities.ts";
+import { LinkError, linkGoogle, signInWithGoogle, signUpWithGoogle } from "@/lib/identities.ts";
 import { requestInfo } from "@/lib/request-audit.ts";
 import { currentSession, MFA_COOKIE, setSessionCookie } from "@/lib/session.ts";
 import { consoleBase, redirectUri, takeFlow } from "@/lib/sso-flow.ts";
@@ -28,7 +28,7 @@ export async function GET(req: Request) {
   if (!flow || !safeEqual(url.searchParams.get("state"), flow.s)) return go("/login?sso=expired");
 
   const viewer = flow.mode === "link" ? (await currentSession({ viewer: true }))?.role === "viewer" : false;
-  const back = flow.mode === "link" ? (viewer ? "/portal/account" : "/app/settings") : "/login";
+  const back = flow.mode === "link" ? (viewer ? "/portal/account" : "/app/settings") : flow.mode === "signup" ? "/free-scan" : "/login";
   const code = url.searchParams.get("code");
   if (url.searchParams.get("error") || !code) return go(`${back}?sso=cancelled`);
 
@@ -56,10 +56,12 @@ export async function GET(req: Request) {
     return go(`${back}?sso=linked`);
   }
 
-  const r = await signInWithGoogle(account, info);
+  const r = flow.mode === "signup" ? await signUpWithGoogle(account, info) : await signInWithGoogle(account, info);
+  // Signing up with an address that already has an account: send them to sign in.
+  if (r.kind === "exists") return go("/login?sso=exists");
   if (r.kind === "not-linked") return go("/login?sso=not-linked");
-  if (r.kind === "limited") return go("/login?sso=limited");
-  if (r.kind === "wrong") return go("/login?sso=failed");
+  if (r.kind === "limited") return go(`${back}?sso=limited`);
+  if (r.kind === "wrong") return go(`${back}?sso=failed`);
   if (r.kind === "mfa") {
     (await cookies()).set(MFA_COOKIE, r.pending, {
       httpOnly: true,
@@ -71,6 +73,6 @@ export async function GET(req: Request) {
     return go("/login");
   }
   await setSessionCookie(r.token);
-  // Viewers are sent on to their portal from /app.
-  return go("/app");
+  // A brand-new account lands on the welcome screen; viewers go on to their portal from /app.
+  return go(flow.mode === "signup" ? "/app?welcome=1" : "/app");
 }
