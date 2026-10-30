@@ -32,7 +32,7 @@ jobs:
             echo "skip=true" >> "$GITHUB_OUTPUT"
           fi
       - if: steps.setup.outputs.skip != 'true'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - if: steps.setup.outputs.skip != 'true'
         run: |
           docker build -q --build-arg PG_MAJOR="$PG_MAJOR" -t zinloop-backup deploy/backup
