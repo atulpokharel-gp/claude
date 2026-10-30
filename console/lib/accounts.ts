@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { audit } from "./audit.ts";
 import { createSession, endAllSessions, type ClientInfo } from "./auth.ts";
 import { decrypt, encrypt } from "./crypto.ts";
-import { lookup, withTenant } from "./db.ts";
+import { type Db as Tx, lookup, withTenant } from "./db.ts";
 import { consumerDomains } from "./email-domains.ts";
 import { type AccountType, classifyAccount } from "./email-kind.ts";
 import { allow } from "./ratelimit.ts";
@@ -60,6 +60,45 @@ export interface SignUp {
   wantsPartner?: boolean;
 }
 
+export interface NewOwner {
+  mspId: string;
+  userId: string;
+  email: string;
+  name: string;
+  mspName: string;
+  accountType: AccountType;
+  /** null for an SSO-only account with no password yet. */
+  passwordHash: string | null;
+  clientEstimate?: number;
+  wantsPartner?: boolean;
+  ip?: string | null;
+  /** How they signed up, for the audit log: "password" or an SSO provider name. */
+  method?: string;
+}
+
+/**
+ * Inserts an MSP (free plan) and its owner inside an existing tenant
+ * transaction, and audits the sign-up. Shared by password sign-up (signUp) and
+ * SSO sign-up (identities.signUpWithGoogle) so the two can't drift. The caller
+ * opens the transaction with this mspId and starts the session afterwards; it
+ * also maps a unique-violation to a friendly "already an account" error.
+ */
+export async function insertOwnerAccount(db: Tx, a: NewOwner): Promise<void> {
+  const estimate = Math.min(Math.max(Math.floor(Number(a.clientEstimate) || 0), 0), 100_000);
+  await db.query("insert into msps (id, name, client_estimate, wants_partner, account_type) values ($1, $2, $3, $4, $5)", [
+    a.mspId,
+    a.mspName,
+    estimate,
+    Boolean(a.wantsPartner),
+    a.accountType,
+  ]);
+  await db.query(
+    "insert into users (id, msp_id, email, password_hash, name, role) values ($1, $2, $3, $4, $5, 'owner')",
+    [a.userId, a.mspId, a.email, a.passwordHash, a.name],
+  );
+  await audit(a.mspId, { userId: a.userId, email: a.email, ip: a.ip }, "signed_up", a.mspName, { accountType: a.accountType, method: a.method ?? "password" }, db);
+}
+
 /**
  * Creates an MSP on the free plan and its owner, and signs them in. The account
  * type is derived from the email: a free/consumer mailbox (gmail, outlook, …)
@@ -81,25 +120,24 @@ export async function signUp(input: SignUp, ip: string | null = null): Promise<s
   }
   checkPassword(input.password);
   if (ip && !(await allow("signUpIp", ip))) throw new AccountError("Too many sign-ups from your network. Try again in an hour.");
-  const estimate = Math.min(Math.max(Math.floor(Number(input.clientEstimate) || 0), 0), 100_000);
   const mspId = randomUUID();
   const userId = randomUUID();
   const hash = await hashPassword(input.password);
   try {
-    await withTenant(mspId, async (db) => {
-      await db.query("insert into msps (id, name, client_estimate, wants_partner, account_type) values ($1, $2, $3, $4, $5)", [
+    await withTenant(mspId, (db) =>
+      insertOwnerAccount(db, {
         mspId,
+        userId,
+        email,
+        name,
         mspName,
-        estimate,
-        Boolean(input.wantsPartner),
         accountType,
-      ]);
-      await db.query(
-        "insert into users (id, msp_id, email, password_hash, name, role) values ($1, $2, $3, $4, $5, 'owner')",
-        [userId, mspId, email, hash, name],
-      );
-      await audit(mspId, { userId, email, ip }, "signed_up", mspName, { accountType }, db);
-    });
+        passwordHash: hash,
+        clientEstimate: input.clientEstimate,
+        wantsPartner: input.wantsPartner,
+        ip,
+      }),
+    );
   } catch (err) {
     if (isUniqueViolation(err)) throw new AccountError("There's already an account for that email. Sign in instead.");
     throw err;

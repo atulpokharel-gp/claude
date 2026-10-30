@@ -13,6 +13,7 @@ import { hasGoogleSso } from "@/lib/google-sso.ts";
 
 const SSO_NOTICE: Record<string, string> = {
   "not-linked": "That account isn't linked to a Zinloop login yet. Sign in with your password, then link it in your settings.",
+  exists: "You already have a Zinloop account for that email. Sign in with your password, then link Google in your settings.",
   failed: "That sign-in didn't work. Try again, or sign in with your password.",
   expired: "That sign-in took too long or was already used. Try again.",
   cancelled: "That sign-in was cancelled.",
