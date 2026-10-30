@@ -14,6 +14,7 @@
     "db:create-superadmin": "node --experimental-strip-types scripts/create-superadmin.ts",
     "db:set-plan": "node --experimental-strip-types scripts/set-plan.ts",
     "db:cleanup": "node --experimental-strip-types scripts/cleanup.ts",
+    "db:seed-zipax-demo": "node --experimental-strip-types scripts/seed-zipax-demo.ts",
     "m365:sync": "node --experimental-strip-types scripts/m365-sync.ts",
     "db:snapshot": "node --experimental-strip-types scripts/snapshot.ts",
     "mail:weekly": "node --experimental-strip-types scripts/weekly.ts",
